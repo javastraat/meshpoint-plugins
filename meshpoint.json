@@ -1,1 +1,20 @@
-your info here
+{
+  "meshpoint_repo": 1,
+  "name": "meshpoint-plugins",
+  "plugins": [
+    {
+      "id": "hello-world-github",
+      "kind": "app",
+      "path": "apps/hello-world-github",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "sidebar"
+      ],
+      "description": "Minimal example plugin: a top-level sidebar page that just says hello. Reference for the sidebar-page seam -- see docs/PLUGINS.md.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/KMX415/meshpoint",
+      "has_setup": false
+    }
+  ]
+}
