@@ -1,0 +1,9 @@
+{
+  "id": "gruvbox-dark",
+  "label": "Gruvbox Dark",
+  "icon": "leaf",
+  "locked": true,
+  "author": "Pavel Pertsev",
+  "homepage": "https://github.com/morhetz/gruvbox",
+  "description": "Warm retro-groove dark palette."
+}
