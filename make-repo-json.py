@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Generate meshpoint.json for this plugin repo.
+"""Generate repo.json for this plugin repo.
 
 Drop your plugins under apps/<id>/ (each with a plugin.toml) and your
 themes under themes/<id>/ (each with a theme.json), then run:
 
-    python3 make-meshpoint-json.py            # print to stdout
-    python3 make-meshpoint-json.py --write    # write meshpoint.json
+    python3 make-repo-json.py            # print to stdout
+    python3 make-repo-json.py --write    # write repo.json
 
 Meshpoint re-reads and re-validates the real plugin.toml / theme.json when
-a plugin is installed, so meshpoint.json is only the browse catalog --
+a plugin is installed, so repo.json is only the browse catalog --
 this script just keeps it in sync.
 
 Needs Python 3.11+ (uses the stdlib `tomllib`). Nothing else -- no
@@ -150,9 +150,9 @@ def main() -> int:
     rendered = json.dumps(doc, indent=2) + "\n"
 
     if write:
-        (ROOT / "meshpoint.json").write_text(rendered, "utf-8")
+        (ROOT / "repo.json").write_text(rendered, "utf-8")
         print(
-            f"wrote meshpoint.json: {len(doc['plugins'])} plugin(s), "
+            f"wrote repo.json: {len(doc['plugins'])} plugin(s), "
             f"{len(doc.get('themes', []))} theme(s)"
             + (f", {skipped} skipped" if skipped else ""),
             file=sys.stderr,
