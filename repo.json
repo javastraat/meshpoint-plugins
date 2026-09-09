@@ -28,7 +28,8 @@
       "description": "Minimal example plugin: injects a message into the Hello World page instead of owning a page of its own. Reference for the hook seam -- see docs/PLUGINS.md.",
       "author": "Einstein PD2EMC",
       "homepage": "https://github.com/KMX415/meshpoint",
-      "has_setup": false
+      "has_setup": false,
+      "hook_host": "hello-world-github"
     }
   ],
   "themes": [

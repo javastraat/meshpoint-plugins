@@ -70,8 +70,22 @@ def _plugin_entry(folder: Path) -> dict | None:
 
     meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
     deps = data.get("deps") if isinstance(data.get("deps"), dict) else {}
+    hook = data.get("hook") if isinstance(data.get("hook"), dict) else {}
 
-    return {
+    # [hook].host -- the *other* plugin's [sidebar].route this one injects
+    # into. Only meaningful when 'hook' is declared; surfaced in repo.json
+    # so a browse catalog can group a hook under its host the same way the
+    # installed-plugins list already does (see plugins_panel_controller.js's
+    # _groupedPlugins()). Not itself validated against a sibling folder --
+    # the host may live in another repo (built into Meshpoint core, or a
+    # different source) that this generator can't see.
+    hook_host = str(hook.get("host") or "").strip()
+    if "hook" in provides and not hook_host:
+        _warn(f"apps/{name}: provides 'hook' but [hook].host is missing")
+    elif hook_host and "hook" not in provides:
+        _warn(f"apps/{name}: has [hook].host but doesn't provide 'hook'")
+
+    entry = {
         "id": name,
         "kind": "app",
         "path": f"apps/{name}",
@@ -83,6 +97,9 @@ def _plugin_entry(folder: Path) -> dict | None:
         "homepage": str(meta.get("homepage") or ""),
         "has_setup": bool(deps.get("setup")),
     }
+    if hook_host:
+        entry["hook_host"] = hook_host
+    return entry
 
 
 def _theme_entry(folder: Path) -> dict | None:
@@ -98,6 +115,11 @@ def _theme_entry(folder: Path) -> dict | None:
     tid = str(raw.get("id") or folder.name).strip()
     if not _SLUG.match(tid):
         _warn(f"themes/{folder.name}: id {tid!r} must be a slug [a-z0-9-]")
+        return None
+    if tid != folder.name:
+        _warn(f"themes/{folder.name}: 'id' is {tid!r} -- rename the folder to match "
+              "(Meshpoint applies the theme as data-theme=\"<id>\", so theme.css's own "
+              "selector and the repo.json path it generates both need to agree with it)")
         return None
     return {
         "id": tid,

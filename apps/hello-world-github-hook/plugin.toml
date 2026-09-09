@@ -25,7 +25,7 @@ styles = ["frontend/hello_world_hook.css"]
 
 [hook]
 host = "hello-world-github"    # target host's [sidebar].route -- see
-                         # plugins/apps/hello-world/plugin.toml. This plugin's
+                         # apps/hello-world-github/plugin.toml. This plugin's
                          # content is injected into that page instead of
                          # owning a page of its own.
 

@@ -45,7 +45,8 @@ The plugin's own frontend script only supplies the content, by calling
 `{mount(rootEl), show(), hide()}` object, same shape the Listener-tab seam
 already uses. See `frontend/hello_world.js`.
 
-Full write-up: [docs/PLUGINS.md](../../../docs/PLUGINS.md).
+Full write-up: [docs/PLUGINS.md](https://github.com/KMX415/meshpoint/blob/main/docs/PLUGINS.md)
+(in the main Meshpoint repo — this satellite repo has no docs/ of its own).
 
 ## Layout
 

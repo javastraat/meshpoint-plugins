@@ -3,7 +3,7 @@
    app's own theme variables so it looks right in every theme, light and
    dark, without any plugin-side theme handling. */
 
-.hello-world-hook {
+.hello-world-github-hook {
     margin-top: 4px;
     padding: 12px 14px;
     border-radius: 8px;
@@ -13,7 +13,7 @@
     line-height: 1.5;
 }
 
-.hello-world-hook code {
+.hello-world-github-hook code {
     background: var(--overlay-med);
     padding: 1px 5px;
     border-radius: 4px;
