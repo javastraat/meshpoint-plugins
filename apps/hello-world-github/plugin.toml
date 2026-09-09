@@ -16,7 +16,6 @@ provides = ["sidebar"]    # capabilities this plugin uses -- non-empty subset of
                            # register-time (PluginRegistry._require). See
                            # docs/PLUGINS.md and the ACARS plugin for a
                            # listener + routes + panel worked example.
-locked = true  # shipped with this fork -- not user-installed, can't be deleted
 
 [frontend]
 scripts = ["frontend/hello_world.js"]
