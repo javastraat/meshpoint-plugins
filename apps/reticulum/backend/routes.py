@@ -189,7 +189,10 @@ async def reticulum_propagation_sync(_claims: SessionClaims = Depends(require_ad
         raise HTTPException(503, "Reticulum companion is disabled")
     result = _service.sync_propagation_messages()
     if not result.get("ok"):
-        raise HTTPException(400, result.get("error") or "sync failed")
+        error = result.get("error") or "sync failed"
+        if "propagation node" in error.lower() and state.propagation_config().get("outbound_node"):
+            error = "Saved, but not active until meshpoint restarts (Settings -> System)."
+        raise HTTPException(400, error)
     return {"status": "syncing"}
 
 
@@ -214,6 +217,15 @@ async def reticulum_telemetry():
     return _service.telemetry_status()
 
 
+@router.get("/telemetry/peers")
+async def reticulum_telemetry_peers():
+    """Latest telemetry received from other nodes (the collector) --
+    one entry per peer, newest first, in-memory so empty after a restart."""
+    if _service is None:
+        raise HTTPException(503, "Reticulum companion is disabled")
+    return _service.telemetry_peers()
+
+
 @router.post("/telemetry/send")
 async def reticulum_telemetry_send(_claims: SessionClaims = Depends(require_admin)):
     """Send one telemetry frame to the collector now."""
@@ -221,7 +233,13 @@ async def reticulum_telemetry_send(_claims: SessionClaims = Depends(require_admi
         raise HTTPException(503, "Reticulum companion is disabled")
     result = _service.send_telemetry()
     if not result.get("ok"):
-        raise HTTPException(400, result.get("error") or "telemetry send failed")
+        error = result.get("error") or "telemetry send failed"
+        # The running service reads telemetry config once at startup, so a
+        # just-saved collector isn't live until a meshpoint restart -- say
+        # so rather than the bare "no collector" the service reports.
+        if "collector" in error.lower() and state.telemetry_config().get("collector"):
+            error = "Saved, but not active until meshpoint restarts (Settings -> System)."
+        raise HTTPException(400, error)
     return {"status": "sent"}
 
 
