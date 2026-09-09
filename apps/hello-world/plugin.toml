@@ -1,4 +1,4 @@
-name = "hello-world"
+name = "hello-world-github"
 version = "0.1.0"
 meshpoint_api = 1
 provides = ["sidebar"]    # capabilities this plugin uses -- non-empty subset of:
@@ -23,10 +23,10 @@ scripts = ["frontend/hello_world.js"]
 styles = ["frontend/hello_world.css"]
 
 [sidebar]
-route = "hello-world"     # URL route id -- becomes #/hello-world (bare
+route = "hello-world-github"     # URL route id -- becomes #/hello-world (bare
                            # slug [a-z0-9-]). Under configuration/settings
                            # below, it'd nest as #/<category>/<route> instead.
-label = "Hello World"     # sidebar link text
+label = "Hello World Github"     # sidebar link text
 category = "networks"     # which EXISTING sidebar section to place the page
                            # in -- one of:
                            #   networks       flat item run (LoRaWAN, Radio, ...)
