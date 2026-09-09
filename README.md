@@ -21,15 +21,23 @@ meshpoint.json  the browse catalog — generated, do not hand-edit
 
 ## For contributors
 
-After adding/changing a plugin or bumping a version, regenerate the catalog
-from a Meshpoint checkout:
+Drop a plugin under `apps/<id>/` (with its `plugin.toml`) or a theme under
+`themes/<id>/` (with its `theme.json`), then regenerate the catalog:
 
 ```sh
-meshpoint plugin index /path/to/this/repo --write
+python3 make-meshpoint-json.py --write     # needs Python 3.11+, nothing else
 ```
 
-Meshpoint re-validates the real `plugin.toml` / `theme.json` on install, so
-`meshpoint.json` is only metadata for the browse view.
+It reads every `plugin.toml` / `theme.json`, warns about problems (a
+folder that doesn't match its `name`, an unknown `provides`, a duplicate
+id), and writes `meshpoint.json`. Re-run it whenever you bump a version.
+
+Meshpoint re-validates the real `plugin.toml` / `theme.json` when a plugin
+is actually installed, so `meshpoint.json` is only metadata for the browse
+view — a stale or edited catalog can't smuggle anything in.
+
+(If you have a Meshpoint checkout handy, `meshpoint plugin index <repo>
+--write` does the same thing with its own validator.)
 
 ## Contents
 
