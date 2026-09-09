@@ -30,5 +30,16 @@
       "homepage": "https://github.com/KMX415/meshpoint",
       "has_setup": false
     }
+  ],
+  "themes": [
+    {
+      "id": "github-dark-theme",
+      "kind": "theme",
+      "path": "themes/github-dark-theme",
+      "version": "1.0.0",
+      "description": "GitHub's dark default, calm and neutral.",
+      "author": "GitHub Primer",
+      "homepage": "https://primer.style/"
+    }
   ]
 }
