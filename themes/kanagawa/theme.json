@@ -1,9 +1,0 @@
-{
-  "id": "kanagawa",
-  "label": "Kanagawa",
-  "icon": "wave",
-  "locked": true,
-  "author": "rebelot",
-  "homepage": "https://github.com/rebelot/kanagawa.nvim",
-  "description": "Inspired by Katsushika Hokusai's Great Wave."
-}
