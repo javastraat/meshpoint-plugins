@@ -15,6 +15,20 @@
       "author": "Einstein PD2EMC",
       "homepage": "https://github.com/KMX415/meshpoint",
       "has_setup": false
+    },
+    {
+      "id": "hello-world-github-hook",
+      "kind": "app",
+      "path": "apps/hello-world-github-hook",
+      "version": "0.0.1",
+      "meshpoint_api": 1,
+      "provides": [
+        "hook"
+      ],
+      "description": "Minimal example plugin: injects a message into the Hello World page instead of owning a page of its own. Reference for the hook seam -- see docs/PLUGINS.md.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/KMX415/meshpoint",
+      "has_setup": false
     }
   ]
 }
