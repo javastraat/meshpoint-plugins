@@ -88,17 +88,28 @@ class OfflineMapProcess:
 
     async def _start_locked(self) -> None:
         cfg = state.to_dict()
-        for directory in (cfg["maps_directory"], cfg["presets_directory"]):
-            Path(directory).mkdir(parents=True, exist_ok=True)
-        log_path = Path(cfg["log_file"])
+        # Resolve to absolute paths *before* both the mkdir calls below and
+        # building argv -- these settings default to relative strings
+        # (data/offline-map/...), and passing a relative path straight
+        # into argv while also setting cwd=_PLUGIN_DIR on the subprocess
+        # made the binary resolve it against a different base directory
+        # than the one Python just created it under ("Failed to open log
+        # file: ... no such file or directory" even though mkdir "worked").
+        # Absolute paths remove the ambiguity outright, regardless of
+        # whatever cwd this process (or the subprocess) happens to have.
+        maps_dir = Path(cfg["maps_directory"]).resolve()
+        presets_dir = Path(cfg["presets_directory"]).resolve()
+        log_path = Path(cfg["log_file"]).resolve()
+        maps_dir.mkdir(parents=True, exist_ok=True)
+        presets_dir.mkdir(parents=True, exist_ok=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         cmd = [
             str(_BINARY),
             "-port", str(int(cfg["port"])),
-            "-maps-directory", str(cfg["maps_directory"]),
-            "-presets-directory", str(cfg["presets_directory"]),
-            "-log-file", str(cfg["log_file"]),
+            "-maps-directory", str(maps_dir),
+            "-presets-directory", str(presets_dir),
+            "-log-file", str(log_path),
             "-max-workers", str(int(cfg["max_workers"])),
             "-rate-limit", str(int(cfg["rate_limit"])),
             "-max-retries", str(int(cfg["max_retries"])),
@@ -111,7 +122,6 @@ class OfflineMapProcess:
         self.log_lines.clear()
         self._proc = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=str(_PLUGIN_DIR),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             start_new_session=True,  # own process group -> killpg gets all
