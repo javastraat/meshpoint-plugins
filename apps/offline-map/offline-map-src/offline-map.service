@@ -1,0 +1,19 @@
+[Unit]
+Description=Offline Map Tile Downloader
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/offline-map-tile-downloader \
+    --port 8080 \
+    --maps-directory /var/lib/offline-map/maps \
+    --log-file /var/log/offline-map.log \
+    --max-workers 50 \
+    --rate-limit 50
+WorkingDirectory=/var/lib/offline-map
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1102 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Offline Map Tile Downloader</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="stylesheet" href="/static/leaflet.css" />
+    <link rel="stylesheet" href="/static/leaflet.draw.css" />
+    <script src="/static/leaflet.js"></script>
+    <script src="/static/leaflet.draw.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #222;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        .form-container {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(255,255,255,0.97);
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            min-width: 260px;
+            border: 1px solid #ccc;
+        }
+        .form-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 7px 10px;
+            cursor: pointer;
+            user-select: none;
+            font-weight: 600;
+            font-size: 12px;
+            background: #f0f0f0;
+            border-radius: 4px 4px 0 0;
+            border-bottom: 1px solid #ccc;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            color: #444;
+        }
+        .form-header:hover { background: #e6e6e6; }
+        .form-toggle-icon {
+            font-size: 10px;
+            transition: transform 0.2s ease;
+            margin-left: 8px;
+            color: #666;
+        }
+        .form-toggle-icon.collapsed { transform: rotate(-90deg); }
+        .form-body {
+            padding: 0 10px 10px 10px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            transition: max-height 0.25s ease, opacity 0.2s ease;
+            max-height: calc(100vh - 60px);
+            opacity: 1;
+        }
+        .form-body.collapsed {
+            max-height: 0 !important;
+            opacity: 0;
+            padding-bottom: 0;
+            overflow: hidden;
+        }
+        .form-section {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .form-section:last-child { border-bottom: none; }
+        .form-section label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #333;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .form-section label.inline {
+            display: inline;
+            font-weight: normal;
+            text-transform: none;
+            letter-spacing: 0;
+            font-size: 12px;
+            color: #222;
+        }
+        input[type=text], input[type=number], select {
+            font-size: 12px;
+            border: 1px solid #bbb;
+            border-radius: 3px;
+            padding: 3px 5px;
+            background: #fff;
+            color: #222;
+        }
+        input[type=text]:focus, input[type=number]:focus, select:focus {
+            outline: none;
+            border-color: #4a90d9;
+        }
+        button {
+            font-size: 11px;
+            padding: 3px 8px;
+            border: 1px solid #bbb;
+            border-radius: 3px;
+            background: #f5f5f5;
+            color: #333;
+            cursor: pointer;
+        }
+        button:hover { background: #e8e8e8; border-color: #999; }
+        button:disabled { opacity: 0.45; cursor: default; }
+        button.btn-primary {
+            background: #3a7bd5;
+            color: #fff;
+            border-color: #2f6bbf;
+            font-weight: 600;
+        }
+        button.btn-primary:hover { background: #2f6bbf; }
+        button.btn-danger {
+            background: #fff;
+            color: #c0392b;
+            border-color: #c0392b;
+        }
+        button.btn-danger:hover { background: #fdf0ef; }
+        button.btn-icon-sprite {
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            background-image: url('/static/images/spritesheet.svg');
+            background-repeat: no-repeat;
+            background-size: 300px 30px;
+            background-position: -182px -2px;
+            background-color: #fff;
+            border-color: #c0392b;
+            vertical-align: middle;
+        }
+        button.btn-icon-sprite:hover { background-color: #fdf0ef; }
+        .section-disabled {
+            opacity: 0.38;
+            pointer-events: none;
+            user-select: none;
+        }
+        #map.no-collection .leaflet-draw {
+            opacity: 0.38;
+            pointer-events: none;
+        }
+        /* Leaflet draw toolbar — match panel style */
+        .leaflet-draw-toolbar a {
+            background-color: #f5f5f5 !important;
+        }
+        .leaflet-draw-toolbar a:hover {
+            background-color: #e8e8e8 !important;
+        }
+        .leaflet-bar, .leaflet-draw-toolbar, .leaflet-control-zoom {
+            border: 1px solid #bbb !important;
+            border-radius: 4px !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
+        }
+        .leaflet-bar a, .leaflet-draw-toolbar a {
+            border-bottom-color: #ddd !important;
+        }
+        .leaflet-bar a:first-child { border-radius: 3px 3px 0 0 !important; }
+        .leaflet-bar a:last-child  { border-radius: 0 0 3px 3px !important; border-bottom: none !important; }
+        .info-text {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+        }
+        #progress {
+            position: absolute;
+            bottom: 20px;
+            left: 11px;
+            z-index: 1000;
+            background: rgba(255,255,255,0.95);
+            padding: 10px 12px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            border: 1px solid #ddd;
+            font-size: 12px;
+            line-height: 1.6;
+            min-width: 180px;
+        }
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.35);
+            z-index: 9000;
+            align-items: center;
+            justify-content: center;
+        }
+        #modal-overlay.active { display: flex; }
+        #modal-box {
+            background: rgba(255,255,255,0.97);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            min-width: 260px;
+            max-width: 340px;
+            font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #222;
+        }
+        #modal-header {
+            padding: 7px 10px;
+            font-weight: 600;
+            font-size: 12px;
+            background: #f0f0f0;
+            border-radius: 4px 4px 0 0;
+            border-bottom: 1px solid #ccc;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            color: #444;
+        }
+        #modal-body { padding: 10px 10px 6px 10px; line-height: 1.5; white-space: pre-wrap; }
+        #modal-input {
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 6px;
+            font-size: 12px;
+            border: 1px solid #bbb;
+            border-radius: 3px;
+            padding: 3px 5px;
+        }
+        #modal-input:focus { outline: none; border-color: #4a90d9; }
+        #modal-footer {
+            padding: 6px 10px 10px 10px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div style="position: relative;">
+        <div id="map"></div>
+        <div class="form-container">
+            <div class="form-header" id="formToggle">
+                Settings
+                <span class="form-toggle-icon" id="formToggleIcon">▼</span>
+            </div>
+            <div class="form-body" id="formBody">
+            <div class="form-section" id="section-presets">
+                <label>Presets</label>
+                <select id="preset_select" style="width: 178px;"><option value="">— load a preset —</option></select>
+                <button type="button" id="deletePresetBtn" class="btn-icon-sprite" title="Delete preset"></button>
+                <div style="margin-top:5px;">
+                    <input type="text" id="preset_name" placeholder="Preset name" style="width: 178px;">
+                    <button type="button" id="savePresetBtn">Save</button>
+                </div>
+            </div>
+            <div class="form-section">
+                <label>Download Directory</label>
+                <select id="collection_select" style="width: 178px;"><option value="">— select —</option></select>
+                <button type="button" id="deleteCollectionBtn" class="btn-icon-sprite" title="Delete collection"></button>
+                <div id="collection_info" class="info-text" style="min-height:14px;"></div>
+                <div style="margin-top:5px;">
+                    <input type="text" id="collection_name" placeholder="New collection name" style="width: 178px;">
+                    <button type="button" id="createCollectionBtn">Create</button>
+                </div>
+            </div>
+            <div class="form-section" id="section-continent">
+                <label>Continent</label>
+                <select id="continent_select" style="width: 205px;">
+                    <option value="">— select continent —</option>
+                </select>
+                <button type="button" id="clearContinentBtn" title="Clear">×</button>
+            </div>
+            <div class="form-section" id="section-countries">
+                <label>Countries <button type="button" id="clearCountryBtn" style="float:right; margin-top:-1px;">Clear</button></label>
+                <div id="country_list" style="width:222px; height:140px; overflow-y:auto; border:1px solid #bbb; background:#fff; padding:4px; box-sizing:border-box; margin-top:4px; border-radius:3px;"></div>
+            </div>
+            <div class="form-section">
+                <label>Go to Coordinates</label>
+                <input type="text" id="coord_search" placeholder="lat, lng  (e.g. 52.37, 4.9)" style="width: 182px;">
+                <button type="button" id="goToBtn">Go</button>
+            </div>
+            <div class="form-section" id="section-style">
+                <label>Map Style</label>
+                <select id="map_style" name="map_style" style="width:238px;"></select>
+                <div style="margin-top:6px;">
+                    <label class="inline" for="min_zoom">Min zoom:</label>
+                    <input type="number" id="min_zoom" name="min_zoom" min="0" max="19" value="8" style="width:44px;">
+                    &nbsp;
+                    <label class="inline" for="max_zoom">Max zoom:</label>
+                    <input type="number" id="max_zoom" name="max_zoom" min="0" max="19" value="12" style="width:44px;">
+                </div>
+                <div style="margin-top:5px;">
+                    <input type="checkbox" id="view_cached_tiles">
+                    <label class="inline" for="view_cached_tiles">Show cached coverage</label>
+                    <select id="coverage_zoom" style="font-size:11px; margin-left:4px; vertical-align:middle; padding:1px 3px;">
+                        <option value="all">all levels</option>
+                    </select>
+                </div>
+                <div>
+                    <input type="checkbox" id="use_cache" name="use_cache">
+                    <label class="inline" for="use_cache">Enable offline mode</label>
+                </div>
+                <div>
+                    <input type="checkbox" id="convert_to_8bit" checked>
+                    <label class="inline" for="convert_to_8bit">Convert to 8-bit PNG</label>
+                </div>
+                <div style="margin-top:6px;">
+                    <label class="inline" for="buffer_km">Border buffer: <strong id="buffer_label">0 km</strong></label>
+                    <input type="range" id="buffer_km" min="0" max="50" value="0" step="1" style="width:238px; display:block; margin-top:3px;">
+                </div>
+                <div style="margin-top:8px;">
+                    <button type="button" id="downloadBtn" class="btn-primary">Download Tiles</button>
+                    <button type="button" id="downloadWorldBtn">World Basemap</button>
+                    <button type="button" id="cancelBtn" class="btn-danger" disabled>Cancel</button>
+                </div>
+                <div style="margin-top:5px;">
+                    <button type="button" id="clear404Btn" title="Remove the 404 cache so missing tiles are retried">Clear 404 Cache</button>
+                    <span id="clear404Info" class="info-text" style="margin-left:4px;"></span>
+                </div>
+            </div>
+            <div class="form-section" id="section-export">
+                <label>Export</label>
+                <span class="info-text">Exports the active collection as ZIP</span>
+                <button type="button" id="downloadZipBtn" style="display:block; margin-top:5px;">Download ZIP</button>
+            </div>
+            </div><!-- end form-body -->
+        </div>
+        <div id="progress">Ready</div>
+        <div id="modal-overlay">
+            <div id="modal-box">
+                <div id="modal-header">Notice</div>
+                <div id="modal-body"></div>
+                <div id="modal-footer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Custom modal — replaces alert/confirm/prompt
+        (function() {
+            var overlay = document.getElementById('modal-overlay');
+            var header  = document.getElementById('modal-header');
+            var body    = document.getElementById('modal-body');
+            var footer  = document.getElementById('modal-footer');
+
+            function btn(label, cls, cb) {
+                var b = document.createElement('button');
+                b.textContent = label;
+                if (cls) b.className = cls;
+                b.addEventListener('click', function() { close(); cb(); });
+                return b;
+            }
+            function close() { overlay.classList.remove('active'); footer.innerHTML = ''; }
+
+            window.modalAlert = function(msg, title) {
+                header.textContent = title || 'Notice';
+                body.innerHTML = '';
+                body.appendChild(document.createTextNode(msg));
+                footer.innerHTML = '';
+                footer.appendChild(btn('OK', 'btn-primary', function() {}));
+                overlay.classList.add('active');
+            };
+            window.modalConfirm = function(msg, title, onOk, onCancel) {
+                header.textContent = title || 'Confirm';
+                body.innerHTML = '';
+                body.appendChild(document.createTextNode(msg));
+                footer.innerHTML = '';
+                footer.appendChild(btn('Cancel', '', onCancel || function() {}));
+                footer.appendChild(btn('OK', 'btn-primary', onOk || function() {}));
+                overlay.classList.add('active');
+            };
+            window.modalPrompt = function(msg, title, defaultVal, onOk) {
+                header.textContent = title || 'Input';
+                body.innerHTML = '';
+                body.appendChild(document.createTextNode(msg));
+                var input = document.createElement('input');
+                input.type = 'text';
+                input.id = 'modal-input';
+                input.value = defaultVal || '';
+                body.appendChild(input);
+                footer.innerHTML = '';
+                footer.appendChild(btn('Cancel', '', function() {}));
+                footer.appendChild(btn('OK', 'btn-primary', function() { onOk(input.value); }));
+                overlay.classList.add('active');
+                setTimeout(function() { input.focus(); input.select(); }, 50);
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') { close(); onOk(input.value); }
+                    if (e.key === 'Escape') close();
+                });
+            };
+        })();
+
+        (function() {
+            var body = document.getElementById('formBody');
+            var icon = document.getElementById('formToggleIcon');
+            var collapsed = localStorage.getItem('settings-collapsed') === 'true';
+            if (collapsed) { body.classList.add('collapsed'); icon.classList.add('collapsed'); }
+            document.getElementById('formToggle').addEventListener('click', function() {
+                collapsed = !collapsed;
+                body.classList.toggle('collapsed', collapsed);
+                icon.classList.toggle('collapsed', collapsed);
+                localStorage.setItem('settings-collapsed', collapsed);
+            });
+        })();
+
+        var socket;
+        function connectWebSocket() {
+            socket = new WebSocket(`ws://${window.location.host}/ws`);
+            socket.onopen = () => {
+                document.getElementById('progress').innerHTML = 'Ready';
+            };
+            socket.onclose = () => {
+                document.getElementById('progress').innerHTML = 'Connection lost — reconnecting...';
+                document.getElementById('downloadBtn').disabled = false;
+                document.getElementById('downloadWorldBtn').disabled = false;
+                document.getElementById('cancelBtn').disabled = true;
+                setTimeout(connectWebSocket, 2000);
+            };
+            socket.onerror = (error) => {
+                console.error("WebSocket error:", error);
+            };
+            socket.onmessage = handleSocketMessage;
+        }
+        connectWebSocket();
+
+        var map = L.map('map').setView([52.37, 4.9], 8);
+        var tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Coordinate search functionality
+        document.getElementById('goToBtn').addEventListener('click', function() {
+            var input = document.getElementById('coord_search').value.trim();
+            var parts = input.split(',');
+            if (parts.length === 2) {
+                var lat = parseFloat(parts[0].trim());
+                var lng = parseFloat(parts[1].trim());
+                if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                    map.setView([lat, lng], 13);
+                } else {
+                    modalAlert('Invalid coordinates. Latitude must be -90 to 90, longitude must be -180 to 180.', 'Invalid Coordinates');
+                }
+            } else {
+                modalAlert('Please enter coordinates in format: lat, lng', 'Invalid Coordinates');
+            }
+        });
+
+        document.getElementById('coord_search').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('goToBtn').click();
+            }
+        });
+
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+        var drawControl = new L.Control.Draw({
+            draw: { polygon: true, marker: false, circle: false, circlemarker: false, polyline: false, rectangle: true },
+            edit: { featureGroup: drawnItems }
+        });
+        map.addControl(drawControl);
+
+        map.on('draw:created', function(e) {
+            drawnItems.addLayer(e.layer);
+            document.getElementById('downloadBtn').disabled = drawnItems.getLayers().length === 0;
+            clearCountryCheckboxes();
+            document.getElementById('continent_select').value = '';
+        });
+
+        map.on('draw:deleted', function() {
+            document.getElementById('downloadBtn').disabled = drawnItems.getLayers().length === 0;
+        });
+
+        var countriesData = null;
+
+        function drawFeatures(features) {
+            drawnItems.clearLayers();
+            var allBounds = [];
+            features.forEach(function(feature) {
+                var geom = feature.geometry;
+                var rings = [];
+                if (geom.type === 'Polygon') {
+                    rings.push(geom.coordinates[0]);
+                } else if (geom.type === 'MultiPolygon') {
+                    geom.coordinates.forEach(function(poly) { rings.push(poly[0]); });
+                }
+                rings.forEach(function(ring) {
+                    var latlngs = ring.map(function(c) { return L.latLng(c[1], c[0]); });
+                    var polygon = L.polygon(latlngs, {color: '#3388ff', weight: 2});
+                    drawnItems.addLayer(polygon);
+                    allBounds.push(polygon.getBounds());
+                });
+            });
+            if (allBounds.length > 0) {
+                var combined = allBounds.reduce(function(acc, b) { return acc.extend(b); }, allBounds[0]);
+                map.fitBounds(combined, {padding: [20, 20]});
+            }
+            document.getElementById('downloadBtn').disabled = allBounds.length === 0;
+            updateBufferPreview();
+        }
+
+        fetch('/static/countries.geojson')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                countriesData = data;
+
+                var countryList = document.getElementById('country_list');
+                data.features.map(function(f) { return f.properties.ADMIN; }).sort().forEach(function(name) {
+                    var label = document.createElement('label');
+                    label.style.cssText = 'display:block; white-space:nowrap; cursor:pointer;';
+                    var cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = name;
+                    cb.style.marginRight = '4px';
+                    label.appendChild(cb);
+                    label.appendChild(document.createTextNode(name));
+                    countryList.appendChild(label);
+                });
+
+                var continentSelect = document.getElementById('continent_select');
+                [...new Set(data.features.map(function(f) { return f.properties.CONTINENT; }))].filter(Boolean).sort().forEach(function(name) {
+                    var opt = document.createElement('option');
+                    opt.value = name;
+                    opt.text = name;
+                    continentSelect.appendChild(opt);
+                });
+
+                refreshPresetList();
+            });
+
+        function getCheckedCountries() {
+            return Array.from(document.querySelectorAll('#country_list input[type=checkbox]:checked')).map(function(cb) { return cb.value; });
+        }
+
+        function clearCountryCheckboxes() {
+            document.querySelectorAll('#country_list input[type=checkbox]').forEach(function(cb) { cb.checked = false; });
+        }
+
+        function setCheckedCountries(names) {
+            document.querySelectorAll('#country_list input[type=checkbox]').forEach(function(cb) {
+                cb.checked = names.indexOf(cb.value) !== -1;
+            });
+        }
+
+        document.getElementById('country_list').addEventListener('change', function(e) {
+            if (e.target.type !== 'checkbox' || !countriesData) return;
+            document.getElementById('continent_select').value = '';
+            var selected = getCheckedCountries();
+            var features = countriesData.features.filter(function(f) { return selected.indexOf(f.properties.ADMIN) !== -1; });
+            if (features.length > 0) drawFeatures(features);
+            else { drawnItems.clearLayers(); bufferLayer.clearLayers(); document.getElementById('downloadBtn').disabled = true; }
+        });
+
+        document.getElementById('clearCountryBtn').addEventListener('click', function() {
+            clearCountryCheckboxes();
+            drawnItems.clearLayers();
+            bufferLayer.clearLayers();
+            document.getElementById('downloadBtn').disabled = true;
+        });
+
+        document.getElementById('continent_select').addEventListener('change', function() {
+            if (!this.value || !countriesData) return;
+            var features = countriesData.features.filter(function(f) { return f.properties.CONTINENT === this.value; }, this);
+            setCheckedCountries(features.map(function(f) { return f.properties.ADMIN; }));
+            drawFeatures(features);
+        });
+
+        document.getElementById('clearContinentBtn').addEventListener('click', function() {
+            document.getElementById('continent_select').value = '';
+            clearCountryCheckboxes();
+            drawnItems.clearLayers();
+            bufferLayer.clearLayers();
+            document.getElementById('downloadBtn').disabled = true;
+        });
+
+        // Presets (stored server-side)
+        var presetsCache = {};
+
+        function refreshPresetList() {
+            fetch('/get_presets')
+                .then(function(r) { return r.json(); })
+                .then(function(presets) {
+                    presetsCache = presets;
+                    var select = document.getElementById('preset_select');
+                    var current = select.value;
+                    select.innerHTML = '<option value="">— load a preset —</option>';
+                    Object.keys(presets).sort().forEach(function(name) {
+                        var opt = document.createElement('option');
+                        opt.value = name;
+                        opt.text = name;
+                        select.appendChild(opt);
+                    });
+                    if (current) select.value = current;
+                });
+        }
+
+        document.getElementById('savePresetBtn').addEventListener('click', function() {
+            var name = document.getElementById('preset_name').value.trim();
+            if (!name) { modalAlert('Enter a preset name first.', 'Preset'); return; }
+            var preset = {
+                countries: getCheckedCountries(),
+                continent: document.getElementById('continent_select').value,
+                minZoom: document.getElementById('min_zoom').value,
+                maxZoom: document.getElementById('max_zoom').value,
+                mapStyle: document.getElementById('map_style').value,
+                bufferKm: document.getElementById('buffer_km').value,
+                collection: getCurrentCollection()
+            };
+            fetch('/save_preset?name=' + encodeURIComponent(name), {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(preset)
+            }).then(function() {
+                refreshPresetList();
+                document.getElementById('preset_select').value = name;
+                document.getElementById('preset_name').value = '';
+            });
+        });
+
+        document.getElementById('preset_select').addEventListener('change', function() {
+            if (!this.value || !countriesData) return;
+            var preset = presetsCache[this.value];
+            if (!preset) return;
+            document.getElementById('min_zoom').value = preset.minZoom;
+            document.getElementById('max_zoom').value = preset.maxZoom;
+            document.getElementById('map_style').value = preset.mapStyle;
+            document.getElementById('buffer_km').value = preset.bufferKm || 0;
+            if (preset.collection) {
+                document.getElementById('collection_select').value = preset.collection;
+                setWorkflowEnabled(!!preset.collection);
+                refreshCollectionInfo();
+            }
+            updateTileLayer();
+            updateBufferPreview();
+            document.getElementById('continent_select').value = preset.continent || '';
+            setCheckedCountries(preset.countries);
+            var features = countriesData.features.filter(function(f) { return preset.countries.indexOf(f.properties.ADMIN) !== -1; });
+            if (features.length > 0) drawFeatures(features);
+        });
+
+        document.getElementById('deletePresetBtn').addEventListener('click', function() {
+            var name = document.getElementById('preset_select').value;
+            if (!name) return;
+            modalConfirm('Delete preset "' + name + '"?', 'Delete Preset', function() {
+                fetch('/delete_preset?name=' + encodeURIComponent(name), {method: 'POST'})
+                    .then(function() { refreshPresetList(); });
+            });
+        });
+
+        // Collections
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            var sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            var i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
+        }
+
+        function refreshCollectionInfo() {
+            var name = getCurrentCollection();
+            var el = document.getElementById('collection_info');
+            if (!name) { el.textContent = ''; return; }
+            el.textContent = 'Calculating...';
+            fetch('/collection_info?name=' + encodeURIComponent(name))
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    el.textContent = formatBytes(d.size_bytes) + ' — ' + d.tile_count.toLocaleString() + ' tiles';
+                });
+        }
+
+        var workflowSections = ['section-continent','section-countries','section-style','section-export'];
+
+        function setWorkflowEnabled(enabled) {
+            workflowSections.forEach(function(id) {
+                document.getElementById(id).classList.toggle('section-disabled', !enabled);
+            });
+            document.getElementById('deleteCollectionBtn').disabled = !enabled;
+            document.getElementById('map').classList.toggle('no-collection', !enabled);
+        }
+
+        document.getElementById('collection_select').addEventListener('change', function() {
+            setWorkflowEnabled(!!this.value);
+            refreshCollectionInfo();
+        });
+
+        function getCurrentCollection() {
+            return document.getElementById('collection_select').value;
+        }
+
+        function loadCollections(selectName) {
+            fetch('/get_collections')
+                .then(function(r) { return r.json(); })
+                .then(function(cols) {
+                    var sel = document.getElementById('collection_select');
+                    var current = selectName || sel.value;
+                    sel.innerHTML = '<option value="">— select —</option>';
+                    (cols || []).forEach(function(c) {
+                        var opt = document.createElement('option');
+                        opt.value = c; opt.text = c;
+                        sel.appendChild(opt);
+                    });
+                    if (current) sel.value = current;
+                    setWorkflowEnabled(!!sel.value);
+                });
+        }
+
+        document.getElementById('createCollectionBtn').addEventListener('click', function() {
+            var raw = document.getElementById('collection_name').value.trim();
+            if (!raw) { modalAlert('Enter a collection name.', 'Collection'); return; }
+            var name = raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-_]/g, '');
+            fetch('/create_collection?name=' + encodeURIComponent(name), {method: 'POST'})
+                .then(function(r) {
+                    if (!r.ok) { modalAlert('Failed to create collection.', 'Error'); return; }
+                    loadCollections(name);
+                    document.getElementById('collection_name').value = '';
+                    refreshCollectionInfo();
+                });
+        });
+
+        document.getElementById('deleteCollectionBtn').addEventListener('click', function() {
+            var name = getCurrentCollection();
+            if (!name) return;
+            modalConfirm('Delete collection "' + name + '" and all its tiles?', 'Delete Collection', function() {
+                fetch('/delete_collection?name=' + encodeURIComponent(name), {method: 'POST'})
+                    .then(function() { loadCollections(''); refreshCollectionInfo(); });
+            });
+        });
+
+        document.getElementById('downloadZipBtn').addEventListener('click', function() {
+            var col = getCurrentCollection();
+            var url = '/download_zip' + (col ? '?collection=' + encodeURIComponent(col) : '');
+            window.location.href = url;
+        });
+
+        loadCollections();
+        setWorkflowEnabled(false);
+
+        var bufferLayer = L.layerGroup().addTo(map);
+
+        function expandPolygon(latlngs, bufferDeg) {
+            if (bufferDeg === 0) return latlngs;
+            var sumLat = 0, sumLng = 0;
+            latlngs.forEach(function(p) { sumLat += p.lat; sumLng += p.lng; });
+            var centLat = sumLat / latlngs.length;
+            var centLng = sumLng / latlngs.length;
+            return latlngs.map(function(p) {
+                var dLat = p.lat - centLat, dLng = p.lng - centLng;
+                var dist = Math.sqrt(dLat*dLat + dLng*dLng);
+                if (dist === 0) return p;
+                return L.latLng(p.lat + (dLat/dist)*bufferDeg, p.lng + (dLng/dist)*bufferDeg);
+            });
+        }
+
+        function updateBufferPreview() {
+            bufferLayer.clearLayers();
+            var bufferKm = parseFloat(document.getElementById('buffer_km').value);
+            document.getElementById('buffer_label').textContent = bufferKm + ' km';
+            if (bufferKm === 0) return;
+            var bufferDeg = bufferKm / 111.0;
+            drawnItems.eachLayer(function(layer) {
+                if (layer instanceof L.Polygon) {
+                    var rings = layer.getLatLngs();
+                    var outer = Array.isArray(rings[0]) ? rings[0] : rings;
+                    var expanded = expandPolygon(outer, bufferDeg);
+                    L.polygon(expanded, {
+                        color: '#1a1a1a',
+                        weight: 2,
+                        dashArray: '6,4',
+                        fill: true,
+                        fillColor: '#4a90d9',
+                        fillOpacity: 0.15
+                    }).addTo(bufferLayer);
+                }
+            });
+        }
+
+        document.getElementById('buffer_km').addEventListener('input', updateBufferPreview);
+
+        var missingTilesLayer = L.layerGroup().addTo(map);
+        var cachedTilesLayer = L.layerGroup().addTo(map);
+        var downloadProgressLayer = L.layerGroup().addTo(map);
+
+        function onTileError(e) {
+            var coords = e.coords;
+            var z = coords.z;
+            var x = coords.x;
+            var y = coords.y;
+            var topLeft = map.unproject([x * 256, y * 256], z);
+            var bottomRight = map.unproject([(x + 1) * 256, (y + 1) * 256], z);
+            var bounds = L.latLngBounds(topLeft, bottomRight);
+            L.rectangle(bounds, { color: "red", weight: 1, fill: false }).addTo(missingTilesLayer);
+        }
+
+        function sanitizeStyleName(name) {
+            name = name.replace(/\s+/g, '-');
+            name = name.replace(/[^a-zA-Z0-9-_]/g, '');
+            return name;
+        }
+
+        function updateTileLayer() {
+            var mapStyleSelect = document.getElementById('map_style');
+            var mapStyleUrl = mapStyleSelect.value;
+            var styleName = sanitizeStyleName(mapStyleSelect.options[mapStyleSelect.selectedIndex].text);
+            var useCache = document.getElementById('use_cache').checked;
+            var collection = sanitizeStyleName(getCurrentCollection());
+            var tileUrl = useCache ? `/tiles/${collection}/${styleName}/{z}/{x}/{y}.png` : mapStyleUrl;
+            tileLayer.setUrl(tileUrl);
+            tileLayer.off('loading');
+            tileLayer.off('tileerror', onTileError);
+            missingTilesLayer.clearLayers();
+            if (useCache) {
+                tileLayer.on('loading', function() {
+                    missingTilesLayer.clearLayers();
+                });
+                tileLayer.on('tileerror', onTileError);
+            }
+        }
+
+        fetch('/get_map_sources')
+            .then(response => response.json())
+            .then(data => {
+                var select = document.getElementById('map_style');
+                for (var name in data) {
+                    var option = document.createElement('option');
+                    option.value = data[name];
+                    option.text = name;
+                    select.appendChild(option);
+                }
+                select.value = data['OSM Germany'] || select.options[0].value;
+                updateTileLayer();
+            });
+
+        document.getElementById('map_style').addEventListener('change', function() {
+            updateTileLayer();
+            cachedTilesData = null;
+            if (document.getElementById('view_cached_tiles').checked) {
+                showCachedTiles();
+            }
+        });
+        document.getElementById('use_cache').addEventListener('change', updateTileLayer);
+
+        const minZoomInput = document.getElementById('min_zoom');
+        const maxZoomInput = document.getElementById('max_zoom');
+
+        minZoomInput.addEventListener('change', function() {
+            if (parseInt(this.value) > parseInt(maxZoomInput.value)) {
+                maxZoomInput.value = this.value;
+            }
+        });
+
+        maxZoomInput.addEventListener('change', function() {
+            if (parseInt(this.value) < parseInt(minZoomInput.value)) {
+                minZoomInput.value = this.value;
+            }
+        });
+
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            var polygons = [];
+            drawnItems.eachLayer(function(layer) {
+                if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+                    var latlngs = layer.getLatLngs()[0];
+                    polygons.push(latlngs.map(function(latlng) { return {lat: latlng.lat, lng: latlng.lng}; }));
+                }
+            });
+            if (polygons.length === 0) {
+                modalAlert('Please draw at least one shape.', 'No Area Selected');
+                return;
+            }
+            var payload = {
+                polygons: polygons,
+                min_zoom: parseInt(document.getElementById('min_zoom').value),
+                max_zoom: parseInt(document.getElementById('max_zoom').value),
+                map_style: document.getElementById('map_style').value,
+                convert_to_8bit: document.getElementById('convert_to_8bit').checked,
+                buffer_km: parseFloat(document.getElementById('buffer_km').value),
+                collection: getCurrentCollection()
+            };
+            fetch('/estimate_tiles', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    modalConfirm('Estimated tiles to download: ' + d.count.toLocaleString() + '\n\nStart download?', 'Confirm Download', function() {
+                        socket.send(JSON.stringify({type: 'start_download', data: payload}));
+                    });
+                });
+        });
+
+        document.getElementById('downloadWorldBtn').addEventListener('click', function() {
+            modalPrompt('Max zoom level for world basemap (0–19):', 'World Basemap', '7', function(input) {
+                var maxZoom = parseInt(input, 10);
+                if (isNaN(maxZoom) || maxZoom < 0 || maxZoom > 19) {
+                    modalAlert('Invalid zoom level. Enter a number between 0 and 19.', 'Invalid Input');
+                    return;
+                }
+                var worldTileCount = (Math.pow(4, maxZoom + 1) - 1) / 3;
+                modalConfirm('Estimated tiles to download: ' + Math.round(worldTileCount).toLocaleString() + '\n\nStart world basemap download?', 'Confirm Download', function() {
+                    socket.send(JSON.stringify({type: 'start_world_download', data: {
+                        map_style: document.getElementById('map_style').value,
+                        convert_to_8bit: document.getElementById('convert_to_8bit').checked,
+                        collection: getCurrentCollection(),
+                        max_zoom: maxZoom
+                    }}));
+                });
+            });
+        });
+
+        document.getElementById('cancelBtn').addEventListener('click', function() {
+            modalConfirm('Cancel the current download?', 'Cancel Download', function() {
+                socket.send(JSON.stringify({type: 'cancel_download'}));
+            });
+        });
+
+        document.getElementById('clear404Btn').addEventListener('click', function() {
+            var collection = getCurrentCollection();
+            var mapStyleSelect = document.getElementById('map_style');
+            var style = sanitizeStyleName(mapStyleSelect.options[mapStyleSelect.selectedIndex].text);
+            var info = document.getElementById('clear404Info');
+            modalConfirm('Clear the 404 cache for "' + collection + ' / ' + style + '"?\n\nMissing tiles will be retried on next download.', 'Clear 404 Cache', function() {
+                fetch('/clear_404_cache?collection=' + encodeURIComponent(collection) + '&style=' + encodeURIComponent(style), {method: 'POST'})
+                    .then(function(r) {
+                        info.textContent = r.ok ? 'Cache cleared.' : 'Failed.';
+                        setTimeout(function() { info.textContent = ''; }, 3000);
+                    });
+            });
+        });
+
+        document.getElementById('view_cached_tiles').addEventListener('change', function() {
+            if (this.checked) {
+                showCachedTiles();
+            } else {
+                cachedTilesData = null;
+                cachedTilesLayer.clearLayers();
+            }
+        });
+
+        document.getElementById('coverage_zoom').addEventListener('change', function() {
+            if (document.getElementById('view_cached_tiles').checked) renderCachedTiles();
+        });
+
+        var cachedTilesData = null;
+
+        function renderCachedTiles() {
+            cachedTilesLayer.clearLayers();
+            if (!cachedTilesData) return;
+            var sel = document.getElementById('coverage_zoom').value;
+            cachedTilesData.forEach(function(tile) {
+                var z = tile[0], x = tile[1], y = tile[2];
+                if (sel !== 'all' && z !== parseInt(sel)) return;
+                var topLeft = map.unproject([x * 256, y * 256], z);
+                var bottomRight = map.unproject([(x + 1) * 256, (y + 1) * 256], z);
+                L.rectangle(L.latLngBounds(topLeft, bottomRight), { color: "#0000ff", weight: 1, fill: false }).addTo(cachedTilesLayer);
+            });
+        }
+
+        function showCachedTiles() {
+            cachedTilesLayer.clearLayers();
+            var mapStyleSelect = document.getElementById('map_style');
+            var styleName = sanitizeStyleName(mapStyleSelect.options[mapStyleSelect.selectedIndex].text);
+            var collection = sanitizeStyleName(getCurrentCollection());
+            fetch(`/get_cached_tiles/${collection}/${styleName}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data) return;
+                    cachedTilesData = data;
+                    var levels = [...new Set(data.map(function(t) { return t[0]; }))].sort(function(a,b){return a-b;});
+                    var zoomSel = document.getElementById('coverage_zoom');
+                    var prev = zoomSel.value;
+                    zoomSel.innerHTML = '<option value="all">all levels</option>';
+                    levels.forEach(function(z) {
+                        var opt = document.createElement('option');
+                        opt.value = z;
+                        opt.text = 'level ' + z;
+                        zoomSel.appendChild(opt);
+                    });
+                    if (prev && [...zoomSel.options].some(function(o){return o.value===prev;})) zoomSel.value = prev;
+                    renderCachedTiles();
+                });
+        }
+
+        var totalTiles = 0;
+        var downloadedTiles = 0;
+        var skippedTiles = 0;
+        var failedTiles = 0;
+        var downloadStartTime = null;
+        var activeCollection = '';
+
+        function handleSocketMessage(event) {
+            const message = JSON.parse(event.data);
+            const data = message.data;
+
+            switch (message.type) {
+                case 'download_started':
+                    totalTiles = data.total_tiles;
+                    downloadedTiles = 0;
+                    skippedTiles = 0;
+                    failedTiles = 0;
+                    downloadStartTime = null;
+                    activeCollection = getCurrentCollection();
+                    downloadProgressLayer.clearLayers();
+                    document.getElementById('downloadBtn').disabled = true;
+                    document.getElementById('downloadWorldBtn').disabled = true;
+                    document.getElementById('cancelBtn').disabled = false;
+                    document.getElementById('progress').innerHTML = 'Scanning cache...';
+                    break;
+                case 'prescan_complete':
+                    skippedTiles = data.skipped;
+                    downloadStartTime = Date.now();
+                    document.getElementById('progress').innerHTML =
+                        `${data.skipped.toLocaleString()} cached — ${data.to_download.toLocaleString()} to download`;
+                    updateProgress();
+                    break;
+                case 'tile_downloaded':
+                    downloadedTiles++;
+                    updateProgress();
+                    var bounds = [[data.south, data.west], [data.north, data.east]];
+                    L.rectangle(bounds, { color: "#00ff44", weight: 1.5, fill: false }).addTo(downloadProgressLayer);
+                    break;
+                case 'tile_skipped':
+                    skippedTiles++;
+                    updateProgress();
+                    var bounds = [[data.south, data.west], [data.north, data.east]];
+                    L.rectangle(bounds, { color: "#aaaaaa", weight: 1, fill: false }).addTo(downloadProgressLayer);
+                    break;
+                case 'tile_failed':
+                    failedTiles++;
+                    updateProgress();
+                    var bounds = [[data.south, data.west], [data.north, data.east]];
+                    L.rectangle(bounds, { color: "#ff2200", weight: 1.5, fill: false }).addTo(downloadProgressLayer);
+                    break;
+                case 'download_complete':
+                    document.getElementById('downloadBtn').disabled = false;
+                    document.getElementById('downloadWorldBtn').disabled = false;
+                    document.getElementById('cancelBtn').disabled = true;
+                    downloadProgressLayer.clearLayers();
+                    var elapsed = downloadStartTime ? ((Date.now() - downloadStartTime) / 1000).toFixed(0) : '?';
+                    var summary = `<strong>Download complete</strong><br>` +
+                                  `Collection: ${activeCollection || '—'}<br>` +
+                                  `Downloaded: ${downloadedTiles.toLocaleString()}<br>` +
+                                  `Skipped: ${skippedTiles.toLocaleString()}<br>` +
+                                  `Failed: ${failedTiles.toLocaleString()}<br>` +
+                                  `Total: ${totalTiles.toLocaleString()} — ${elapsed}s`;
+                    document.getElementById('progress').innerHTML = summary;
+                    refreshCollectionInfo();
+                    if (document.getElementById('view_cached_tiles').checked) showCachedTiles();
+                    break;
+                case 'download_cancelled':
+                    document.getElementById('downloadBtn').disabled = false;
+                    document.getElementById('downloadWorldBtn').disabled = false;
+                    document.getElementById('cancelBtn').disabled = true;
+                    downloadProgressLayer.clearLayers();
+                    document.getElementById('progress').innerHTML = 'Download cancelled';
+                    refreshCollectionInfo();
+                    if (document.getElementById('view_cached_tiles').checked) showCachedTiles();
+                    break;
+                case 'error':
+                    document.getElementById('downloadBtn').disabled = false;
+                    document.getElementById('downloadWorldBtn').disabled = false;
+                    document.getElementById('cancelBtn').disabled = true;
+                    document.getElementById('progress').innerHTML = 'Ready';
+                    modalAlert(data.message, 'Error');
+                    break;
+            }
+        }
+
+        function updateProgress() {
+            if (totalTiles === 0) {
+                document.getElementById('progress').innerHTML = 'Starting...';
+                return;
+            }
+            var processed = downloadedTiles + skippedTiles + failedTiles;
+            var progress = (processed / totalTiles * 100).toFixed(1);
+
+            var speedStr = '';
+            var etaStr = '';
+            if (downloadStartTime && downloadedTiles > 0) {
+                var elapsed = (Date.now() - downloadStartTime) / 1000;
+                var speed = Math.round(downloadedTiles / elapsed);
+                var remaining = totalTiles - processed;
+                var etaSec = speed > 0 ? Math.round(remaining / speed) : 0;
+                speedStr = speed + ' tiles/sec';
+                if (etaSec >= 60) {
+                    etaStr = 'ETA: ~' + Math.ceil(etaSec / 60) + ' min';
+                } else {
+                    etaStr = 'ETA: ~' + etaSec + 's';
+                }
+            }
+
+            var remaining = totalTiles - processed;
+            var progressText = `<strong>${progress}%</strong> — ${activeCollection || '—'}<br>` +
+                               `Downloaded: ${downloadedTiles.toLocaleString()} / Skipped: ${skippedTiles.toLocaleString()}<br>` +
+                               `Failed: ${failedTiles.toLocaleString()} / Remaining: ${remaining.toLocaleString()}<br>` +
+                               `Total: ${totalTiles.toLocaleString()}` +
+                               (speedStr ? `<br>${speedStr} &nbsp;${etaStr}` : '');
+            document.getElementById('progress').innerHTML = progressText;
+        }
+    </script>
+</body>
+</html>

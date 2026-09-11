@@ -1,0 +1,24 @@
+name = "offline-map"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["sidebar", "routes"]
+
+[deps]
+apt = ["golang-go"]
+setup = "setup.sh"
+check = "check.sh"
+
+[frontend]
+scripts = ["frontend/offline_map_panel.js"]
+styles = ["frontend/offline_map_panel.css"]
+
+[sidebar]
+route = "offline-map"
+label = "Offline Maps"
+category = "ops"
+icon = "map"
+
+[meta]
+description = "Download OpenStreetMap tiles for offline use. Builds and manages Cyclenerd/offline-map-tile-downloader (vendored at offline-map-src/) as a subprocess with its own web UI for picking a download area."
+homepage = "https://github.com/Cyclenerd/offline-map-tile-downloader"
+author = "Einstein PD2EMC"

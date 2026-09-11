@@ -1,0 +1,3 @@
+bx=14
+germany 13
+rest 12

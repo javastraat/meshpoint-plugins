@@ -30,6 +30,21 @@
       "homepage": "https://github.com/KMX415/meshpoint",
       "has_setup": false,
       "hook_host": "hello-world-github"
+    },
+    {
+      "id": "offline-map",
+      "kind": "app",
+      "path": "apps/offline-map",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "sidebar",
+        "routes"
+      ],
+      "description": "Download OpenStreetMap tiles for offline use. Builds and manages Cyclenerd/offline-map-tile-downloader (vendored at offline-map-src/) as a subprocess with its own web UI for picking a download area.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/Cyclenerd/offline-map-tile-downloader",
+      "has_setup": true
     }
   ],
   "themes": [
