@@ -30,7 +30,10 @@ from __future__ import annotations
 from typing import Any
 
 _DEFAULTS: dict[str, Any] = {
-    "port": 8080,
+    # 8081, not the downloader's own upstream default of 8080 -- that's
+    # Meshpoint's own dashboard.port default (config/default.yaml), so
+    # 8080 here would collide with the dashboard itself on a stock setup.
+    "port": 8081,
     "maps_directory": "data/offline-map/maps",
     "presets_directory": "data/offline-map/presets",
     "log_file": "data/offline-map/offline-map.log",

@@ -55,7 +55,7 @@ async def get_settings():
 
 
 class SettingsUpdate(BaseModel):
-    port: int = Field(8080, ge=1, le=65535)
+    port: int = Field(8081, ge=1, le=65535)  # not 8080 -- see state.py's _DEFAULTS comment
     maps_directory: str = Field(..., min_length=1)
     presets_directory: str = Field(..., min_length=1)
     log_file: str = Field(..., min_length=1)
