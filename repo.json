@@ -41,6 +41,15 @@
       "description": "GitHub's dark default, calm and neutral.",
       "author": "GitHub Primer",
       "homepage": "https://primer.style/"
+    },
+    {
+      "id": "github-light-theme",
+      "kind": "theme",
+      "path": "themes/github-light-theme",
+      "version": "1.0.0",
+      "description": "GitHub's light default, calm and neutral.",
+      "author": "GitHub Primer",
+      "homepage": "https://primer.style/"
     }
   ]
 }

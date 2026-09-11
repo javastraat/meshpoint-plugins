@@ -44,3 +44,6 @@ view — a stale or edited catalog can't smuggle anything in.
 | id | kind | what |
 |----|------|------|
 | `hello-world-github` | app | Minimal sidebar-page example (test plugin) |
+| `hello-world-github-hook` | app | Minimal hook example (test plugin) |
+| `github-dark-theme` | theme | GitHub's dark default (Primer) |
+| `github-light-theme` | theme | GitHub's light default (Primer) |

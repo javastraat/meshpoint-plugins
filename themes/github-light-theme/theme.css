@@ -1,0 +1,298 @@
+/* GitHub Light -- Primer (https://primer.style/) (MIT palette, own CSS).
+ *
+ * Unlike github-dark-theme, this can't be a shallow token override: the
+ * app's baseline CSS is dark-first (bare :root in dashboard.css), and the
+ * built-in light theme's ~230 lines of structural patches (map filters,
+ * topbar/modal/chat hardcoded fills, native color-scheme, neon glows) are
+ * all scoped literally to `html[data-theme="light"]` -- nothing generic a
+ * plugin can hook into. So this file mirrors that structural pass in full,
+ * retargeted to this theme's own id and repainted with Primer's light
+ * palette instead of the built-in light theme's brand colours. */
+
+html[data-theme="github-light-theme"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f6f8fa;
+    --bg-card: #ffffff;
+    --bg-glass: rgba(255, 255, 255, 0.94);
+    --border: #d0d7de;
+    --border-glow: rgba(9, 105, 218, 0.28);
+    --text-primary: #1f2328;
+    --text-secondary: #59636e;
+    --text-muted: #6e7781;
+    --accent-green: #1a7f37;
+    --accent-cyan: #1b7c83;
+    --accent-blue: #0969da;
+    --accent-purple: #8250df;
+    --accent-amber: #9a6700;
+    --accent-red: #d1242f;
+    --glow-cyan: 0 1px 3px rgba(31, 35, 40, 0.12);
+    --glow-green: 0 1px 3px rgba(31, 35, 40, 0.12);
+    --glow-amber: 0 1px 3px rgba(154, 103, 0, 0.18);
+    --glow-red: 0 1px 3px rgba(209, 36, 47, 0.18);
+
+    --overlay-weak: rgba(31, 35, 40, 0.045);
+    --overlay-med: rgba(31, 35, 40, 0.08);
+    --overlay-strong: rgba(31, 35, 40, 0.14);
+    --hairline: rgba(31, 35, 40, 0.12);
+    --sunken: rgba(31, 35, 40, 0.035);
+    --bg-inset: #f6f8fa;
+    --bg-popover: #ffffff;
+    --scrim: rgba(31, 35, 40, 0.38);
+    --brand-amber: #9a6700;
+
+    --sidebar-bg: #ffffff;
+    --sidebar-border: #d0d7de;
+    --sidebar-item-hover: rgba(9, 105, 218, 0.08);
+    --sidebar-item-active-bg: rgba(26, 127, 55, 0.12);
+    --sidebar-accent: #0969da;
+    --sidebar-text: #1f2328;
+    --sidebar-text-muted: #6e7781;
+
+    /* Messages + Terminal ship their own local token sets (defined on
+     * bare :root in messaging.css / terminal.css). Redefine them here so
+     * those two screens flip too. */
+    --msg-bg: #ffffff;
+    --msg-bg-deep: #f6f8fa;
+    --msg-bg-strip: #f3f4f6;
+    --msg-border: rgba(31, 35, 40, 0.1);
+    --msg-border-strong: rgba(31, 35, 40, 0.16);
+    --msg-accent: #9a6700;
+    --msg-accent-soft: rgba(154, 103, 0, 0.14);
+    --msg-text: #1f2328;
+    --msg-text-dim: rgba(31, 35, 40, 0.62);
+    --msg-text-faint: rgba(31, 35, 40, 0.42);
+    --msg-mt: #0969da;
+    --msg-mc: #1a7f37;
+    --msg-danger: #d1242f;
+
+    --term-bg: #ffffff;
+    --term-bg-deep: #f6f8fa;
+    --term-bg-strip: #f3f4f6;
+    --term-border: rgba(31, 35, 40, 0.1);
+    --term-border-strong: rgba(31, 35, 40, 0.16);
+    --term-accent: #9a6700;
+    --term-accent-soft: rgba(154, 103, 0, 0.14);
+    --term-danger: #d1242f;
+    --term-success: #1a7f37;
+    --term-text: #1f2328;
+    --term-text-dim: rgba(31, 35, 40, 0.6);
+    --term-text-faint: rgba(31, 35, 40, 0.4);
+}
+
+/* Give cards/panels a real edge -- on a light bg the dark theme's
+ * glow-only separation disappears. */
+html[data-theme="github-light-theme"] .stat-card,
+html[data-theme="github-light-theme"] .panel,
+html[data-theme="github-light-theme"] .r-card,
+html[data-theme="github-light-theme"] .since-line,
+html[data-theme="github-light-theme"] .keymap__panel,
+html[data-theme="github-light-theme"] .cmd-palette__panel {
+    border-color: #d0d7de !important;
+    box-shadow: 0 1px 3px rgba(31, 35, 40, 0.08) !important;
+}
+
+/* Faint accent-tint gradients baked into card backgrounds -- a
+ * near-invisible touch on dark, a visible green/blue/cyan wash on
+ * white. Flatten to the plain card surface so rows of cards read as
+ * uniform. */
+html[data-theme="github-light-theme"] .stat-card--relay,
+html[data-theme="github-light-theme"] .stat-card--system,
+html[data-theme="github-light-theme"] .rp-card,
+html[data-theme="github-light-theme"] .update-history {
+    background: var(--bg-card);
+}
+
+/* Same, for the cyan glow behind the NodeInfo-broadcast countdown
+ * (an inner block, so drop it to transparent rather than a surface). */
+html[data-theme="github-light-theme"] .r-countdown {
+    background: transparent;
+}
+
+/* Sent chat bubbles hardcode a bright amber gradient -- right on dark,
+ * loud on white. Calmer amber + softer shadow for light. */
+html[data-theme="github-light-theme"] .msg-bubble--sent {
+    background: linear-gradient(135deg, #d4a72c 0%, #9a6700 100%);
+    box-shadow: 0 4px 12px -8px rgba(154, 103, 0, 0.4);
+}
+
+/* Drop the baked-in amber wash on the chat pane and the halo behind
+ * the empty-state icon -- flat surfaces on light. */
+html[data-theme="github-light-theme"] .msg-chat {
+    background: var(--msg-bg);
+}
+
+html[data-theme="github-light-theme"] .msg-chat__placeholder-icon {
+    background: var(--overlay-weak);
+    box-shadow: none;
+}
+
+/* Neon value glows read as blur on white. */
+html[data-theme="github-light-theme"] .stat-card__value,
+html[data-theme="github-light-theme"] .r-readout-grid dd,
+html[data-theme="github-light-theme"] [class$="__value"] {
+    text-shadow: none;
+}
+
+/* Container families that still hardcode a dark hex / gradient fill.
+ * Force them onto the card surface so their (already tokenized) text
+ * is legible. Broad on purpose -- a flat light card beats an
+ * unreadable dark one. */
+html[data-theme="github-light-theme"] .cfg-card,
+html[data-theme="github-light-theme"] .cfg-empty,
+html[data-theme="github-light-theme"] .dangerous-card,
+html[data-theme="github-light-theme"] .dangerous-panel,
+html[data-theme="github-light-theme"] .backup-restore-card,
+html[data-theme="github-light-theme"] .auth-card,
+html[data-theme="github-light-theme"] .auth-panel,
+html[data-theme="github-light-theme"] .forbidden-card,
+html[data-theme="github-light-theme"] .update-card,
+html[data-theme="github-light-theme"] .release-notes,
+html[data-theme="github-light-theme"] .danger-modal__sheet,
+html[data-theme="github-light-theme"] .packet-modal,
+html[data-theme="github-light-theme"] .pkt-modal,
+html[data-theme="github-light-theme"] .node-drawer,
+html[data-theme="github-light-theme"] .nd-drawer,
+html[data-theme="github-light-theme"] .lsn-panel,
+html[data-theme="github-light-theme"] .lw-panel,
+html[data-theme="github-light-theme"] .adsb-table-wrap,
+html[data-theme="github-light-theme"] .ch-table,
+html[data-theme="github-light-theme"] .neighbours-modal,
+html[data-theme="github-light-theme"] .capcode-modal {
+    background: var(--bg-card) !important;
+    border-color: var(--border) !important;
+}
+
+/* Maps: the dashboard / topology / ADS-B maps run plain OSM raster
+ * tiles under a CSS invert filter to fake a dark basemap. Drop the
+ * filter so this theme gets the tiles' native light rendering. */
+html[data-theme="github-light-theme"] #map .leaflet-tile-pane,
+html[data-theme="github-light-theme"] .topo-map .leaflet-tile-pane,
+html[data-theme="github-light-theme"] .adsb-map .leaflet-tile-pane {
+    filter: none;
+}
+
+html[data-theme="github-light-theme"] .adsb-map {
+    background: var(--bg-secondary);
+}
+
+html[data-theme="github-light-theme"] #map .leaflet-control-attribution,
+html[data-theme="github-light-theme"] .adsb-map .leaflet-control-attribution {
+    background: rgba(255, 255, 255, 0.82) !important;
+}
+
+/* RTL-SDR "Listener" -- the Radio / DAB+ device panel and the analogue
+ * slide-rule dial are hardcoded near-black skeuomorphic bezels. Give
+ * them light equivalents and drop the neon bloom on the big readout. */
+html[data-theme="github-light-theme"] .lsn-radio {
+    background:
+        radial-gradient(120% 80% at 50% -20%, rgba(9, 105, 218, 0.06), transparent 60%),
+        linear-gradient(180deg, #f4f6fa, #e9edf4);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        inset 0 0 30px rgba(31, 35, 40, 0.05);
+}
+
+html[data-theme="github-light-theme"] .lsn-ana__dial {
+    background:
+        radial-gradient(120% 140% at 50% -30%, rgba(154, 103, 0, 0.1), transparent 60%),
+        linear-gradient(180deg, #fbf4e8, #f1e8d6);
+    box-shadow: inset 0 0 18px rgba(31, 35, 40, 0.06);
+}
+
+html[data-theme="github-light-theme"] .lsn-freq__num,
+html[data-theme="github-light-theme"] .lsn-freq__unit,
+html[data-theme="github-light-theme"] .lsn-station__text--big {
+    text-shadow: none;
+}
+
+/* Selected skin toggle / active preset / preset tab -- a lit bright fill
+ * reads muddy on white. Lighten to a tint + accent text/border. */
+html[data-theme="github-light-theme"] .lsn-skins button.active {
+    background: rgba(9, 105, 218, 0.14);
+    color: var(--accent-cyan);
+}
+
+html[data-theme="github-light-theme"] .lsn-presets button.lsn-preset--active,
+html[data-theme="github-light-theme"] .lsn-preset-tab.active {
+    background: rgba(9, 105, 218, 0.1);
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    box-shadow: none;
+}
+
+html[data-theme="github-light-theme"] .lsn-presets button.lsn-preset--active .lsn-preset-row__freq {
+    color: var(--text-secondary);
+}
+
+html[data-theme="github-light-theme"] .lsn-presets button.lsn-preset--active .lsn-fav,
+html[data-theme="github-light-theme"] .lsn-presets button.lsn-preset--active .lsn-fav.on {
+    color: var(--accent-amber);
+}
+
+/* Modal/drawer backdrops: the dark scrim is fine, just lighten it a bit. */
+html[data-theme="github-light-theme"] .danger-modal--open .danger-modal__backdrop {
+    background: rgba(31, 35, 40, 0.35) !important;
+}
+
+html[data-theme="github-light-theme"] .nd-backdrop,
+html[data-theme="github-light-theme"] [class$="__backdrop"]:not(.danger-modal__backdrop) {
+    background: rgba(31, 35, 40, 0.35) !important;
+}
+
+/* Topbar: the strip and its protocol chips hardcode a dark translucent
+ * fill + neon border glows that wash out on a light bg. */
+html[data-theme="github-light-theme"] .topbar {
+    background: linear-gradient(180deg, #f6f8fa 0%, #eaeef2 100%);
+    border-bottom-color: #d0d7de;
+}
+
+html[data-theme="github-light-theme"] .topbar::after {
+    opacity: 0.2;
+}
+
+html[data-theme="github-light-theme"] .topbar-meshtastic,
+html[data-theme="github-light-theme"] .topbar-meshcore,
+html[data-theme="github-light-theme"] .topbar-serial,
+html[data-theme="github-light-theme"] .topbar-radio {
+    background: #ffffff;
+    border-color: #d0d7de;
+    box-shadow: 0 1px 2px rgba(31, 35, 40, 0.08);
+}
+
+html[data-theme="github-light-theme"] .topbar-meshtastic:hover,
+html[data-theme="github-light-theme"] .topbar-meshcore:hover,
+html[data-theme="github-light-theme"] .topbar-serial:hover,
+html[data-theme="github-light-theme"] .topbar-radio:hover {
+    border-color: #8c959f;
+    box-shadow: 0 1px 4px rgba(31, 35, 40, 0.14);
+}
+
+/* Kill the neon text-shadow on chip brand labels + readouts. */
+html[data-theme="github-light-theme"] .topbar [class$="__brand"],
+html[data-theme="github-light-theme"] .topbar [class$="__freq"],
+html[data-theme="github-light-theme"] .topbar [class$="__preset"],
+html[data-theme="github-light-theme"] .topbar [class$="__call"],
+html[data-theme="github-light-theme"] .topbar [class$="__channel"],
+html[data-theme="github-light-theme"] .topbar [class$="__name"],
+html[data-theme="github-light-theme"] .topbar [class$="__region"] {
+    text-shadow: none;
+}
+
+/* Chip divider bars are translucent-white -- invisible on white. */
+html[data-theme="github-light-theme"] .topbar [class$="__brand"],
+html[data-theme="github-light-theme"] .topbar [class$="__sep--bar"] {
+    border-color: #d8dee4;
+}
+
+/* Settings -> Updates panel and native <select> dropdowns hardcode
+ * `color-scheme: dark` so Chrome/Windows paint the OS-native option
+ * popup matching this app's dark-first baseline. `color-scheme` also
+ * drives every other native UI Chrome renders within that element's
+ * box -- notably the page's own scrollbar -- so left unscoped it stays
+ * dark even under this theme. Reset back to the theme's actual polarity
+ * here. */
+html[data-theme="github-light-theme"] .update-panel,
+html[data-theme="github-light-theme"] select.cfg-field__input,
+html[data-theme="github-light-theme"] select.update-field__input {
+    color-scheme: light;
+}
