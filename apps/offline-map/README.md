@@ -12,6 +12,15 @@ embedded in Meshpoint's dashboard) is where you actually pick an area on a
 map and download tiles -- this plugin only builds it and manages the
 process + its config.
 
+**Once you've downloaded some tiles, the same page has a "Dashboard map
+source" picker** that points Meshpoint's own Dashboard + Topology maps at
+them (via `dashboard.map_tile_url`, `PUT /api/config/dashboard`) -- no
+restart needed, and the downloader doesn't need to be running for this
+part: `GET /api/offline-map/tiles/<collection>/<style>/{z}/{x}/{y}.png`
+reads tiles straight off disk. That route is the actual point of this
+plugin for offline/emergency use -- the downloader itself only needs to
+run for the (online) act of fetching new tiles.
+
 ## ⚠️ Known gap -- read before starting it on a shared network
 
 The upstream binary has a `-port` flag but **no `-host`/`-bind` flag** --
@@ -62,7 +71,8 @@ backend/state.py                     settings (plugins.offline-map.*), same
 backend/process.py                   subprocess start/stop/status -- same shape as
                                       the RTL-SDR listeners' own process management,
                                       minus the shared-hardware arbitration they need
-backend/routes.py                    /api/offline-map/{status,settings,start,stop}
+backend/routes.py                    /api/offline-map/{status,settings,start,stop,
+                                      collections,tiles/<collection>/<style>/{z}/{x}/{y}.png}
 frontend/offline_map_panel.js        the sidebar page (registerSidebarPage)
 frontend/offline_map_panel.css       layout only -- reuses the app's own
                                       .auth-card / .auth-status / .cfg-field tokens

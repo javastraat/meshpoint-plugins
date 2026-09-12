@@ -12,9 +12,12 @@ the stricter gate.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from src.api.auth.dependencies import require_admin
@@ -24,6 +27,14 @@ from . import state
 from .process import OfflineMapProcess
 
 router = APIRouter(prefix="/api/offline-map", tags=["offline-map"])
+
+# Matches offline-map-tile-downloader's own sanitizeStyleName() charset
+# (main.go: `[^a-zA-Z0-9-_]+` stripped) -- a collection/style name on disk
+# never contains anything outside this, so rejecting anything else here
+# (rather than trying to "clean" it) also rejects a bare ".." path segment,
+# which -- unlike "../foo" -- Starlette's per-segment route matching does
+# NOT stop on its own (no slash to cross).
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 _process: Optional[OfflineMapProcess] = None
 
@@ -96,3 +107,43 @@ async def stop(_claims: SessionClaims = Depends(require_admin)):
     proc = _require_process()
     await proc.stop()
     return proc.status()
+
+
+# --- Serving already-downloaded tiles, without the downloader running ------
+#
+# Same URL shape as the downloader's own `/tiles/<collection>/<style>/
+# <z>/<x>/<y>.png` (main.go's serveTile()), so a `dashboard.map_tile_url`
+# pointed here is a drop-in swap for pointing at the downloader itself --
+# except this reads straight off disk, so nothing needs to be left running
+# just to view tiles you already have. Read-only, so no admin gate: viewing
+# the map is already something any logged-in session (viewer included) can
+# do today.
+
+@router.get("/collections")
+async def list_collections():
+    """Every ``<collection>/<style>`` pair actually present on disk, so the
+    Settings page (or a docs link) can tell you what to put in
+    ``dashboard.map_tile_url`` without needing to SSH in and look."""
+    maps_dir = Path(state.to_dict()["maps_directory"])
+    if not maps_dir.is_dir():
+        return {"collections": []}
+    found = []
+    for collection_dir in sorted(maps_dir.iterdir()):
+        if not collection_dir.is_dir():
+            continue
+        for style_dir in sorted(collection_dir.iterdir()):
+            if style_dir.is_dir():
+                found.append({"collection": collection_dir.name, "style": style_dir.name})
+    return {"collections": found}
+
+
+@router.get("/tiles/{collection}/{style}/{z}/{x}/{y}.png")
+async def serve_tile(collection: str, style: str, z: int, x: int, y: int):
+    if not (_SAFE_NAME_RE.match(collection) and _SAFE_NAME_RE.match(style)):
+        raise HTTPException(400, "invalid collection/style name")
+
+    maps_dir = Path(state.to_dict()["maps_directory"]).resolve()
+    tile_path = maps_dir / collection / style / str(z) / str(x) / f"{y}.png"
+    if not tile_path.is_file():
+        raise HTTPException(404, "tile not found")
+    return FileResponse(tile_path, media_type="image/png")
