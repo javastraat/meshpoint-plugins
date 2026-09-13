@@ -118,7 +118,18 @@ class OfflineMapPage {
     // between the public OSM server and tiles already downloaded here --
 
     _localTileUrl(collection, style) {
-        return `${window.location.origin}/api/offline-map/tiles/${collection}/${style}/{z}/{x}/{y}.png`;
+        // Relative, not `${window.location.origin}/...` -- Meshpoint is
+        // typically reachable at several valid names (LAN IP, .local
+        // mDNS, a VPN address...) and baking in whichever one happened
+        // to be active when this button was clicked breaks the map the
+        // moment someone visits through a different one: even with a
+        // cert that covers both, the browser has never been asked to
+        // trust it for that *other* origin specifically, so the tile
+        // requests fail silently in the background (no click-through
+        // prompt for subresource loads). A relative path always resolves
+        // against whatever origin the dashboard is currently being
+        // viewed from.
+        return `/api/offline-map/tiles/${collection}/${style}/{z}/{x}/{y}.png`;
     }
 
     async _loadTileSource() {
