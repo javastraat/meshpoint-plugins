@@ -1,0 +1,30 @@
+name = "rbrowser"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["sidebar"]    # a whole top-level sidebar page of its own --
+                           # no "routes": reads the reticulum plugin's
+                           # already-public /api/reticulum/nomad/* endpoints
+                           # instead of adding its own backend.
+requires = "reticulum"    # not a [hook] -- this page doesn't attach to
+                           # reticulum's own page, it just has nothing to
+                           # browse without it running. Enforced server-side:
+                           # PUT /api/plugins/rbrowser refuses to enable it
+                           # until reticulum is enabled, and disabling
+                           # reticulum cascades to disable this too.
+
+[frontend]
+scripts = ["frontend/rbrowser_panel.js"]
+styles = ["frontend/rbrowser_panel.css"]
+
+[sidebar]
+route = "rbrowser"
+label = "rBrowser"
+category = "networks"
+icon = "reticulum"    # same glyph as the reticulum plugin's own nav item --
+                       # icon names are a shared curated set, not exclusive
+                       # to one plugin.
+
+[meta]
+description = "A full multi-tab NomadNet browser for Reticulum -- tabs, address bar, back/forward/reload, favourites (shared with the Reticulum page's own Browse tab), raw/rendered view toggle, and keyboard shortcuts. Feature set and name inspired by fr33n0w's rBrowser (https://github.com/fr33n0w/rBrowser, MIT licensed) -- see README.md for full credit; this is a clean-room implementation built for Meshpoint's own plugin architecture, not a code port (rBrowser is a single-file Flask app, structurally very different from a Meshpoint sidebar plugin). Requires the reticulum plugin enabled."
+homepage = "https://github.com/fr33n0w/rBrowser"
+author = "Einstein PD2EMC"

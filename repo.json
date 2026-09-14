@@ -45,6 +45,21 @@
       "author": "Einstein PD2EMC",
       "homepage": "https://github.com/Cyclenerd/offline-map-tile-downloader",
       "has_setup": true
+    },
+    {
+      "id": "rbrowser",
+      "kind": "app",
+      "path": "apps/rbrowser",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "sidebar"
+      ],
+      "description": "A full multi-tab NomadNet browser for Reticulum -- tabs, address bar, back/forward/reload, favourites (shared with the Reticulum page's own Browse tab), raw/rendered view toggle, and keyboard shortcuts. Feature set and name inspired by fr33n0w's rBrowser (https://github.com/fr33n0w/rBrowser, MIT licensed) -- see README.md for full credit; this is a clean-room implementation built for Meshpoint's own plugin architecture, not a code port (rBrowser is a single-file Flask app, structurally very different from a Meshpoint sidebar plugin). Requires the reticulum plugin enabled.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/fr33n0w/rBrowser",
+      "has_setup": false,
+      "requires": "reticulum"
     }
   ],
   "themes": [

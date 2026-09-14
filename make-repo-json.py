@@ -85,6 +85,21 @@ def _plugin_entry(folder: Path) -> dict | None:
     elif hook_host and "hook" not in provides:
         _warn(f"apps/{name}: has [hook].host but doesn't provide 'hook'")
 
+    # Plain top-level 'requires' -- another plugin's *name* (not a route,
+    # unlike [hook].host) this one needs enabled but doesn't attach UI
+    # into. Same generalized dependency Meshpoint's own plugin_routes.py
+    # enforces server-side (refuses to enable this plugin until the
+    # required one is, cascades disable the other way) -- surfaced here
+    # too so a browse catalog can show "requires: X" before install, same
+    # value hook_host already gives hook plugins.
+    requires = str(data.get("requires") or "").strip()
+    if requires and not _SLUG.match(requires):
+        _warn(f"apps/{name}: 'requires' must be a plugin-name slug [a-z0-9-]")
+        requires = ""
+    if requires and requires == name:
+        _warn(f"apps/{name}: 'requires' can't reference itself")
+        requires = ""
+
     entry = {
         "id": name,
         "kind": "app",
@@ -99,6 +114,8 @@ def _plugin_entry(folder: Path) -> dict | None:
     }
     if hook_host:
         entry["hook_host"] = hook_host
+    if requires:
+        entry["requires"] = requires
     return entry
 
 
