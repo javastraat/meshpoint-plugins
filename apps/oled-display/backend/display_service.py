@@ -124,11 +124,12 @@ class DisplayService:
         from PIL import ImageFont
 
         font = ImageFont.load_default()
-        with canvas(self._device) as draw:
+        cv = canvas(self._device)
+        with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
             draw.text((8, 12), "MESHPOINT", font=font, fill="white")
             draw.text((8, 30), "starting...", font=font, fill="white")
-        self._capture_frame()
+        self._capture_frame(cv.image)
         await asyncio.sleep(_BOOT_LOGO_SECONDS)
 
     async def _loop(self) -> None:
@@ -157,21 +158,23 @@ class DisplayService:
         sources = self._active_sources()
         uptime = _fmt_uptime(int(time.monotonic() - self._start_time))
 
-        with canvas(self._device) as draw:
+        cv = canvas(self._device)
+        with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
             draw.text((2, 0), f"{ip}:{port}", font=font, fill="white")
             draw.line((0, 12, self._cfg["width"], 12), fill="white")
             draw.text((2, 16), sources or "no sources", font=font, fill="white")
             draw.text((2, 28), f"up {uptime}", font=font, fill="white")
-        self._capture_frame()
+        self._capture_frame(cv.image)
         self._blanked = False
 
     def _blank(self) -> None:
         from luma.core.render import canvas
 
-        with canvas(self._device) as draw:
+        cv = canvas(self._device)
+        with cv as draw:
             pass  # leave black -- burn-in protection
-        self._capture_frame()
+        self._capture_frame(cv.image)
         self._blanked = True
 
     def _active_sources(self) -> str:
@@ -185,12 +188,17 @@ class DisplayService:
         except Exception:  # noqa: BLE001
             return "status unknown"
 
-    def _capture_frame(self) -> None:
+    def _capture_frame(self, image) -> None:
         """Mirror whatever was just drawn into a PNG the settings page's
-        live-preview <img> can fetch -- luma's canvas context manager
-        pushes to self._device.image once the `with` block exits."""
+        live-preview <img> can fetch. The rendered image lives on the
+        `canvas` instance itself (`cv.image`, set in its __init__ and
+        pushed to hardware via device.display() on __exit__) -- NOT on
+        the device object, which has no public `.image` attribute at
+        all (confirmed against luma.core.device.device's real API,
+        checked in a local venv here rather than guessed a second time
+        after the first version silently failed via the broad except
+        below -- caller must pass the canvas's own image in)."""
         try:
-            image = self._device.image
             buf = io.BytesIO()
             image.convert("RGB").save(buf, format="PNG")
             self._last_frame_png = buf.getvalue()
