@@ -204,7 +204,7 @@ class DisplayService:
             self._last_frame_png = buf.getvalue()
             self._last_rendered_at = datetime.now(timezone.utc)
         except Exception:  # noqa: BLE001 -- preview is a nice-to-have, never fatal
-            logger.debug("oled-display: frame capture failed", exc_info=True)
+            logger.warning("oled-display: frame capture failed", exc_info=True)
 
     # -- exposed to routes.py -----------------------------------------
 
