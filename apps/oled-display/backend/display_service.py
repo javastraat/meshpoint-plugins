@@ -70,6 +70,7 @@ class DisplayService:
         self._last_frame_png: bytes | None = None
         self._last_rendered_at: datetime | None = None
         self._blanked = False
+        self._httpx_missing_logged = False
 
     # -- lifecycle ---------------------------------------------------
 
@@ -204,7 +205,20 @@ class DisplayService:
         loop."""
         try:
             import httpx
+        except ImportError:
+            # A real setup problem (httpx wasn't installed -- git pull
+            # doesn't re-run setup.sh on its own), not "Reticulum isn't
+            # running" -- those look identical if this stays silent, so
+            # log it once rather than every refresh_seconds forever.
+            if not self._httpx_missing_logged:
+                logger.warning(
+                    "oled-display: httpx not installed, can't check Reticulum "
+                    "status -- run: sudo meshpoint plugin setup oled-display"
+                )
+                self._httpx_missing_logged = True
+            return ""
 
+        try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 r = await client.get(f"http://127.0.0.1:{dashboard_port}/api/reticulum/status")
             if r.status_code != 200:
@@ -214,6 +228,10 @@ class DisplayService:
                 return ""
             return f"reticulum ({data.get('peer_count', 0)}p)"
         except Exception:  # noqa: BLE001
+            # Any other failure (Reticulum not installed/enabled, refused,
+            # timed out, unexpected shape) stays silent on purpose -- this
+            # is the expected, common case for anyone without Reticulum on,
+            # not a setup problem worth logging every refresh cycle.
             return ""
 
     def _capture_frame(self, image) -> None:
