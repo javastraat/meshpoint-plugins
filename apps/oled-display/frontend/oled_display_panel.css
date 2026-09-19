@@ -1,9 +1,15 @@
 .oled-card {
+    /* --bg-card is the real token both themes define for an elevated
+       surface (#ffffff light, #162033 dark) -- --bg-elevated doesn't
+       exist anywhere in this app's theme system, so it was silently
+       always falling back to its hardcoded dark default regardless of
+       theme, while the text inside correctly switched via inheritance:
+       dark text on a permanently-dark card in light mode. */
     border: 1px solid var(--border, #333);
     border-radius: 6px;
     padding: 14px 16px;
     margin-top: 16px;
-    background: var(--bg-elevated, #1a1a1a);
+    background: var(--bg-card, #1a1a1a);
 }
 
 .oled-card__title {
@@ -12,6 +18,9 @@
 }
 
 .oled-preview {
+    /* Deliberately hardcoded black, not a theme token -- this represents
+       the real physical OLED, which is black regardless of dashboard
+       theme. Don't "fix" this one to --bg-card. */
     display: flex;
     justify-content: center;
     padding: 12px;
