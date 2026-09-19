@@ -70,7 +70,6 @@ class DisplayService:
         self._last_frame_png: bytes | None = None
         self._last_rendered_at: datetime | None = None
         self._blanked = False
-        self._httpx_missing_logged = False
 
     # -- lifecycle ---------------------------------------------------
 
@@ -157,7 +156,7 @@ class DisplayService:
         ip = _lan_ip() or "no network"
         port = getattr(getattr(self._context.config, "dashboard", None), "port", 8080)
         capture_sources = self._active_sources()
-        reticulum = await self._reticulum_status(port)
+        reticulum = await self._reticulum_status()
         sources = ", ".join(s for s in (capture_sources, reticulum) if s)
         uptime = _fmt_uptime(int(time.monotonic() - self._start_time))
 
@@ -193,45 +192,34 @@ class DisplayService:
         except Exception:  # noqa: BLE001
             return ""
 
-    async def _reticulum_status(self, dashboard_port: int) -> str:
+    async def _reticulum_status(self) -> str:
         """Reticulum isn't a CaptureSource -- it's a `service` plugin
         (LxmfService), so it never appears in capture_coordinator.sources
-        no matter what; this queries its own public status API instead,
-        the same one the dashboard topbar pill itself reads. Best-effort:
-        a plain HTTP GET against the local dashboard, empty string (not
-        a placeholder) if Reticulum isn't installed/enabled, times out,
-        or the response shape isn't what's expected -- a plugin this
-        plugin doesn't depend on must never be able to break its draw
-        loop."""
-        try:
-            import httpx
-        except ImportError:
-            # A real setup problem (httpx wasn't installed -- git pull
-            # doesn't re-run setup.sh on its own), not "Reticulum isn't
-            # running" -- those look identical if this stays silent, so
-            # log it once rather than every refresh_seconds forever.
-            if not self._httpx_missing_logged:
-                logger.warning(
-                    "oled-display: httpx not installed, can't check Reticulum "
-                    "status -- run: sudo meshpoint plugin setup oled-display"
-                )
-                self._httpx_missing_logged = True
-            return ""
+        no matter what.
 
+        First attempt at this went over a local HTTP call to
+        /api/reticulum/status -- wrong, because that router (like every
+        plugin router) is mounted `public=False`, so it 401s with no
+        session cookie attached, silently swallowed and indistinguishable
+        from "Reticulum isn't running." src.api.service_registry already
+        tracks every started plugin service in-process (`live()`, used
+        internally by stop_all() but public) -- going straight through
+        that instead skips HTTP and auth entirely, so this can reach the
+        real LxmfService object directly.
+
+        Best-effort throughout: Reticulum not installed/enabled, or a
+        shape this plugin doesn't recognise, both just mean nothing to
+        show -- a plugin this plugin doesn't depend on must never be
+        able to break its draw loop."""
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                r = await client.get(f"http://127.0.0.1:{dashboard_port}/api/reticulum/status")
-            if r.status_code != 200:
+            from src.api.service_registry import live
+
+            service = next((svc for name, svc in live() if name == "reticulum"), None)
+            if service is None or not getattr(service, "own_address", None):
                 return ""
-            data = r.json()
-            if not data.get("running"):
-                return ""
-            return f"reticulum ({data.get('peer_count', 0)}p)"
+            peer_count = await service.peer_count()
+            return f"reticulum ({peer_count}p)"
         except Exception:  # noqa: BLE001
-            # Any other failure (Reticulum not installed/enabled, refused,
-            # timed out, unexpected shape) stays silent on purpose -- this
-            # is the expected, common case for anyone without Reticulum on,
-            # not a setup problem worth logging every refresh cycle.
             return ""
 
     def _capture_frame(self, image) -> None:
