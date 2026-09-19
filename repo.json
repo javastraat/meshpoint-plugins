@@ -45,6 +45,22 @@
       "author": "Einstein PD2EMC",
       "homepage": "https://github.com/Cyclenerd/offline-map-tile-downloader",
       "has_setup": true
+    },
+    {
+      "id": "oled-display",
+      "kind": "app",
+      "path": "apps/oled-display",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "service",
+        "routes",
+        "sidebar"
+      ],
+      "description": "Drives a small I2C status OLED (SSD1306-family) with a boot logo then live device status -- IP address, which capture sources are actually running, uptime. Auto-blanks after a configurable timeout to avoid burn-in. Settings page shows a live preview of exactly what's on the physical screen.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/javastraat/meshpoint-plugins",
+      "has_setup": true
     }
   ],
   "themes": [

@@ -1,0 +1,34 @@
+.oled-card {
+    border: 1px solid var(--border, #333);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-top: 16px;
+    background: var(--bg-elevated, #1a1a1a);
+}
+
+.oled-card__title {
+    margin: 0 0 10px;
+    font-size: 0.95rem;
+}
+
+.oled-preview {
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    background: #000;
+    border: 1px solid var(--border, #333);
+    border-radius: 4px;
+}
+
+.oled-preview img {
+    image-rendering: pixelated;
+    max-width: 100%;
+    width: 256px;
+}
+
+.oled-page form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 360px;
+}

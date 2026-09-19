@@ -45,5 +45,7 @@ view — a stale or edited catalog can't smuggle anything in.
 |----|------|------|
 | `hello-world-github` | app | Minimal sidebar-page example (test plugin) |
 | `hello-world-github-hook` | app | Minimal hook example (test plugin) |
+| `offline-map` | app | Downloads OSM tiles for offline/emergency dashboard maps |
+| `oled-display` | app | Drives a small I2C status OLED -- boot logo, live IP/sources/uptime, auto-blank |
 | `github-dark-theme` | theme | GitHub's dark default (Primer) |
 | `github-light-theme` | theme | GitHub's light default (Primer) |
