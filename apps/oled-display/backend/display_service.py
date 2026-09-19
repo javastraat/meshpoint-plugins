@@ -155,7 +155,7 @@ class DisplayService:
         font = ImageFont.load_default()
         ip = _lan_ip() or "no network"
         port = getattr(getattr(self._context.config, "dashboard", None), "port", 8080)
-        capture_sources = self._active_sources()
+        capture_sources = await self._active_sources()
         reticulum = await self._reticulum_status()
         sources = ", ".join(s for s in (capture_sources, reticulum) if s)
         uptime = _fmt_uptime(int(time.monotonic() - self._start_time))
@@ -179,20 +179,29 @@ class DisplayService:
         self._capture_frame(cv.image)
         self._blanked = True
 
-    def _active_sources(self) -> str:
-        """Live capture protocol abbreviations, e.g. 'LW, MT, MC' -- same
-        LW/MT/MC/RT convention the Messages page's own protocol filter
-        chips already use, not the raw source names (which don't map
-        1:1 to protocols: "concentrator" is the SX1302 handling LoRaWAN
-        AND Meshtastic simultaneously over the same dual-sync-word
-        capture, by design -- every "concentrator" source is always
-        both at once, never just one).
+    async def _active_sources(self) -> str:
+        """Live capture protocols with a peer count, e.g. 'LW (3p), MT
+        (12p)' -- same LW/MT/MC/RT convention the Messages page's own
+        protocol filter chips already use, not the raw source names
+        (which don't map 1:1 to protocols: "concentrator" is the SX1302
+        handling LoRaWAN AND Meshtastic simultaneously over the same
+        dual-sync-word capture, by design -- every "concentrator" source
+        is always both at once, never just one).
 
-        Best-effort: pipeline shape can vary, a plugin never crashes the
-        display loop over it. Empty string (not a placeholder) when
-        there's nothing to report, so _draw_status() can cleanly join
-        this with _reticulum_status() and fall back to one shared
-        "no sources" placeholder only if both are empty."""
+        Peer counts are "active in the last 24h" (node_repo's own
+        get_active_count(protocol=...)), not an all-time total -- an
+        ever-growing lifetime count is a lot less useful at a glance on
+        a status panel than "how many are actually around right now".
+        (This is a deliberate difference from Reticulum's own
+        peer_count(), which IS an all-time known-peer count -- matching
+        RT's own semantics exactly wasn't as important as this number
+        actually being useful here.)
+
+        Best-effort throughout: pipeline/node_repo shape can vary, a
+        plugin never crashes the display loop over it. Empty string (not
+        a placeholder) when there's nothing to report, so _draw_status()
+        can cleanly join this with _reticulum_status() and fall back to
+        one shared "no sources" placeholder only if both are empty."""
         try:
             sources = self._context.pipeline.capture_coordinator.sources
             names = [getattr(s, "name", "") for s in sources]
@@ -213,7 +222,21 @@ class DisplayService:
                     protocols.append("MC")
             elif name and name not in protocols:
                 protocols.append(name)  # unrecognised source type -- show as-is, don't hide it
-        return ", ".join(protocols)
+
+        _PROTOCOL_KEY = {"LW": "lorawan", "MT": "meshtastic", "MC": "meshcore"}
+        parts = []
+        for p in protocols:
+            key = _PROTOCOL_KEY.get(p)
+            count = None
+            if key is not None:
+                try:
+                    count = await self._context.pipeline.node_repo.get_active_count(
+                        hours=24, protocol=key,
+                    )
+                except Exception:  # noqa: BLE001
+                    count = None
+            parts.append(f"{p} ({count}p)" if count is not None else p)
+        return ", ".join(parts)
 
     async def _reticulum_status(self) -> str:
         """Reticulum isn't a CaptureSource -- it's a `service` plugin
