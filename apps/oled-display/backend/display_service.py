@@ -180,17 +180,40 @@ class DisplayService:
         self._blanked = True
 
     def _active_sources(self) -> str:
-        """Live capture source names, e.g. 'concentrator, meshcore-1' --
-        best-effort: pipeline shape can vary, a plugin never crashes the
+        """Live capture protocol abbreviations, e.g. 'LW, MT, MC' -- same
+        LW/MT/MC/RT convention the Messages page's own protocol filter
+        chips already use, not the raw source names (which don't map
+        1:1 to protocols: "concentrator" is the SX1302 handling LoRaWAN
+        AND Meshtastic simultaneously over the same dual-sync-word
+        capture, by design -- every "concentrator" source is always
+        both at once, never just one).
+
+        Best-effort: pipeline shape can vary, a plugin never crashes the
         display loop over it. Empty string (not a placeholder) when
         there's nothing to report, so _draw_status() can cleanly join
         this with _reticulum_status() and fall back to one shared
         "no sources" placeholder only if both are empty."""
         try:
             sources = self._context.pipeline.capture_coordinator.sources
-            return ", ".join(getattr(s, "name", "?") for s in sources)
+            names = [getattr(s, "name", "") for s in sources]
         except Exception:  # noqa: BLE001
             return ""
+
+        protocols: list[str] = []
+        for name in names:
+            if name.startswith("concentrator"):
+                for p in ("LW", "MT"):
+                    if p not in protocols:
+                        protocols.append(p)
+            elif name.startswith("sx1262_spi") or name.startswith("serial"):
+                if "MT" not in protocols:
+                    protocols.append("MT")
+            elif name.startswith("meshcore_usb"):
+                if "MC" not in protocols:
+                    protocols.append("MC")
+            elif name and name not in protocols:
+                protocols.append(name)  # unrecognised source type -- show as-is, don't hide it
+        return ", ".join(protocols)
 
     async def _reticulum_status(self) -> str:
         """Reticulum isn't a CaptureSource -- it's a `service` plugin
@@ -218,7 +241,7 @@ class DisplayService:
             if service is None or not getattr(service, "own_address", None):
                 return ""
             peer_count = await service.peer_count()
-            return f"reticulum ({peer_count}p)"
+            return f"RT ({peer_count}p)"
         except Exception:  # noqa: BLE001
             return ""
 
