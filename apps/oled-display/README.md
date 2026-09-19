@@ -15,8 +15,12 @@ with a compatible I2C OLED at a known address should work.
 - **Boot logo** -- "MESHPOINT / starting..." for ~3 seconds once the
   service starts.
 - **Live status** -- LAN IP + dashboard port, active capture source
-  names (from the same live pipeline the topbar itself reflects), and
-  uptime. Refreshes on a configurable interval.
+  names (from the same live pipeline the topbar itself reflects), plus
+  Reticulum's own peer count if that plugin is enabled (queried
+  best-effort over a local HTTP call to its `/api/reticulum/status` --
+  Reticulum is a `service`, not a `CaptureSource`, so it never shows up
+  in the pipeline's own source list no matter what), and uptime.
+  Refreshes on a configurable interval.
 - **Burn-in protection** -- auto-blank after N minutes (0 = never).
 - **Settings page** (Configuration → OLED Display) -- on/off, I2C
   address, controller variant (SSD1306 / SH1106 / SSD1309 -- cheap

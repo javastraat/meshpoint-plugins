@@ -142,20 +142,22 @@ class DisplayService:
                 if not self._blanked:
                     self._blank()
             else:
-                self._draw_status()
+                await self._draw_status()
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=refresh_s)
             except asyncio.TimeoutError:
                 pass
 
-    def _draw_status(self) -> None:
+    async def _draw_status(self) -> None:
         from luma.core.render import canvas
         from PIL import ImageFont
 
         font = ImageFont.load_default()
         ip = _lan_ip() or "no network"
         port = getattr(getattr(self._context.config, "dashboard", None), "port", 8080)
-        sources = self._active_sources()
+        capture_sources = self._active_sources()
+        reticulum = await self._reticulum_status(port)
+        sources = ", ".join(s for s in (capture_sources, reticulum) if s)
         uptime = _fmt_uptime(int(time.monotonic() - self._start_time))
 
         cv = canvas(self._device)
@@ -180,13 +182,39 @@ class DisplayService:
     def _active_sources(self) -> str:
         """Live capture source names, e.g. 'concentrator, meshcore-1' --
         best-effort: pipeline shape can vary, a plugin never crashes the
-        display loop over it."""
+        display loop over it. Empty string (not a placeholder) when
+        there's nothing to report, so _draw_status() can cleanly join
+        this with _reticulum_status() and fall back to one shared
+        "no sources" placeholder only if both are empty."""
         try:
             sources = self._context.pipeline.capture_coordinator.sources
-            names = [getattr(s, "name", "?") for s in sources]
-            return ", ".join(names) if names else "no sources"
+            return ", ".join(getattr(s, "name", "?") for s in sources)
         except Exception:  # noqa: BLE001
-            return "status unknown"
+            return ""
+
+    async def _reticulum_status(self, dashboard_port: int) -> str:
+        """Reticulum isn't a CaptureSource -- it's a `service` plugin
+        (LxmfService), so it never appears in capture_coordinator.sources
+        no matter what; this queries its own public status API instead,
+        the same one the dashboard topbar pill itself reads. Best-effort:
+        a plain HTTP GET against the local dashboard, empty string (not
+        a placeholder) if Reticulum isn't installed/enabled, times out,
+        or the response shape isn't what's expected -- a plugin this
+        plugin doesn't depend on must never be able to break its draw
+        loop."""
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                r = await client.get(f"http://127.0.0.1:{dashboard_port}/api/reticulum/status")
+            if r.status_code != 200:
+                return ""
+            data = r.json()
+            if not data.get("running"):
+                return ""
+            return f"reticulum ({data.get('peer_count', 0)}p)"
+        except Exception:  # noqa: BLE001
+            return ""
 
     def _capture_frame(self, image) -> None:
         """Mirror whatever was just drawn into a PNG the settings page's
