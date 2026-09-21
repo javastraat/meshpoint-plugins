@@ -609,8 +609,8 @@ class DisplayService:
         stats = await self._protocol_stats(protocol_label)
         if protocol_label == "MT":
             transmit = getattr(self._context.config, "transmit", None)
-            short_name = getattr(transmit, "short_name", "") or "?"
-            long_name = (getattr(transmit, "long_name", "") or "?")[:20]
+            short_name = f"SN: {getattr(transmit, 'short_name', '') or '?'}"
+            long_name = f"LN: {(getattr(transmit, 'long_name', '') or '?')[:16]}"
             if stats is None:
                 return [short_name, long_name, "stats unavailable"]
             return [
@@ -667,11 +667,13 @@ class DisplayService:
         (address prefix + peer count + announce count) instead of that
         one line's "RT (Np)" abbreviation. `own_address` comes back as
         `RNS.prettyhexrep()`'s `<32 hex chars>` -- stripped of the
-        brackets and cut to 16 chars, which is as much as fits this
-        panel's width at the default font without overflowing.
-        `announce_log()` is a plain in-memory ring buffer (see its own
-        docstring on `LxmfService`) -- `len()` on it is free, no DB/RNS
-        round trip, safe to call every tick."""
+        brackets and cut to 16 chars, which (plus the "ID: " label)
+        is as much as fits this panel's width at the default font
+        without overflowing. Same "Label: value" convention every
+        other rotate_screens page uses, for a consistent look across
+        all of them. `announce_log()` is a plain in-memory ring buffer
+        (see its own docstring on `LxmfService`) -- `len()` on it is
+        free, no DB/RNS round trip, safe to call every tick."""
         try:
             from src.api.service_registry import live
 
@@ -682,9 +684,9 @@ class DisplayService:
             peer_count = await service.peer_count()
             announce_count = len(service.announce_log())
             return [
-                address.strip("<>")[:16],
-                f"{peer_count} peers",
-                f"{announce_count} announces",
+                f"ID: {address.strip('<>')[:16]}",
+                f"Peers: {peer_count}",
+                f"Announces: {announce_count}",
             ]
         except Exception:  # noqa: BLE001
             return None
