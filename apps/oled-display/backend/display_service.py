@@ -19,7 +19,7 @@ import io
 import logging
 import socket
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 logger = logging.getLogger("oled_display")
 
@@ -209,13 +209,13 @@ class DisplayService:
         entries out multiple-per-row instead of cramming everything onto
         one line -- the display has plenty of unused vertical space.
 
-        Peer counts are "active in the last 24h", not an all-time total
-        -- an ever-growing lifetime count is a lot less useful at a
-        glance on a status panel than "how many are actually around
-        right now". (This is a deliberate difference from Reticulum's
-        own peer_count(), which IS an all-time known-peer count --
-        matching RT's own semantics exactly wasn't as important as this
-        number actually being useful here.)
+        Peer counts are all-time unique totals, matching each
+        protocol's own dashboard tab exactly (LW's "Unique Devices",
+        MT's "Unique Nodes", MC's `total_nodes`) -- see
+        `_protocol_peer_count()`. RT's count is likewise Reticulum's
+        own all-time known-peer count (`peer_count()`), so all four
+        protocols shown here now agree with what their own dashboard
+        page says.
 
         Best-effort throughout: pipeline shape can vary, a plugin never
         crashes the display loop over it."""
@@ -247,37 +247,44 @@ class DisplayService:
         return parts
 
     async def _protocol_peer_count(self, protocol_label: str) -> int | None:
-        """Devices active in the last 24h for one LW/MT/MC label.
+        """All-time unique count for one LW/MT/MC label, matching each
+        protocol's own dashboard tab exactly -- "Unique Devices" on the
+        LoRaWAN tab (lorawan_routes.py's ``lorawan_stats()``), "Unique
+        Nodes" on the Meshtastic tab (meshtastic_routes.py's
+        ``meshtastic_stats()``), and MeshCore's ``meshcore_stats()``
+        ``total_nodes``. A previous version scoped this to "active in
+        the last 24h" on the theory that mattered more for a glance
+        display, but that makes the OLED disagree with the dashboard
+        the user is looking at side by side over nothing more than an
+        unannounced difference in definition -- matching wins.
 
-        LW is special-cased: LoRaWAN devices never get a `nodes` table
-        row at all -- coordinator.py's _update_node() only bumps an
-        existing packet counter for a LoRaWAN source, it never upserts
-        one (LoRaWAN devices "have no Meshtastic node profile"; their
-        own device panel, lorawan_routes.py's lorawan_devices(), builds
-        its roster by aggregating the packets table directly instead).
-        node_repo.get_active_count(protocol="lorawan") would therefore
-        always report 0 -- wrong table entirely, not actually a "no
-        devices" signal. This runs the same shape of query
-        lorawan_devices() does, just scoped to the last 24h and counting
-        distinct sources rather than listing them.
+        LW and MT both come from ``COUNT(DISTINCT source_id) FROM
+        packets``: LoRaWAN devices never get a `nodes` table row at all
+        (coordinator.py's `_update_node()` only bumps an existing
+        packet counter for a LoRaWAN source, it never upserts one), and
+        the dashboard's own Meshtastic tile queries `packets` too, not
+        `node_repo`, despite MT nodes having real `nodes` rows -- so
+        this mirrors `packets` for both rather than only for LW.
 
-        MT/MC go through node_repo normally, which IS correct for them
-        (both protocols self-announce and get a real nodes-table row)."""
+        MC has real `nodes` rows and its dashboard tile counts THAT
+        table instead (`COUNT(*) FROM nodes WHERE protocol =
+        'meshcore'`), so it gets its own query shape rather than
+        reusing LW/MT's."""
         try:
-            if protocol_label == "LW":
-                cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            if protocol_label in ("LW", "MT"):
+                key = "lorawan" if protocol_label == "LW" else "meshtastic"
                 row = await self._context.pipeline.database.fetch_one(
                     "SELECT COUNT(DISTINCT source_id) AS cnt FROM packets "
-                    "WHERE protocol = 'lorawan' AND source_id != '' AND timestamp >= ?",
-                    (cutoff,),
+                    "WHERE protocol = ?",
+                    (key,),
                 )
                 return row["cnt"] if row else 0
-            key = {"MT": "meshtastic", "MC": "meshcore"}.get(protocol_label)
-            if key is None:
-                return None
-            return await self._context.pipeline.node_repo.get_active_count(
-                hours=24, protocol=key,
-            )
+            if protocol_label == "MC":
+                row = await self._context.pipeline.database.fetch_one(
+                    "SELECT COUNT(*) AS cnt FROM nodes WHERE protocol = 'meshcore'",
+                )
+                return row["cnt"] if row else 0
+            return None
         except Exception:  # noqa: BLE001
             return None
 
