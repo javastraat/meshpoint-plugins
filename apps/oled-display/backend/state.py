@@ -12,6 +12,8 @@ offline-map / Reticulum plugins' own ``backend/state.py``.
         blank_after_minutes: 30   # 0 = never blank
         refresh_seconds: 5
         boot_logo_seconds: 3      # how long the MESHPOINT boot logo shows, 0 = skip it
+        rotate_screens: false     # cycle Overview + one page per active protocol
+        rotate_seconds: 4         # dwell time per page when rotate_screens is on
 
 Settings changes apply on the next service restart (the display service
 reads these once at ``build()`` time, same as Reticulum's RNode/backbone
@@ -32,6 +34,8 @@ _DEFAULTS: dict[str, Any] = {
     "blank_after_minutes": 30,
     "refresh_seconds": 5,
     "boot_logo_seconds": 3,
+    "rotate_screens": False,
+    "rotate_seconds": 4,
 }
 
 _config: dict[str, Any] = dict(_DEFAULTS)

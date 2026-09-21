@@ -42,6 +42,7 @@ async def status():
         **state.to_dict(),
         "display_open": _service.is_open if _service else False,
         "blanked": _service.is_blanked if _service else False,
+        "current_page": _service.current_page_title if _service else None,
         "last_rendered_at": (
             _service.last_status_rendered_at.isoformat()
             if _service and _service.last_status_rendered_at else None
@@ -88,6 +89,26 @@ async def sleep(_claims: SessionClaims = Depends(require_admin)):
     return {"asleep": True}
 
 
+@router.post("/page/next")
+async def page_next(_claims: SessionClaims = Depends(require_admin)):
+    """Step the physical panel to the next rotate_screens page right
+    now -- the settings page's manual Next control. Works regardless
+    of whether automatic rotation is currently on; a manual click
+    always wakes the panel first (see `DisplayService.next_page()`).
+    Same `require_admin` gate as `wake`/`sleep`."""
+    if _service is None or not await _service.next_page():
+        raise HTTPException(503, "Display not available")
+    return {"current_page": _service.current_page_title}
+
+
+@router.post("/page/prev")
+async def page_prev(_claims: SessionClaims = Depends(require_admin)):
+    """`page/next`'s mirror image."""
+    if _service is None or not await _service.prev_page():
+        raise HTTPException(503, "Display not available")
+    return {"current_page": _service.current_page_title}
+
+
 class SettingsUpdate(BaseModel):
     enabled: Optional[bool] = None
     i2c_address: Optional[str] = Field(None, pattern=r"^0[xX][0-9a-fA-F]{2}$")
@@ -97,6 +118,8 @@ class SettingsUpdate(BaseModel):
     blank_after_minutes: Optional[int] = Field(None, ge=0, le=1440)
     refresh_seconds: Optional[int] = Field(None, ge=1, le=300)
     boot_logo_seconds: Optional[float] = Field(None, ge=0, le=30)
+    rotate_screens: Optional[bool] = None
+    rotate_seconds: Optional[float] = Field(None, ge=1, le=60)
 
 
 @router.put("/settings")

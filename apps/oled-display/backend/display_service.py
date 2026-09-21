@@ -71,6 +71,9 @@ class DisplayService:
         self._last_status_rendered_at: datetime | None = None
         self._blanked = False
         self._manual_sleep = False
+        self._page_index = 0
+        self._page_started = time.monotonic()
+        self._current_page_title: str | None = None
 
     # -- lifecycle ---------------------------------------------------
 
@@ -191,13 +194,27 @@ class DisplayService:
         while not self._stop_event.is_set():
             elapsed = time.monotonic() - self._start_time
             timed_out = bool(blank_after_s) and elapsed >= blank_after_s
+            tick_s = refresh_s
+
             if self._manual_sleep or timed_out:
                 if not self._blanked:
                     self._blank()
+            elif self._cfg.get("rotate_screens", False):
+                # rotate_seconds can legitimately be shorter than
+                # refresh_seconds (show each page briefly, but only
+                # bother re-querying peer counts every refresh_seconds)
+                # -- ticking at whichever is SHORTER keeps the rotation
+                # cadence honest instead of only advancing on whatever
+                # refresh_seconds happens to allow.
+                rotate_s = max(1.0, float(self._cfg.get("rotate_seconds", 4)))
+                due = time.monotonic() - self._page_started >= rotate_s
+                await self._render_pages(advance=1 if due else 0)
+                tick_s = min(refresh_s, rotate_s)
             else:
                 await self._draw_status()
+
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=refresh_s)
+                await asyncio.wait_for(self._stop_event.wait(), timeout=tick_s)
             except asyncio.TimeoutError:
                 pass
 
@@ -238,6 +255,103 @@ class DisplayService:
         self._capture_frame(cv.image, is_status=True)
         self._blanked = False
 
+    _PROTOCOL_TITLES = {"LW": "LoRaWAN", "MT": "Meshtastic", "MC": "MeshCore"}
+
+    async def _build_pages(self) -> list[tuple[str, list[str]]]:
+        """Pages for rotate_screens mode: an Overview page first, then
+        one per protocol actually present -- same LW/MT/MC/RT detection
+        as the static view's own `_active_sources()`/`_reticulum_status()`,
+        so a page never appears for a protocol that isn't actually
+        configured on this box. Always returns at least the Overview
+        page, so callers never need to handle an empty list."""
+        ip = _lan_ip() or "no network"
+        port = getattr(getattr(self._context.config, "dashboard", None), "port", 8080)
+        device_name = getattr(getattr(self._context.config, "device", None), "device_name", None)
+        uptime = _fmt_uptime(int(time.monotonic() - self._start_time))
+
+        pages: list[tuple[str, list[str]]] = [
+            ("Overview", [device_name or "meshpoint", f"{ip}:{port}", f"up {uptime}"]),
+        ]
+
+        for label in self._active_protocol_labels():
+            count = await self._protocol_peer_count(label)
+            detail = f"{count} devices" if count is not None else "unavailable"
+            pages.append((self._PROTOCOL_TITLES.get(label, label), [detail]))
+
+        reticulum_lines = await self._reticulum_page_lines()
+        if reticulum_lines is not None:
+            pages.append(("Reticulum", reticulum_lines))
+
+        return pages
+
+    def _draw_page(self, title: str, lines: list[str]) -> None:
+        """Render one rotate_screens page: a title row (same underline
+        style as the static view's `IP:port` header) then one detail
+        line per row below it."""
+        from luma.core.render import canvas
+        from PIL import ImageFont
+
+        font = ImageFont.load_default()
+        cv = canvas(self._device)
+        with cv as draw:
+            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            draw.text((2, 0), title, font=font, fill="white")
+            draw.line((0, 12, self._cfg["width"], 12), fill="white")
+            y = 16
+            for line in lines:
+                draw.text((2, y), line, font=font, fill="white")
+                y += 10
+        self._capture_frame(cv.image, is_status=True)
+        self._blanked = False
+        self._current_page_title = title
+
+    async def _render_pages(self, *, advance: int = 0) -> None:
+        """Build the current rotate_screens page list and draw whichever
+        page that leaves the loop on.
+
+        `advance=0` (the common per-tick case while dwelling on a page)
+        just redraws the current index with fresh data (uptime/peer
+        counts) -- no page change. A nonzero `advance` steps the index
+        by that many pages (wrapping) and restarts this page's own
+        dwell timer, so a manual Prev/Next click doesn't get
+        immediately overridden by the rotation timer advancing again a
+        moment later. One `_build_pages()` call feeds both the index
+        math and the draw -- fetched once, not once to size the step
+        and again to draw, and the page count it returns is always the
+        one actually used, never a value cached from an earlier tick
+        (which could go stale the moment a protocol connects/drops)."""
+        pages = await self._build_pages()
+        if advance:
+            self._page_index = (self._page_index + advance) % len(pages)
+            self._page_started = time.monotonic()
+        else:
+            self._page_index = min(self._page_index, len(pages) - 1)
+        title, lines = pages[self._page_index]
+        self._draw_page(title, lines)
+
+    async def next_page(self) -> bool:
+        """Advance to the next rotate_screens page right now, waking
+        the panel if it was blanked/asleep -- the settings page's
+        manual Next button. Same wake semantics as `wake()`: clears
+        `_manual_sleep` and restarts the blank timer, since a viewer
+        stepping through pages by hand is clearly looking at it right
+        now. Returns False if the display was never opened."""
+        if self._device is None:
+            return False
+        self._manual_sleep = False
+        self._start_time = time.monotonic()
+        await self._render_pages(advance=1)
+        return True
+
+    async def prev_page(self) -> bool:
+        """The Next button's mirror image -- see `next_page()`."""
+        if self._device is None:
+            return False
+        self._manual_sleep = False
+        self._start_time = time.monotonic()
+        await self._render_pages(advance=-1)
+        return True
+
     def _blank(self) -> None:
         from luma.core.render import canvas
 
@@ -247,29 +361,18 @@ class DisplayService:
         self._capture_frame(cv.image, is_status=False)
         self._blanked = True
 
-    async def _active_sources(self) -> list[str]:
-        """Live capture protocols with a peer count, e.g. ['LW (3p)', 'MT
-        (12p)'] -- same LW/MT/MC/RT convention the Messages page's own
-        protocol filter chips already use, not the raw source names
-        (which don't map 1:1 to protocols: "concentrator" is the SX1302
-        handling LoRaWAN AND Meshtastic simultaneously over the same
-        dual-sync-word capture, by design -- every "concentrator" source
-        is always both at once, never just one).
+    def _active_protocol_labels(self) -> list[str]:
+        """LW/MT/MC labels for capture sources actually registered right
+        now -- same convention the Messages page's own protocol filter
+        chips use, not the raw source names (which don't map 1:1 to
+        protocols: "concentrator" is the SX1302 handling LoRaWAN AND
+        Meshtastic simultaneously over the same dual-sync-word capture,
+        by design -- every "concentrator" source is always both at
+        once, never just one). Shared by the static view's
+        `_active_sources()` and rotate_screens' `_build_pages()`.
 
-        Returns a list (not a joined string) so _draw_status() can lay
-        entries out multiple-per-row instead of cramming everything onto
-        one line -- the display has plenty of unused vertical space.
-
-        Peer counts are all-time unique totals, matching each
-        protocol's own dashboard tab exactly (LW's "Unique Devices",
-        MT's "Unique Nodes", MC's `total_nodes`) -- see
-        `_protocol_peer_count()`. RT's count is likewise Reticulum's
-        own all-time known-peer count (`peer_count()`), so all four
-        protocols shown here now agree with what their own dashboard
-        page says.
-
-        Best-effort throughout: pipeline shape can vary, a plugin never
-        crashes the display loop over it."""
+        Best-effort: pipeline shape can vary, a plugin never crashes
+        the display loop over it."""
         try:
             sources = self._context.pipeline.capture_coordinator.sources
             names = [getattr(s, "name", "") for s in sources]
@@ -290,9 +393,25 @@ class DisplayService:
                     protocols.append("MC")
             elif name and name not in protocols:
                 protocols.append(name)  # unrecognised source type -- show as-is, don't hide it
+        return protocols
 
+    async def _active_sources(self) -> list[str]:
+        """Live capture protocols with a peer count, e.g. ['LW (3p)', 'MT
+        (12p)'] -- for the static view's cramped one-screen layout.
+
+        Returns a list (not a joined string) so _draw_status() can lay
+        entries out multiple-per-row instead of cramming everything onto
+        one line -- the display has plenty of unused vertical space.
+
+        Peer counts are all-time unique totals, matching each
+        protocol's own dashboard tab exactly (LW's "Unique Devices",
+        MT's "Unique Nodes", MC's `total_nodes`) -- see
+        `_protocol_peer_count()`. RT's count is likewise Reticulum's
+        own all-time known-peer count (`peer_count()`), so all four
+        protocols shown here now agree with what their own dashboard
+        page says."""
         parts = []
-        for p in protocols:
+        for p in self._active_protocol_labels():
             count = await self._protocol_peer_count(p)
             parts.append(f"{p} ({count}p)" if count is not None else p)
         return parts
@@ -368,6 +487,30 @@ class DisplayService:
             return f"RT ({peer_count}p)"
         except Exception:  # noqa: BLE001
             return ""
+
+    async def _reticulum_page_lines(self) -> list[str] | None:
+        """Detail lines for Reticulum's rotate_screens page, or None
+        when Reticulum isn't running -- None so `_build_pages()` can
+        skip the page entirely rather than showing an empty one.
+
+        Same in-process service_registry lookup as `_reticulum_status()`,
+        just with room for the fuller detail a dedicated page has
+        (address prefix + peer count) instead of that one line's "RT
+        (Np)" abbreviation. `own_address` comes back as
+        `RNS.prettyhexrep()`'s `<32 hex chars>` -- stripped of the
+        brackets and cut to 16 chars, which is as much as fits this
+        panel's width at the default font without overflowing."""
+        try:
+            from src.api.service_registry import live
+
+            service = next((svc for name, svc in live() if name == "reticulum"), None)
+            address = getattr(service, "own_address", None) if service is not None else None
+            if service is None or not address:
+                return None
+            peer_count = await service.peer_count()
+            return [address.strip("<>")[:16], f"{peer_count} peers"]
+        except Exception:  # noqa: BLE001
+            return None
 
     def _capture_frame(self, image, *, is_status: bool) -> None:
         """Mirror whatever was just drawn into a PNG. The rendered image
@@ -460,6 +603,15 @@ class DisplayService:
     @property
     def is_blanked(self) -> bool:
         return self._blanked
+
+    @property
+    def current_page_title(self) -> str | None:
+        """Title of whatever rotate_screens page is currently showing
+        (e.g. "Overview", "Meshtastic") -- None in static mode, or
+        before the first page has ever been drawn. Lets the settings
+        page's Prev/Next controls show what's actually on the panel
+        right now instead of a mystery."""
+        return self._current_page_title
 
     @property
     def is_open(self) -> bool:

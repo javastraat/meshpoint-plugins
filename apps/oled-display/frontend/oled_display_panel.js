@@ -43,6 +43,11 @@ class OledDisplayPage {
                         <button class="terminal-button" type="button" data-oled-wake>Wake display</button>
                         <button class="terminal-button" type="button" data-oled-sleep>Sleep display</button>
                     </div>
+                    <div class="oled-preview-actions" data-oled-page-controls hidden>
+                        <button class="terminal-button" type="button" data-oled-prev-page>&lsaquo; Prev page</button>
+                        <span class="oled-current-page" data-oled-current-page></span>
+                        <button class="terminal-button" type="button" data-oled-next-page>Next page &rsaquo;</button>
+                    </div>
                 </article>
 
                 <article class="oled-card">
@@ -77,6 +82,15 @@ class OledDisplayPage {
                             <span class="cfg-field__label">Boot logo duration (seconds, 0 = skip it)</span>
                             <input class="cfg-field__input" type="number" min="0" max="30" step="0.5" data-oled-boot-logo>
                         </label>
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">
+                                <input type="checkbox" data-oled-rotate> Rotate screens (Overview + one page per active protocol)
+                            </span>
+                        </label>
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">Seconds per page (when rotating)</span>
+                            <input class="cfg-field__input" type="number" min="1" max="60" step="0.5" data-oled-rotate-seconds>
+                        </label>
                         <p class="cfg-status" data-oled-save-status aria-live="polite"></p>
                         <button class="terminal-button" type="submit">Save</button>
                     </form>
@@ -89,6 +103,10 @@ class OledDisplayPage {
         this._blankedNote = this._q('[data-oled-blanked-note]');
         this._wakeButton = this._q('[data-oled-wake]');
         this._sleepButton = this._q('[data-oled-sleep]');
+        this._pageControls = this._q('[data-oled-page-controls]');
+        this._prevPageButton = this._q('[data-oled-prev-page]');
+        this._nextPageButton = this._q('[data-oled-next-page]');
+        this._currentPageLabel = this._q('[data-oled-current-page]');
         this._form = this._q('[data-oled-form]');
         this._saveStatus = this._q('[data-oled-save-status]');
 
@@ -98,6 +116,8 @@ class OledDisplayPage {
         });
         this._wakeButton.addEventListener('click', () => this._wake());
         this._sleepButton.addEventListener('click', () => this._sleep());
+        this._prevPageButton.addEventListener('click', () => this._prevPage());
+        this._nextPageButton.addEventListener('click', () => this._nextPage());
 
         this._loadSettings();
         this._refreshPreview();
@@ -122,6 +142,9 @@ class OledDisplayPage {
             this._q('[data-oled-blank]').value = s.blank_after_minutes ?? 30;
             this._q('[data-oled-refresh]').value = s.refresh_seconds ?? 5;
             this._q('[data-oled-boot-logo]').value = s.boot_logo_seconds ?? 3;
+            this._q('[data-oled-rotate]').checked = !!s.rotate_screens;
+            this._q('[data-oled-rotate-seconds]').value = s.rotate_seconds ?? 4;
+            this._pageControls.hidden = !s.rotate_screens;
         } catch (_) {}
     }
 
@@ -149,15 +172,21 @@ class OledDisplayPage {
 
         // Separate call: preview.png always serves the last real status
         // frame now (never a blank one), so whether the physical panel
-        // is actually blanked right now has to come from /status instead.
+        // is actually blanked right now -- and which rotate_screens page
+        // is currently up -- has to come from /status instead.
         try {
             const r = await fetch('/api/oled-display/status', { credentials: 'same-origin' });
-            this._blankedNote.hidden = !(r.ok && (await r.json()).blanked);
+            const s = r.ok ? await r.json() : {};
+            this._blankedNote.hidden = !s.blanked;
+            this._pageControls.hidden = !s.rotate_screens;
+            this._currentPageLabel.textContent = s.current_page ? `Showing: ${s.current_page}` : '';
         } catch (_) {}
     }
 
     _wake() { return this._triggerAction(this._wakeButton, 'wake', 'Waking…'); }
     _sleep() { return this._triggerAction(this._sleepButton, 'sleep', 'Sleeping…'); }
+    _prevPage() { return this._triggerAction(this._prevPageButton, 'page/prev', '…'); }
+    _nextPage() { return this._triggerAction(this._nextPageButton, 'page/next', '…'); }
 
     async _triggerAction(button, endpoint, pendingLabel) {
         button.disabled = true;
@@ -187,6 +216,8 @@ class OledDisplayPage {
             blank_after_minutes: parseInt(this._q('[data-oled-blank]').value, 10),
             refresh_seconds: parseInt(this._q('[data-oled-refresh]').value, 10),
             boot_logo_seconds: parseFloat(this._q('[data-oled-boot-logo]').value),
+            rotate_screens: this._q('[data-oled-rotate]').checked,
+            rotate_seconds: parseFloat(this._q('[data-oled-rotate-seconds]').value),
         };
         this._saveStatus.dataset.kind = 'pending';
         this._saveStatus.textContent = 'Saving…';

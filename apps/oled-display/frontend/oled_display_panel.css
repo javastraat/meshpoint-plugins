@@ -43,8 +43,14 @@
 
 .oled-preview-actions {
     display: flex;
+    align-items: center;
     gap: 8px;
     margin-top: 10px;
+}
+
+.oled-current-page {
+    font-size: 0.85rem;
+    opacity: 0.8;
 }
 
 .oled-page form {
