@@ -35,6 +35,16 @@
     width: 256px;
 }
 
+.oled-blanked-note {
+    margin: 10px 0 0;
+    font-size: 0.85rem;
+    opacity: 0.8;
+}
+
+.oled-card [data-oled-wake] {
+    margin-top: 10px;
+}
+
 .oled-page form {
     display: flex;
     flex-direction: column;

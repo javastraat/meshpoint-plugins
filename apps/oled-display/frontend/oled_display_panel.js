@@ -2,9 +2,11 @@
  * OLED Display -- sidebar page for the oled-display plugin.
  *
  * Settings form (on/off, I2C address/driver, blank timeout) plus a live
- * preview of exactly what's currently on the physical screen -- fetched
- * from GET /api/oled-display/preview.png, the same PNG DisplayService
- * captured from its last luma canvas draw.
+ * preview of the last real status screen drawn -- fetched from GET
+ * /api/oled-display/preview.png. Deliberately doesn't go black when the
+ * physical panel auto-blanks for burn-in; a separate note (driven by
+ * /status's `blanked` flag) says so instead, and the Wake button forces
+ * the physical panel back on and restarts its blank timer.
  *
  * `route` below MUST match plugin.toml's [sidebar].route.
  */
@@ -34,6 +36,10 @@ class OledDisplayPage {
                     <div class="oled-preview">
                         <img data-oled-preview alt="Current OLED contents" hidden>
                     </div>
+                    <p class="oled-blanked-note" data-oled-blanked-note hidden>
+                        Physical screen is off (idle timeout) -- showing its last contents.
+                    </p>
+                    <button class="terminal-button" type="button" data-oled-wake>Wake display</button>
                 </article>
 
                 <article class="oled-card">
@@ -73,6 +79,8 @@ class OledDisplayPage {
 
         this._previewImg = this._q('[data-oled-preview]');
         this._previewStatus = this._q('[data-oled-preview-status]');
+        this._blankedNote = this._q('[data-oled-blanked-note]');
+        this._wakeButton = this._q('[data-oled-wake]');
         this._form = this._q('[data-oled-form]');
         this._saveStatus = this._q('[data-oled-save-status]');
 
@@ -80,6 +88,7 @@ class OledDisplayPage {
             e.preventDefault();
             this._save();
         });
+        this._wakeButton.addEventListener('click', () => this._wake());
 
         this._loadSettings();
         this._refreshPreview();
@@ -114,6 +123,7 @@ class OledDisplayPage {
                     ? 'No frame rendered yet (display off, or not started).'
                     : `Preview unavailable (HTTP ${r.status}).`;
                 this._previewImg.hidden = true;
+                this._blankedNote.hidden = true;
                 return;
             }
             const blob = await r.blob();
@@ -124,6 +134,35 @@ class OledDisplayPage {
             this._previewStatus.textContent = '';
         } catch (e) {
             this._previewStatus.textContent = `Network error: ${e.message}`;
+            return;
+        }
+
+        // Separate call: preview.png always serves the last real status
+        // frame now (never a blank one), so whether the physical panel
+        // is actually blanked right now has to come from /status instead.
+        try {
+            const r = await fetch('/api/oled-display/status', { credentials: 'same-origin' });
+            this._blankedNote.hidden = !(r.ok && (await r.json()).blanked);
+        } catch (_) {}
+    }
+
+    async _wake() {
+        this._wakeButton.disabled = true;
+        const originalLabel = this._wakeButton.textContent;
+        this._wakeButton.textContent = 'Waking…';
+        try {
+            const r = await fetch('/api/oled-display/wake', { method: 'POST', credentials: 'same-origin' });
+            if (r.ok) {
+                await this._refreshPreview();
+            } else {
+                const data = await r.json().catch(() => ({}));
+                this._previewStatus.textContent = data.detail || `Wake failed (HTTP ${r.status})`;
+            }
+        } catch (e) {
+            this._previewStatus.textContent = `Network error: ${e.message}`;
+        } finally {
+            this._wakeButton.disabled = false;
+            this._wakeButton.textContent = originalLabel;
         }
     }
 

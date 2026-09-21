@@ -69,6 +69,8 @@ class DisplayService:
         self._start_time = time.monotonic()
         self._last_frame_png: bytes | None = None
         self._last_rendered_at: datetime | None = None
+        self._last_status_png: bytes | None = None
+        self._last_status_rendered_at: datetime | None = None
         self._blanked = False
 
     # -- lifecycle ---------------------------------------------------
@@ -129,7 +131,7 @@ class DisplayService:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
             draw.text((8, 12), "MESHPOINT", font=font, fill="white")
             draw.text((8, 30), "starting...", font=font, fill="white")
-        self._capture_frame(cv.image)
+        self._capture_frame(cv.image, is_status=False)
         await asyncio.sleep(_BOOT_LOGO_SECONDS)
 
     async def _loop(self) -> None:
@@ -182,7 +184,7 @@ class DisplayService:
                         draw.text((col_x[col], y), item, font=font, fill="white")
                     y += row_h
             draw.text((2, y), f"up {uptime}", font=font, fill="white")
-        self._capture_frame(cv.image)
+        self._capture_frame(cv.image, is_status=True)
         self._blanked = False
 
     def _blank(self) -> None:
@@ -191,7 +193,7 @@ class DisplayService:
         cv = canvas(self._device)
         with cv as draw:
             pass  # leave black -- burn-in protection
-        self._capture_frame(cv.image)
+        self._capture_frame(cv.image, is_status=False)
         self._blanked = True
 
     async def _active_sources(self) -> list[str]:
@@ -309,23 +311,53 @@ class DisplayService:
         except Exception:  # noqa: BLE001
             return ""
 
-    def _capture_frame(self, image) -> None:
-        """Mirror whatever was just drawn into a PNG the settings page's
-        live-preview <img> can fetch. The rendered image lives on the
-        `canvas` instance itself (`cv.image`, set in its __init__ and
-        pushed to hardware via device.display() on __exit__) -- NOT on
-        the device object, which has no public `.image` attribute at
-        all (confirmed against luma.core.device.device's real API,
-        checked in a local venv here rather than guessed a second time
-        after the first version silently failed via the broad except
-        below -- caller must pass the canvas's own image in)."""
+    def _capture_frame(self, image, *, is_status: bool) -> None:
+        """Mirror whatever was just drawn into a PNG. The rendered image
+        lives on the `canvas` instance itself (`cv.image`, set in its
+        __init__ and pushed to hardware via device.display() on
+        __exit__) -- NOT on the device object, which has no public
+        `.image` attribute at all (confirmed against
+        luma.core.device.device's real API, checked in a local venv
+        here rather than guessed a second time after the first version
+        silently failed via the broad except below -- caller must pass
+        the canvas's own image in).
+
+        Always updates `last_frame_png` (an exact mirror of the
+        hardware, blank frames included -- kept for anything that
+        wants "what's on it right now"). `is_status=True` additionally
+        updates `last_status_png`, which only ever holds the last real
+        status draw: the settings page's live preview reads THAT one,
+        so it keeps showing the last screen contents instead of going
+        black in lockstep with the physical panel's burn-in blank --
+        matching the physical device only makes the preview useless
+        for "what did it last say" the moment auto-blank kicks in."""
         try:
             buf = io.BytesIO()
             image.convert("RGB").save(buf, format="PNG")
-            self._last_frame_png = buf.getvalue()
+            png = buf.getvalue()
+            self._last_frame_png = png
             self._last_rendered_at = datetime.now(timezone.utc)
+            if is_status:
+                self._last_status_png = png
+                self._last_status_rendered_at = self._last_rendered_at
         except Exception:  # noqa: BLE001 -- preview is a nice-to-have, never fatal
             logger.warning("oled-display: frame capture failed", exc_info=True)
+
+    async def wake(self) -> bool:
+        """Force an immediate status redraw and restart the blank
+        timer -- backs the settings page's Wake button. Resetting
+        `_start_time` is enough: `_loop()` re-derives "should I be
+        blanked" from `elapsed = now - _start_time` on every tick, so
+        this both un-blanks the physical panel right away (via the
+        `_draw_status()` call below, no need to wait for the next loop
+        tick) and makes the existing blank_after timeout count from
+        now again. Returns False if the display was never opened, so
+        the route can tell the frontend there's nothing to wake."""
+        if self._device is None:
+            return False
+        self._start_time = time.monotonic()
+        await self._draw_status()
+        return True
 
     # -- exposed to routes.py -----------------------------------------
 
@@ -336,6 +368,18 @@ class DisplayService:
     @property
     def last_rendered_at(self) -> datetime | None:
         return self._last_rendered_at
+
+    @property
+    def last_status_png(self) -> bytes | None:
+        return self._last_status_png
+
+    @property
+    def last_status_rendered_at(self) -> datetime | None:
+        return self._last_status_rendered_at
+
+    @property
+    def is_blanked(self) -> bool:
+        return self._blanked
 
     @property
     def is_open(self) -> bool:

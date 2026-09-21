@@ -41,22 +41,41 @@ async def status():
     return {
         **state.to_dict(),
         "display_open": _service.is_open if _service else False,
+        "blanked": _service.is_blanked if _service else False,
         "last_rendered_at": (
-            _service.last_rendered_at.isoformat()
-            if _service and _service.last_rendered_at else None
+            _service.last_status_rendered_at.isoformat()
+            if _service and _service.last_status_rendered_at else None
         ),
     }
 
 
 @router.get("/preview.png")
 async def preview():
-    """The exact PNG last pushed to the physical screen -- so the
-    settings page can show "what's on it now" without walking over to
-    look. 503 (not a blank image) when nothing's been rendered yet, so
-    the frontend can tell "not started" apart from "genuinely blank"."""
-    if _service is None or _service.last_frame_png is None:
+    """The last real status frame drawn -- not necessarily what's on
+    the hardware at this exact instant. Deliberately serves
+    `last_status_png` rather than `last_frame_png`: once the physical
+    panel auto-blanks for burn-in, mirroring it exactly would make the
+    settings-page preview go black too, which defeats its purpose
+    ("what did it last say") right when auto-blank kicks in. `status`
+    above reports `blanked` separately so the frontend can still say
+    the physical screen is currently off. 503 (not a blank image) when
+    nothing's been rendered yet, so the frontend can tell "not
+    started" apart from "genuinely blank"."""
+    if _service is None or _service.last_status_png is None:
         raise HTTPException(503, "No frame rendered yet")
-    return Response(content=_service.last_frame_png, media_type="image/png")
+    return Response(content=_service.last_status_png, media_type="image/png")
+
+
+@router.post("/wake")
+async def wake(_claims: SessionClaims = Depends(require_admin)):
+    """Force the physical panel back on right now and restart its
+    blank timer -- the settings page's Wake button. `require_admin`,
+    same gate as every other plugin's start/stop-style control route
+    (offline-map, rtl433, ...): this mutates live device state, not a
+    read."""
+    if _service is None or not await _service.wake():
+        raise HTTPException(503, "Display not available")
+    return {"woke": True}
 
 
 class SettingsUpdate(BaseModel):
