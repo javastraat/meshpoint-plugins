@@ -274,9 +274,7 @@ class DisplayService:
         ]
 
         for label in self._active_protocol_labels():
-            count = await self._protocol_peer_count(label)
-            detail = f"{count} devices" if count is not None else "unavailable"
-            pages.append((self._PROTOCOL_TITLES.get(label, label), [detail]))
+            pages.append((self._PROTOCOL_TITLES.get(label, label), await self._protocol_page_lines(label)))
 
         reticulum_lines = await self._reticulum_page_lines()
         if reticulum_lines is not None:
@@ -458,6 +456,102 @@ class DisplayService:
         except Exception:  # noqa: BLE001
             return None
 
+    async def _protocol_stats(self, protocol_label: str) -> dict[str, int] | None:
+        """Richer LW/MT/MC numbers for a rotate_screens page: all-time
+        AND last-24h packet + device counts. A rotate_screens page has
+        the room to show both; the static view's one-line-per-protocol
+        layout doesn't, which is why this is separate from
+        `_protocol_peer_count()` rather than replacing it. Same
+        packets-table-for-LW/MT, nodes-table-for-MC split as that
+        method (see its own docstring for the reasoning) -- this just
+        additionally splits each into all-time and last-24h.
+
+        None on any failure (unrecognised label, DB error, pipeline
+        shape not what's expected) -- callers show a "stats
+        unavailable" line rather than crashing the draw loop."""
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        try:
+            db = self._context.pipeline.database
+            if protocol_label in ("LW", "MT"):
+                key = "lorawan" if protocol_label == "LW" else "meshtastic"
+                total_row = await db.fetch_one(
+                    "SELECT COUNT(*) AS total, COUNT(DISTINCT source_id) AS devices "
+                    "FROM packets WHERE protocol = ?",
+                    (key,),
+                )
+                recent_row = await db.fetch_one(
+                    "SELECT COUNT(*) AS total, COUNT(DISTINCT source_id) AS devices "
+                    "FROM packets WHERE protocol = ? AND timestamp >= ?",
+                    (key, cutoff),
+                )
+                return {
+                    "packets": total_row["total"] if total_row else 0,
+                    "devices": total_row["devices"] if total_row else 0,
+                    "packets_24h": recent_row["total"] if recent_row else 0,
+                    "devices_24h": recent_row["devices"] if recent_row else 0,
+                }
+            if protocol_label == "MC":
+                devices_row = await db.fetch_one(
+                    "SELECT COUNT(*) AS cnt FROM nodes WHERE protocol = 'meshcore'",
+                )
+                packets_row = await db.fetch_one(
+                    "SELECT COUNT(*) AS total FROM packets WHERE protocol = 'meshcore'",
+                )
+                recent_row = await db.fetch_one(
+                    "SELECT COUNT(*) AS total FROM packets "
+                    "WHERE protocol = 'meshcore' AND timestamp >= ?",
+                    (cutoff,),
+                )
+                devices_24h = await self._context.pipeline.node_repo.get_active_count(
+                    hours=24, protocol="meshcore",
+                )
+                return {
+                    "packets": packets_row["total"] if packets_row else 0,
+                    "devices": devices_row["cnt"] if devices_row else 0,
+                    "packets_24h": recent_row["total"] if recent_row else 0,
+                    "devices_24h": devices_24h,
+                }
+            return None
+        except Exception:  # noqa: BLE001
+            return None
+
+    async def _protocol_page_lines(self, protocol_label: str) -> list[str]:
+        """The rotate_screens detail lines for one LW/MT/MC page.
+
+        MT gets this box's own Meshtastic identity (short/long name --
+        `config.transmit.*`, the same fields nodeinfo_broadcaster TXes)
+        alongside peer/packet counts, since a person looking at the
+        panel to confirm "is this the right box" wants the name, not
+        just traffic stats. LW/MC have no identity of their own to
+        show (LoRaWAN is a passive sniffer here; a MeshCore companion's
+        own name isn't something this plugin reaches for, to stay
+        decoupled from that capture source's specific object shape) --
+        they get four stats instead: all-time and last-24h for both
+        devices and packets, which is genuinely more useful there than
+        padding with nothing."""
+        stats = await self._protocol_stats(protocol_label)
+        if protocol_label == "MT":
+            transmit = getattr(self._context.config, "transmit", None)
+            short_name = getattr(transmit, "short_name", "") or "?"
+            long_name = (getattr(transmit, "long_name", "") or "?")[:20]
+            if stats is None:
+                return [short_name, long_name, "stats unavailable"]
+            return [
+                short_name, long_name,
+                f"Peers: {stats['devices']}",
+                f"Packets: {stats['packets']}",
+            ]
+        if stats is None:
+            return ["stats unavailable"]
+        return [
+            f"Devices: {stats['devices']}",
+            f"Packets: {stats['packets']}",
+            f"Active 24h: {stats['devices_24h']}",
+            f"Pkts 24h: {stats['packets_24h']}",
+        ]
+
     async def _reticulum_status(self) -> str:
         """Reticulum isn't a CaptureSource -- it's a `service` plugin
         (LxmfService), so it never appears in capture_coordinator.sources
@@ -495,11 +589,14 @@ class DisplayService:
 
         Same in-process service_registry lookup as `_reticulum_status()`,
         just with room for the fuller detail a dedicated page has
-        (address prefix + peer count) instead of that one line's "RT
-        (Np)" abbreviation. `own_address` comes back as
+        (address prefix + peer count + announce count) instead of that
+        one line's "RT (Np)" abbreviation. `own_address` comes back as
         `RNS.prettyhexrep()`'s `<32 hex chars>` -- stripped of the
         brackets and cut to 16 chars, which is as much as fits this
-        panel's width at the default font without overflowing."""
+        panel's width at the default font without overflowing.
+        `announce_log()` is a plain in-memory ring buffer (see its own
+        docstring on `LxmfService`) -- `len()` on it is free, no DB/RNS
+        round trip, safe to call every tick."""
         try:
             from src.api.service_registry import live
 
@@ -508,7 +605,12 @@ class DisplayService:
             if service is None or not address:
                 return None
             peer_count = await service.peer_count()
-            return [address.strip("<>")[:16], f"{peer_count} peers"]
+            announce_count = len(service.announce_log())
+            return [
+                address.strip("<>")[:16],
+                f"{peer_count} peers",
+                f"{announce_count} announces",
+            ]
         except Exception:  # noqa: BLE001
             return None
 
