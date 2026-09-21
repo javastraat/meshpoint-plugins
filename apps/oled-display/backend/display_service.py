@@ -72,6 +72,7 @@ class DisplayService:
         self._last_status_png: bytes | None = None
         self._last_status_rendered_at: datetime | None = None
         self._blanked = False
+        self._manual_sleep = False
 
     # -- lifecycle ---------------------------------------------------
 
@@ -121,16 +122,63 @@ class DisplayService:
         serial = i2c(port=1, address=int(self._cfg["i2c_address"], 16))
         return device_cls(serial, width=self._cfg["width"], height=self._cfg["height"])
 
-    async def _show_boot_logo(self) -> None:
-        from luma.core.render import canvas
+    @staticmethod
+    def _boot_font(size: int | None = None):
+        """The classic small bitmap `load_default()` has no size knob
+        on every Pillow version -- `size=` only works from Pillow
+        10.1's scalable variant (setup.sh pins `pillow>=10.0`, so an
+        exactly-10.0.x install would still hit the old signature).
+        Falls back to the small bitmap font so a big title just quietly
+        becomes a same-size one on an old Pillow rather than crashing
+        the boot sequence."""
         from PIL import ImageFont
 
-        font = ImageFont.load_default()
+        if size is None:
+            return ImageFont.load_default()
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
+
+    def _fit_title_font(self, draw, text: str, width: int, height: int):
+        """Largest boot-logo title size that still fits `text` within
+        `width` (4px total margin) -- "MESHPOINT" at the height-driven
+        ceiling alone overflowed a 128px-wide panel (162px wide at
+        size=28), so width has to shrink it back down, not just height.
+        Ceiling is still height-driven (`height // 2`, capped at 28) so
+        a short/wide panel doesn't end up with a title taller than the
+        panel; floor is 8 so a tiny panel still gets something bigger
+        than the "starting..." subtitle rather than giving up."""
+        max_size = max(10, min(28, height // 2))
+        min_size = 8
+        for size in range(max_size, min_size - 1, -1):
+            font = self._boot_font(size=size)
+            l, t, r, b = draw.textbbox((0, 0), text, font=font)
+            if r - l <= width - 4:
+                return font
+        return self._boot_font(size=min_size)
+
+    async def _show_boot_logo(self) -> None:
+        from luma.core.render import canvas
+
+        width, height = self._cfg["width"], self._cfg["height"]
+        title, sub = "MESHPOINT", "starting..."
+        sub_font = self._boot_font()
+
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
-            draw.text((8, 12), "MESHPOINT", font=font, fill="white")
-            draw.text((8, 30), "starting...", font=font, fill="white")
+            title_font = self._fit_title_font(draw, title, width, height)
+
+            tl, tt, tr, tb = draw.textbbox((0, 0), title, font=title_font)
+            tw, th = tr - tl, tb - tt
+            sl, st, sr, sb = draw.textbbox((0, 0), sub, font=sub_font)
+            sw, sh = sr - sl, sb - st
+
+            gap = 3
+            top = max(0, (height - (th + gap + sh)) // 2)
+            draw.text(((width - tw) // 2 - tl, top - tt), title, font=title_font, fill="white")
+            draw.text(((width - sw) // 2 - sl, top + th + gap - st), sub, font=sub_font, fill="white")
         self._capture_frame(cv.image, is_status=False)
         await asyncio.sleep(_BOOT_LOGO_SECONDS)
 
@@ -140,7 +188,8 @@ class DisplayService:
 
         while not self._stop_event.is_set():
             elapsed = time.monotonic() - self._start_time
-            if blank_after_s and elapsed >= blank_after_s:
+            timed_out = bool(blank_after_s) and elapsed >= blank_after_s
+            if self._manual_sleep or timed_out:
                 if not self._blanked:
                     self._blank()
             else:
@@ -358,12 +407,34 @@ class DisplayService:
         this both un-blanks the physical panel right away (via the
         `_draw_status()` call below, no need to wait for the next loop
         tick) and makes the existing blank_after timeout count from
-        now again. Returns False if the display was never opened, so
-        the route can tell the frontend there's nothing to wake."""
+        now again. Also clears `_manual_sleep`, so waking up after a
+        manual Sleep behaves the same as waking up after an auto-blank.
+        Returns False if the display was never opened, so the route
+        can tell the frontend there's nothing to wake."""
         if self._device is None:
             return False
+        self._manual_sleep = False
         self._start_time = time.monotonic()
         await self._draw_status()
+        return True
+
+    def sleep(self) -> bool:
+        """Force the physical panel blank right now -- backs the
+        settings page's Sleep button, the manual counterpart to Wake.
+        A plain one-shot `_blank()` call wouldn't stick: `_loop()`
+        would just re-evaluate its own elapsed-time check on the next
+        tick and redraw status again since the configured timeout
+        hasn't actually elapsed (and never will, when blank_after is
+        set to "never"). `_manual_sleep` overrides that check in
+        `_loop()` directly, so the panel stays blank until `wake()`
+        clears it. Sync (not async) -- unlike `wake()` it never needs
+        to draw a status frame, just blank ones, and `_blank()` itself
+        is synchronous. Returns False if the display was never
+        opened."""
+        if self._device is None:
+            return False
+        self._manual_sleep = True
+        self._blank()
         return True
 
     # -- exposed to routes.py -----------------------------------------

@@ -41,7 +41,9 @@
     opacity: 0.8;
 }
 
-.oled-card [data-oled-wake] {
+.oled-preview-actions {
+    display: flex;
+    gap: 8px;
     margin-top: 10px;
 }
 

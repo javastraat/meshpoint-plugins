@@ -78,6 +78,16 @@ async def wake(_claims: SessionClaims = Depends(require_admin)):
     return {"woke": True}
 
 
+@router.post("/sleep")
+async def sleep(_claims: SessionClaims = Depends(require_admin)):
+    """Force the physical panel blank right now -- the settings page's
+    Sleep button, `wake`'s manual counterpart. Same `require_admin`
+    gate as `wake` for the same reason: it mutates live device state."""
+    if _service is None or not _service.sleep():
+        raise HTTPException(503, "Display not available")
+    return {"asleep": True}
+
+
 class SettingsUpdate(BaseModel):
     enabled: Optional[bool] = None
     i2c_address: Optional[str] = Field(None, pattern=r"^0[xX][0-9a-fA-F]{2}$")

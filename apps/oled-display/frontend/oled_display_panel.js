@@ -37,9 +37,12 @@ class OledDisplayPage {
                         <img data-oled-preview alt="Current OLED contents" hidden>
                     </div>
                     <p class="oled-blanked-note" data-oled-blanked-note hidden>
-                        Physical screen is off (idle timeout) -- showing its last contents.
+                        Physical screen is off (idle timeout, or put to sleep) -- showing its last contents.
                     </p>
-                    <button class="terminal-button" type="button" data-oled-wake>Wake display</button>
+                    <div class="oled-preview-actions">
+                        <button class="terminal-button" type="button" data-oled-wake>Wake display</button>
+                        <button class="terminal-button" type="button" data-oled-sleep>Sleep display</button>
+                    </div>
                 </article>
 
                 <article class="oled-card">
@@ -81,6 +84,7 @@ class OledDisplayPage {
         this._previewStatus = this._q('[data-oled-preview-status]');
         this._blankedNote = this._q('[data-oled-blanked-note]');
         this._wakeButton = this._q('[data-oled-wake]');
+        this._sleepButton = this._q('[data-oled-sleep]');
         this._form = this._q('[data-oled-form]');
         this._saveStatus = this._q('[data-oled-save-status]');
 
@@ -89,6 +93,7 @@ class OledDisplayPage {
             this._save();
         });
         this._wakeButton.addEventListener('click', () => this._wake());
+        this._sleepButton.addEventListener('click', () => this._sleep());
 
         this._loadSettings();
         this._refreshPreview();
@@ -146,23 +151,26 @@ class OledDisplayPage {
         } catch (_) {}
     }
 
-    async _wake() {
-        this._wakeButton.disabled = true;
-        const originalLabel = this._wakeButton.textContent;
-        this._wakeButton.textContent = 'Waking…';
+    _wake() { return this._triggerAction(this._wakeButton, 'wake', 'Waking…'); }
+    _sleep() { return this._triggerAction(this._sleepButton, 'sleep', 'Sleeping…'); }
+
+    async _triggerAction(button, endpoint, pendingLabel) {
+        button.disabled = true;
+        const originalLabel = button.textContent;
+        button.textContent = pendingLabel;
         try {
-            const r = await fetch('/api/oled-display/wake', { method: 'POST', credentials: 'same-origin' });
+            const r = await fetch(`/api/oled-display/${endpoint}`, { method: 'POST', credentials: 'same-origin' });
             if (r.ok) {
                 await this._refreshPreview();
             } else {
                 const data = await r.json().catch(() => ({}));
-                this._previewStatus.textContent = data.detail || `Wake failed (HTTP ${r.status})`;
+                this._previewStatus.textContent = data.detail || `${endpoint} failed (HTTP ${r.status})`;
             }
         } catch (e) {
             this._previewStatus.textContent = `Network error: ${e.message}`;
         } finally {
-            this._wakeButton.disabled = false;
-            this._wakeButton.textContent = originalLabel;
+            button.disabled = false;
+            button.textContent = originalLabel;
         }
     }
 
