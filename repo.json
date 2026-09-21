@@ -50,7 +50,7 @@
       "id": "oled-display",
       "kind": "app",
       "path": "apps/oled-display",
-      "version": "0.1.1\u00a7",
+      "version": "0.1.1",
       "meshpoint_api": 1,
       "provides": [
         "service",
