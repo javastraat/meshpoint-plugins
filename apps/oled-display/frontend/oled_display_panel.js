@@ -73,6 +73,10 @@ class OledDisplayPage {
                             <span class="cfg-field__label">Refresh interval (seconds)</span>
                             <input class="cfg-field__input" type="number" min="1" max="300" data-oled-refresh>
                         </label>
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">Boot logo duration (seconds, 0 = skip it)</span>
+                            <input class="cfg-field__input" type="number" min="0" max="30" step="0.5" data-oled-boot-logo>
+                        </label>
                         <p class="cfg-status" data-oled-save-status aria-live="polite"></p>
                         <button class="terminal-button" type="submit">Save</button>
                     </form>
@@ -117,6 +121,7 @@ class OledDisplayPage {
             this._q('[data-oled-driver]').value = s.driver || 'ssd1306';
             this._q('[data-oled-blank]').value = s.blank_after_minutes ?? 30;
             this._q('[data-oled-refresh]').value = s.refresh_seconds ?? 5;
+            this._q('[data-oled-boot-logo]').value = s.boot_logo_seconds ?? 3;
         } catch (_) {}
     }
 
@@ -181,6 +186,7 @@ class OledDisplayPage {
             driver: this._q('[data-oled-driver]').value,
             blank_after_minutes: parseInt(this._q('[data-oled-blank]').value, 10),
             refresh_seconds: parseInt(this._q('[data-oled-refresh]').value, 10),
+            boot_logo_seconds: parseFloat(this._q('[data-oled-boot-logo]').value),
         };
         this._saveStatus.dataset.kind = 'pending';
         this._saveStatus.textContent = 'Saving…';

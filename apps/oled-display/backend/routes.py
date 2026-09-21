@@ -96,6 +96,7 @@ class SettingsUpdate(BaseModel):
     height: Optional[int] = Field(None, ge=16, le=128)
     blank_after_minutes: Optional[int] = Field(None, ge=0, le=1440)
     refresh_seconds: Optional[int] = Field(None, ge=1, le=300)
+    boot_logo_seconds: Optional[float] = Field(None, ge=0, le=30)
 
 
 @router.put("/settings")

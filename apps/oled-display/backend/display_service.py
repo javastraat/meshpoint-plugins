@@ -23,8 +23,6 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger("oled_display")
 
-_BOOT_LOGO_SECONDS = 3.0
-
 
 def _lan_ip() -> str | None:
     """Best-effort local IP -- opens a UDP socket to a public address
@@ -159,6 +157,10 @@ class DisplayService:
         return self._boot_font(size=min_size)
 
     async def _show_boot_logo(self) -> None:
+        boot_seconds = float(self._cfg.get("boot_logo_seconds", 3.0))
+        if boot_seconds <= 0:
+            return  # boot_logo_seconds: 0 -- skip it entirely, straight to the status loop
+
         from luma.core.render import canvas
 
         width, height = self._cfg["width"], self._cfg["height"]
@@ -180,7 +182,7 @@ class DisplayService:
             draw.text(((width - tw) // 2 - tl, top - tt), title, font=title_font, fill="white")
             draw.text(((width - sw) // 2 - sl, top + th + gap - st), sub, font=sub_font, fill="white")
         self._capture_frame(cv.image, is_status=False)
-        await asyncio.sleep(_BOOT_LOGO_SECONDS)
+        await asyncio.sleep(boot_seconds)
 
     async def _loop(self) -> None:
         refresh_s = max(1, int(self._cfg.get("refresh_seconds", 5)))
