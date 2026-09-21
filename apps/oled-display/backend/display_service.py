@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import signal
 import socket
 import time
 from datetime import datetime, timezone
@@ -74,6 +75,9 @@ class DisplayService:
         self._page_index = 0
         self._page_started = time.monotonic()
         self._current_page_title: str | None = None
+        self._prev_sigterm = None
+        self._prev_sigint = None
+        self._shutdown_message_shown = False
 
     # -- lifecycle ---------------------------------------------------
 
@@ -88,6 +92,7 @@ class DisplayService:
             logger.warning("oled-display: could not open display, staying dark", exc_info=True)
             return
 
+        self._install_shutdown_handlers()
         await self._show_boot_logo()
         self._stop_event.clear()
         self._task = asyncio.ensure_future(self._loop())
@@ -105,12 +110,73 @@ class DisplayService:
                 await self._task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
-        if self._device is not None:
+        self._restore_shutdown_handlers()
+        # Skipped when a SIGTERM/SIGINT already put the "restarting..."
+        # message up (see _on_shutdown_signal) -- blanking here would
+        # just overwrite that message with a plain blank a moment
+        # later, right as the process is exiting anyway. Still runs
+        # for a stop() reached without a preceding signal (e.g. a test
+        # harness calling it directly), same safety net as before.
+        if self._device is not None and not self._shutdown_message_shown:
             try:
                 self._device.clear()
             except Exception:  # noqa: BLE001
                 pass
         logger.info("oled-display stopped")
+
+    def _install_shutdown_handlers(self) -> None:
+        """Chain onto SIGTERM/SIGINT so the panel shows a
+        "restarting..." message the INSTANT the process is asked to
+        stop -- before `service_registry.stop_all()`'s async, ordering
+        -dependent teardown even starts. Plugins stop in REVERSE
+        registration order, and this one registers alphabetically
+        *before* the reticulum plugin, whose own teardown does real
+        disk I/O (persisting LXMF ratchet state) -- waiting for
+        `stop()` to be reached the normal way risks the panel still
+        showing stale content if the process runs out of systemd's
+        `TimeoutStopSec` budget before this plugin's turn comes up.
+        Firing on the signal itself sidesteps that ordering entirely.
+
+        Safe to chain: uvicorn installs its own SIGTERM/SIGINT
+        handlers with a plain `signal.signal(sig, self.handle_exit)`
+        (confirmed against uvicorn's own `Server.
+        install_signal_handlers()` source -- not asyncio's own signal
+        machinery, which would make overwriting it here dangerous),
+        and `handle_exit` itself is just a flag-setter -- so saving
+        the previous handler and calling it afterward doesn't disturb
+        uvicorn's own graceful-shutdown detection at all. Only SIGKILL
+        (an unblockable, un-catchable signal, by design -- true for
+        every process, not something any handler anywhere can work
+        around) can still skip this."""
+        self._prev_sigterm = signal.getsignal(signal.SIGTERM)
+        self._prev_sigint = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGTERM, self._on_shutdown_signal)
+        signal.signal(signal.SIGINT, self._on_shutdown_signal)
+
+    def _restore_shutdown_handlers(self) -> None:
+        if self._prev_sigterm is not None:
+            signal.signal(signal.SIGTERM, self._prev_sigterm)
+        if self._prev_sigint is not None:
+            signal.signal(signal.SIGINT, self._prev_sigint)
+
+    def _on_shutdown_signal(self, signum, frame) -> None:
+        """The actual handler. Draws the restart message -- unconditionally,
+        even if the panel was manually asleep or auto-blanked at the
+        time, since a restart is worth seeing regardless -- then chains
+        to whatever handler was previously installed (see
+        `_install_shutdown_handlers()`) so the app's own shutdown
+        sequence still proceeds exactly as it would have. Synchronous
+        and fast (a handful of I2C writes): runs in signal context on
+        the process's main thread and must never block or raise."""
+        self._shutdown_message_shown = True
+        try:
+            self._draw_wordmark_page("restarting...")
+        except Exception:  # noqa: BLE001 -- never let this break the real shutdown
+            logger.warning("oled-display: shutdown message draw failed", exc_info=True)
+
+        prev = self._prev_sigterm if signum == signal.SIGTERM else self._prev_sigint
+        if callable(prev):
+            prev(signum, frame)
 
     # -- rendering -----------------------------------------------------
 
@@ -159,15 +225,18 @@ class DisplayService:
                 return font
         return self._boot_font(size=min_size)
 
-    async def _show_boot_logo(self) -> None:
-        boot_seconds = float(self._cfg.get("boot_logo_seconds", 3.0))
-        if boot_seconds <= 0:
-            return  # boot_logo_seconds: 0 -- skip it entirely, straight to the status loop
-
+    def _draw_wordmark_page(self, subtitle: str) -> None:
+        """Big centered MESHPOINT title + a small subtitle underneath --
+        shared by the boot logo ("starting...") and the shutdown
+        handler's message ("restarting..."), so both read as the same
+        "the box is doing something, hang on" moment rather than two
+        different visual languages. Synchronous on purpose: the
+        shutdown handler calls this from signal context, where nothing
+        can be awaited."""
         from luma.core.render import canvas
 
         width, height = self._cfg["width"], self._cfg["height"]
-        title, sub = "MESHPOINT", "starting..."
+        title = "MESHPOINT"
         sub_font = self._boot_font()
 
         cv = canvas(self._device)
@@ -177,14 +246,20 @@ class DisplayService:
 
             tl, tt, tr, tb = draw.textbbox((0, 0), title, font=title_font)
             tw, th = tr - tl, tb - tt
-            sl, st, sr, sb = draw.textbbox((0, 0), sub, font=sub_font)
+            sl, st, sr, sb = draw.textbbox((0, 0), subtitle, font=sub_font)
             sw, sh = sr - sl, sb - st
 
             gap = 3
             top = max(0, (height - (th + gap + sh)) // 2)
             draw.text(((width - tw) // 2 - tl, top - tt), title, font=title_font, fill="white")
-            draw.text(((width - sw) // 2 - sl, top + th + gap - st), sub, font=sub_font, fill="white")
+            draw.text(((width - sw) // 2 - sl, top + th + gap - st), subtitle, font=sub_font, fill="white")
         self._capture_frame(cv.image, is_status=False)
+
+    async def _show_boot_logo(self) -> None:
+        boot_seconds = float(self._cfg.get("boot_logo_seconds", 3.0))
+        if boot_seconds <= 0:
+            return  # boot_logo_seconds: 0 -- skip it entirely, straight to the status loop
+        self._draw_wordmark_page("starting...")
         await asyncio.sleep(boot_seconds)
 
     async def _loop(self) -> None:
