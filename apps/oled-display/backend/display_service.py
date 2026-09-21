@@ -78,6 +78,7 @@ class DisplayService:
         self._prev_sigterm = None
         self._prev_sigint = None
         self._shutdown_message_shown = False
+        self._shutdown_install_task: asyncio.Task | None = None
 
     # -- lifecycle ---------------------------------------------------
 
@@ -92,10 +93,10 @@ class DisplayService:
             logger.warning("oled-display: could not open display, staying dark", exc_info=True)
             return
 
-        self._install_shutdown_handlers()
         await self._show_boot_logo()
         self._stop_event.clear()
         self._task = asyncio.ensure_future(self._loop())
+        self._shutdown_install_task = asyncio.ensure_future(self._install_shutdown_handlers_delayed())
         logger.info(
             "oled-display started (%s @ %s, %sx%s)",
             self._cfg["driver"], self._cfg["i2c_address"],
@@ -104,6 +105,12 @@ class DisplayService:
 
     async def stop(self) -> None:
         self._stop_event.set()
+        if self._shutdown_install_task is not None:
+            self._shutdown_install_task.cancel()
+            try:
+                await self._shutdown_install_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
         if self._task is not None:
             self._task.cancel()
             try:
@@ -124,6 +131,40 @@ class DisplayService:
                 pass
         logger.info("oled-display stopped")
 
+    # How long to wait, from this plugin's own start(), before actually
+    # installing the shutdown handlers -- see
+    # _install_shutdown_handlers_delayed()'s docstring for why this
+    # can't just happen immediately. Comfortably past the ~8s this
+    # box's own full startup (every plugin, concentrator, Reticulum,
+    # all of it) took end to end in the boot log used to pick this
+    # number -- not a hard guarantee against a slower box or a future
+    # plugin that itself defers its own signal registration, just a
+    # generous buffer against what's actually running today.
+    _SHUTDOWN_HANDLER_DELAY_S = 8.0
+
+    async def _install_shutdown_handlers_delayed(self) -> None:
+        """Deferred on purpose -- installing immediately in start()
+        was tried first and doesn't work. Confirmed live: Reticulum's
+        underlying RNS library installs its OWN real SIGTERM handler
+        when IT starts up ("RNS: Received SIGTERM, shutting down
+        now!" on every restart), and Python only ever has one handler
+        per signal -- RNS doesn't know or care that this plugin got
+        there first, so its later `signal.signal()` call silently
+        replaces this one's, with no chaining. Since plugins start in
+        registration order and this one (alphabetically) starts
+        before reticulum, installing immediately meant this handler
+        was always dead by the time a real shutdown happened.
+
+        Waiting past every other plugin's own startup flips that:
+        THIS plugin's `signal.signal()` call ends up being the last
+        one made, so it's the live handler at actual shutdown time --
+        and because it saves+chains rather than overwriting, it
+        correctly hands off to RNS's real handler afterward instead
+        of skipping it."""
+        await asyncio.sleep(self._SHUTDOWN_HANDLER_DELAY_S)
+        if self._device is not None:
+            self._install_shutdown_handlers()
+
     def _install_shutdown_handlers(self) -> None:
         """Chain onto SIGTERM/SIGINT so the panel shows a
         "restarting..." message the INSTANT the process is asked to
@@ -136,18 +177,21 @@ class DisplayService:
         showing stale content if the process runs out of systemd's
         `TimeoutStopSec` budget before this plugin's turn comes up.
         Firing on the signal itself sidesteps that ordering entirely.
+        Called only after `_install_shutdown_handlers_delayed()`'s
+        wait -- see that method for why the delay itself is required.
 
         Safe to chain: uvicorn installs its own SIGTERM/SIGINT
         handlers with a plain `signal.signal(sig, self.handle_exit)`
         (confirmed against uvicorn's own `Server.
         install_signal_handlers()` source -- not asyncio's own signal
-        machinery, which would make overwriting it here dangerous),
-        and `handle_exit` itself is just a flag-setter -- so saving
-        the previous handler and calling it afterward doesn't disturb
-        uvicorn's own graceful-shutdown detection at all. Only SIGKILL
-        (an unblockable, un-catchable signal, by design -- true for
-        every process, not something any handler anywhere can work
-        around) can still skip this."""
+        machinery, which would make overwriting it here dangerous).
+        By the time THIS runs, whatever's currently installed (RNS's
+        own handler, or uvicorn's trivial flag-setter if Reticulum
+        isn't enabled) is saved and chained to afterward, so nobody's
+        own graceful-shutdown logic gets skipped. Only SIGKILL (an
+        unblockable, un-catchable signal, by design -- true for every
+        process, not something any handler anywhere can work around)
+        can still skip this."""
         self._prev_sigterm = signal.getsignal(signal.SIGTERM)
         self._prev_sigint = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGTERM, self._on_shutdown_signal)
