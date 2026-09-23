@@ -3,15 +3,173 @@
  *
  * Start/Stop a scan, watch a live table of every advertising BLE
  * device in range (address, name, RSSI, last seen), sortable by any
- * column. Polls `/api/bluetooth-scanner/status` every 2s while the
- * page is visible -- same shape as every other listener-family
- * plugin's panel (RTL433, ACARS, ...): no WebSocket, just a plain
- * poll loop that starts on show() and stops on hide().
+ * column, click a row for a right-side detail drawer.
+ *
+ * Same visual system as the LoRaWAN/Meshtastic/MeshCore/Reticulum
+ * protocol pages -- this renders the literal core CSS class names
+ * (`lw-panel__head`/`lw-stats`/`lw-table` from lorawan.css,
+ * `nd-drawer`/`nd-header`/`nd-section`/`nd-row` from node_drawer.css)
+ * rather than a hand-copied approximation, the same way the Reticulum
+ * plugin's own Peers drawer does (see reticulum_detail_panels.js's
+ * own docstring for the reasoning). Those class names are just
+ * layout/color rules with no protocol-specific behaviour baked in.
+ * What stays plugin-owned is the markup construction and data --
+ * this never touches NodeDrawer's own JS class or its singleton
+ * `#node-drawer` element; Bluetooth devices don't have Meshtastic's
+ * node_id/telemetry shape, so building a small drawer of our own is
+ * the right call, not a special case of the real one.
+ *
+ * Polling, not WebSocket, same as every listener-family plugin panel
+ * (RTL433, ACARS, ...): a plain 2s poll loop that starts on show()
+ * and stops on hide().
  */
 (function () {
     'use strict';
 
     const API = '/api/bluetooth-scanner';
+
+    function esc(value) {
+        const el = document.createElement('span');
+        el.textContent = value == null ? '' : String(value);
+        return el.innerHTML;
+    }
+
+    function hashColor(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return `hsl(${Math.abs(hash) % 360}, 55%, 45%)`;
+    }
+
+    function fullTime(ts) {
+        if (!Number.isFinite(ts)) return '--';
+        return new Date(ts * 1000).toLocaleString([], { hour12: false });
+    }
+
+    function relTime(ts) {
+        if (!Number.isFinite(ts)) return '--';
+        const secs = Math.max(0, Math.round(Date.now() / 1000 - ts));
+        if (secs < 5) return 'just now';
+        if (secs < 60) return `${secs}s ago`;
+        return `${Math.round(secs / 60)}m ago`;
+    }
+
+    // Same RSSI tier breaks as node_drawer.js's _signalQuality -- same
+    // physical quantity (a receive signal strength in dBm), same
+    // meaning, so the same thresholds and the same visual language.
+    function signalQuality(rssi) {
+        if (!Number.isFinite(rssi)) return null;
+        if (rssi > -60) return 'Excellent';
+        if (rssi >= -75) return 'Good';
+        if (rssi >= -90) return 'Fair';
+        return 'Poor';
+    }
+
+    /** Right-side slide-in detail panel for a single device row -- same
+     * nd-drawer/nd-header/nd-section chrome as every other protocol's
+     * node/peer drawer, own small markup for our own small data shape. */
+    class BluetoothDeviceDrawer {
+        open(device) {
+            this.close();
+
+            const backdrop = document.createElement('div');
+            backdrop.className = 'nd-backdrop';
+            backdrop.addEventListener('click', () => this.close());
+
+            const drawer = document.createElement('div');
+            drawer.className = 'nd-drawer';
+            drawer.addEventListener('click', (e) => e.stopPropagation());
+
+            const name = esc(device.name || device.address);
+            const shortLabel = esc((device.address || '').replace(/[^0-9A-F]/gi, '').slice(0, 2)).toUpperCase();
+            const color = hashColor(device.address || '');
+
+            drawer.innerHTML = `
+                <div class="nd-header">
+                    <div class="nd-header__left">
+                        <div class="nd-avatar" style="background:${color}">${shortLabel || '??'}</div>
+                        <div class="nd-header__info">
+                            <div class="nd-header__name">${name}</div>
+                            <div class="nd-header__id">${esc(device.address)}</div>
+                        </div>
+                    </div>
+                    <button class="nd-close" title="Close">&times;</button>
+                </div>
+                <div class="nd-body"></div>
+            `;
+            drawer.querySelector('.nd-close').addEventListener('click', () => this.close());
+
+            document.body.appendChild(backdrop);
+            document.body.appendChild(drawer);
+            this._backdrop = backdrop;
+            this._drawer = drawer;
+            requestAnimationFrame(() => {
+                backdrop.classList.add('nd-backdrop--visible');
+                drawer.classList.add('nd-drawer--open');
+            });
+
+            this._renderSections(device);
+        }
+
+        close() {
+            if (this._drawer) this._drawer.remove();
+            if (this._backdrop) this._backdrop.remove();
+            this._drawer = null;
+            this._backdrop = null;
+        }
+
+        _renderSections(device) {
+            const body = this._drawer.querySelector('.nd-body');
+            body.appendChild(this._buildSection('Device Info', [
+                ['Address', esc(device.address)],
+                ['Name', device.name ? esc(device.name) : '(none advertised)'],
+                ['First seen', esc(fullTime(device.first_seen))],
+                ['Last seen', esc(fullTime(device.last_seen))],
+            ]));
+
+            const quality = signalQuality(device.rssi);
+            const signalRows = [];
+            if (Number.isFinite(device.rssi)) signalRows.push(['RSSI', `${device.rssi} dBm`]);
+            if (quality) signalRows.push(['Quality', quality]);
+            body.appendChild(this._buildSection('Signal', signalRows));
+        }
+
+        _buildSection(title, rows) {
+            const section = document.createElement('div');
+            section.className = 'nd-section';
+
+            const header = document.createElement('div');
+            header.className = 'nd-section__header';
+            header.innerHTML = `<span class="nd-section__title">${esc(title)}</span>
+                <span class="nd-section__arrow">▼</span>`;
+
+            const content = document.createElement('div');
+            content.className = 'nd-section__content';
+
+            if (!rows.length) {
+                content.innerHTML = '<div class="nd-section__empty">No data available</div>';
+            } else {
+                rows.forEach(([label, value]) => {
+                    const row = document.createElement('div');
+                    row.className = 'nd-row';
+                    row.innerHTML = `<span class="nd-row__label">${esc(label)}</span>
+                        <span class="nd-row__value">${value}</span>`;
+                    content.appendChild(row);
+                });
+            }
+
+            header.addEventListener('click', () => {
+                const visible = content.style.display !== 'none';
+                content.style.display = visible ? 'none' : '';
+                header.querySelector('.nd-section__arrow').textContent = visible ? '▶' : '▼';
+            });
+
+            section.appendChild(header);
+            section.appendChild(content);
+            return section;
+        }
+    }
 
     class BluetoothScannerPage {
         constructor() {
@@ -19,39 +177,54 @@
             this._timer = null;
             this._sortKey = 'last_seen';
             this._sortDir = 'desc';
+            this._devicesByAddress = new Map();
+            this._drawer = new BluetoothDeviceDrawer();
         }
 
         mount(rootEl) {
             this._root = rootEl;
             rootEl.innerHTML = `
                 <div class="plugin-page bts-page">
-                    <header class="bts-head">
-                        <h1>Bluetooth Scanner</h1>
-                        <p class="bts-hint">
-                            Generic nearby-BLE-device radar. Address, name, and
-                            signal strength for every advertising device in range.
-                        </p>
-                    </header>
-                    <div class="bts-controls">
-                        <button class="terminal-button terminal-button--primary" data-start>Start scan</button>
-                        <button class="terminal-button" data-stop disabled>Stop scan</button>
-                        <button class="terminal-button" data-clear>Clear</button>
-                        <span class="bts-status" data-status>Stopped</span>
-                        <span class="bts-count" data-count></span>
+                    <div class="lw-panel__head">
+                        <h1 class="lw-panel__title">Bluetooth Scanner</h1>
+                        <div class="lw-panel__actions">
+                            <button class="terminal-button terminal-button--primary" data-start>Start scan</button>
+                            <button class="terminal-button" data-stop disabled>Stop scan</button>
+                            <button class="terminal-button" data-clear>Clear</button>
+                        </div>
+                    </div>
+                    <div class="lw-stats">
+                        <div class="stat-card">
+                            <div class="stat-card__value" data-status>Stopped</div>
+                            <div class="stat-card__label">Status</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__value" data-count>0</div>
+                            <div class="stat-card__label">Devices in range</div>
+                        </div>
                     </div>
                     <p class="bts-error" data-error hidden></p>
-                    <div class="bts-table-wrap">
-                        <table class="bts-table">
-                            <thead>
-                                <tr>
-                                    <th data-sort="address">Address</th>
-                                    <th data-sort="name">Name</th>
-                                    <th data-sort="rssi">RSSI</th>
-                                    <th data-sort="last_seen">Last seen</th>
-                                </tr>
-                            </thead>
-                            <tbody data-rows></tbody>
-                        </table>
+                    <div class="lw-section">
+                        <div class="lw-table-wrap">
+                            <table class="lw-table lw-table--bluetooth">
+                                <colgroup>
+                                    <col class="col-id">
+                                    <col class="col-name">
+                                    <col class="col-rssi">
+                                    <col class="col-time">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th data-sort="address">Address</th>
+                                        <th data-sort="name">Name</th>
+                                        <th class="lw-r" data-sort="rssi">RSSI</th>
+                                        <th data-sort="last_seen">Last seen</th>
+                                    </tr>
+                                </thead>
+                                <tbody data-rows></tbody>
+                            </table>
+                        </div>
+                        <p class="lw-empty" data-empty hidden>No devices seen yet.</p>
                     </div>
                 </div>
             `;
@@ -63,6 +236,7 @@
             this._countEl = rootEl.querySelector('[data-count]');
             this._errorEl = rootEl.querySelector('[data-error]');
             this._rowsEl = rootEl.querySelector('[data-rows]');
+            this._emptyEl = rootEl.querySelector('[data-empty]');
 
             this._startBtn.addEventListener('click', () => this._start());
             this._stopBtn.addEventListener('click', () => this._stop());
@@ -84,6 +258,7 @@
                 window.clearInterval(this._timer);
                 this._timer = null;
             }
+            this._drawer.close();
         }
 
         async _refresh() {
@@ -98,13 +273,11 @@
         }
 
         _render(body) {
-            this._statusEl.textContent = body.running ? 'Scanning…' : 'Stopped';
+            this._statusEl.textContent = body.running ? 'Scanning' : 'Stopped';
             this._statusEl.classList.toggle('bts-status--live', !!body.running);
             this._startBtn.disabled = !!body.running;
             this._stopBtn.disabled = !body.running;
-
-            const count = body.device_count || 0;
-            this._countEl.textContent = `${count} device${count === 1 ? '' : 's'}`;
+            this._countEl.textContent = body.device_count || 0;
 
             if (body.last_error) {
                 this._errorEl.hidden = false;
@@ -114,21 +287,31 @@
             }
 
             const devices = (body.devices || []).slice();
+            this._devicesByAddress = new Map(devices.map((d) => [d.address, d]));
             devices.sort((a, b) => this._compare(a, b));
 
             if (!devices.length) {
-                this._rowsEl.innerHTML = '<tr><td colspan="4" class="bts-empty">No devices seen yet.</td></tr>';
+                this._rowsEl.innerHTML = '';
+                if (this._emptyEl) this._emptyEl.hidden = false;
                 return;
             }
+            if (this._emptyEl) this._emptyEl.hidden = true;
 
             this._rowsEl.innerHTML = devices.map((d) => `
-                <tr>
-                    <td>${this._esc(d.address)}</td>
-                    <td>${this._esc(d.name || '—')}</td>
-                    <td>${Number.isFinite(d.rssi) ? `${d.rssi} dBm` : '—'}</td>
-                    <td>${this._formatAge(d.last_seen)}</td>
+                <tr class="lw-pkt-row" data-address="${esc(d.address)}" title="Click for details">
+                    <td class="lw-id">${esc(d.address)}</td>
+                    <td class="mt-name">${esc(d.name || '—')}</td>
+                    <td class="lw-num">${Number.isFinite(d.rssi) ? `${d.rssi} dBm` : '—'}</td>
+                    <td class="lw-time">${esc(relTime(d.last_seen))}</td>
                 </tr>
             `).join('');
+
+            this._rowsEl.querySelectorAll('tr[data-address]').forEach((tr) => {
+                tr.addEventListener('click', () => {
+                    const device = this._devicesByAddress.get(tr.dataset.address);
+                    if (device) this._drawer.open(device);
+                });
+            });
         }
 
         _compare(a, b) {
@@ -162,20 +345,6 @@
                     th.classList.add(this._sortDir === 'asc' ? 'bts-sort--asc' : 'bts-sort--desc');
                 }
             });
-        }
-
-        _formatAge(ts) {
-            if (!Number.isFinite(ts)) return '—';
-            const secs = Math.max(0, Math.round(Date.now() / 1000 - ts));
-            if (secs < 5) return 'just now';
-            if (secs < 60) return `${secs}s ago`;
-            return `${Math.round(secs / 60)}m ago`;
-        }
-
-        _esc(value) {
-            const div = document.createElement('div');
-            div.textContent = value == null ? '' : String(value);
-            return div.innerHTML;
         }
 
         async _start() {

@@ -2,7 +2,12 @@
 
 A generic nearby-BLE-device radar: **Start scan** / **Stop scan**, a live
 table of every advertising Bluetooth LE device in range (address, name,
-RSSI, last seen), sortable by any column by clicking its header.
+RSSI, last seen), sortable by any column by clicking its header. Click a
+row for a right-side detail drawer — same visual system as the
+LoRaWAN/Meshtastic/MeshCore/Reticulum protocol pages (their shared
+`lw-*` table/panel and `nd-*` drawer CSS classes, reused directly rather
+than a hand-copied approximation — same approach the Reticulum plugin's
+own Peers drawer already takes).
 
 Adds "Bluetooth Scanner" under the **Networks** section of the sidebar.
 Uses the Pi's own onboard (or a USB) Bluetooth adapter via
@@ -56,8 +61,10 @@ backend/__init__.py                register(reg) -- add_router + add_listener
 backend/listener.py                BluetoothScannerListener (bleak-backed, FastAPI-free)
 backend/routes.py                  /api/bluetooth-scanner/{status,start,stop,clear}
 backend/tests/test_listener.py     stubs bleak via sys.modules -- no real adapter needed
-frontend/bluetooth_scanner.js      the sidebar page (registerSidebarPage) + poll loop
-frontend/bluetooth_scanner.css     sortable table + controls styling, theme tokens only
+frontend/bluetooth_scanner.js      the sidebar page (registerSidebarPage) + poll loop +
+                                    a small detail drawer (own markup/data, core nd-* CSS)
+frontend/bluetooth_scanner.css     only what core CSS doesn't already cover: this
+                                    table's column widths + sortable-header indicators
 ```
 
 Full plugin-architecture write-up: [docs/PLUGINS.md](https://github.com/KMX415/meshpoint/blob/main/docs/PLUGINS.md)

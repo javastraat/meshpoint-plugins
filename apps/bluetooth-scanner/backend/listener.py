@@ -107,11 +107,15 @@ class BluetoothScannerListener:
     def _on_detection(self, device, advertisement_data) -> None:
         rssi = getattr(advertisement_data, "rssi", None)
         name = getattr(advertisement_data, "local_name", None) or getattr(device, "name", None)
+        now = time.time()
+        existing = self._devices.get(device.address)
+        first_seen = existing["first_seen"] if existing else now
         self._devices[device.address] = {
             "address": device.address,
             "name": name,
             "rssi": rssi,
-            "last_seen": time.time(),
+            "first_seen": first_seen,
+            "last_seen": now,
         }
 
     def poll(self) -> dict:

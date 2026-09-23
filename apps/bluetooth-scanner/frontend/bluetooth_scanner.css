@@ -1,68 +1,20 @@
 /* Bluetooth Scanner plugin page.
  *
- * .plugin-page (core dashboard.css) already gives base padding/typography;
- * everything here is specific to the controls row and the sortable table.
- * Only theme tokens are used -- no hardcoded colors -- so every bundled
- * and community theme keeps working.
+ * Deliberately small: the table/panel/drawer chrome comes from core
+ * CSS already loaded site-wide (lorawan.css's .lw-*, node_drawer.css's
+ * .nd-*) -- same reuse-not-recreate approach the Reticulum plugin's
+ * own frontend takes. Only what's genuinely new here gets its own
+ * rule: this table's own column widths (table-layout: fixed needs an
+ * explicit width per column; lorawan.css only defines col-* widths for
+ * its own .lw-table--devices/--packets variants), and the sortable
+ * column-header indicators (LoRaWAN's own tables aren't user-sortable,
+ * so there's no existing class for that).
  */
 
-.bts-hint {
-    color: var(--text-secondary);
-    margin-top: 0.25rem;
-}
-
-.bts-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin: 1.25rem 0 0.75rem;
-    flex-wrap: wrap;
-}
-
-.bts-status {
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.bts-status--live {
-    color: var(--accent-green);
-}
-
-.bts-count {
-    color: var(--text-secondary);
-    font-size: 0.9em;
-}
-
-.bts-error {
-    color: var(--accent-red);
-    margin: 0.5rem 0 0;
-}
-
-.bts-table-wrap {
-    overflow-x: auto;
-    margin-top: 0.75rem;
-}
-
-.bts-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.bts-table th,
-.bts-table td {
-    padding: 0.5rem 0.75rem;
-    text-align: left;
-    border-bottom: 1px solid var(--hairline);
-    white-space: nowrap;
-}
-
-.bts-table th {
-    color: var(--text-secondary);
-    font-weight: 600;
-    font-size: 0.8em;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
+.lw-table--bluetooth col.col-id   { width: 160px; }
+.lw-table--bluetooth col.col-name { width: auto; }
+.lw-table--bluetooth col.col-rssi { width: 90px; }
+.lw-table--bluetooth col.col-time { width: 100px; }
 
 .bts-sortable {
     cursor: pointer;
@@ -81,13 +33,11 @@
     content: " \25BC";
 }
 
-.bts-table tbody tr:hover {
-    background: var(--overlay-weak);
+.bts-status--live {
+    color: var(--accent-green);
 }
 
-.bts-empty {
-    text-align: center;
-    color: var(--text-secondary);
-    padding: 1.5rem 0;
-    white-space: normal;
+.bts-error {
+    color: var(--accent-red);
+    margin: 0 clamp(16px, 3vw, 32px);
 }

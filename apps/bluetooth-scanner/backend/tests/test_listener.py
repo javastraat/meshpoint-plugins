@@ -12,6 +12,7 @@ time.
 from __future__ import annotations
 
 import sys
+import time
 import types
 import unittest
 from pathlib import Path
@@ -158,19 +159,42 @@ class TestBluetoothScannerListener(unittest.IsolatedAsyncioTestCase):
         finally:
             await listener.stop()
 
+    async def test_first_seen_stays_stable_across_repeated_detections(self) -> None:
+        listener = BluetoothScannerListener()
+        await listener.start()
+        try:
+            scanner = _FakeBleakScanner.instances[0]
+            scanner.detection_callback(
+                _FakeDevice("AA:AA:AA:AA:AA:AA"), _FakeAdvertisementData(rssi=-70),
+            )
+            first_seen = listener.status()["devices"][0]["first_seen"]
+
+            # A device that keeps re-advertising should keep its ORIGINAL
+            # first_seen even as last_seen/rssi update on every detection.
+            scanner.detection_callback(
+                _FakeDevice("AA:AA:AA:AA:AA:AA"), _FakeAdvertisementData(rssi=-65),
+            )
+            device = listener.status()["devices"][0]
+            self.assertEqual(device["first_seen"], first_seen)
+            self.assertEqual(device["rssi"], -65)
+        finally:
+            await listener.stop()
+
     async def test_stale_devices_are_filtered_out(self) -> None:
         listener = BluetoothScannerListener()
         listener._devices["stale"] = {
             "address": "stale",
             "name": None,
             "rssi": -50,
+            "first_seen": 0.0,
             "last_seen": 0.0,  # epoch -- guaranteed far older than the staleness window
         }
         listener._devices["fresh"] = {
             "address": "fresh",
             "name": None,
             "rssi": -50,
-            "last_seen": __import__("time").time(),
+            "first_seen": time.time(),
+            "last_seen": time.time(),
         }
         status = listener.status()
         addresses = {d["address"] for d in status["devices"]}
@@ -180,7 +204,7 @@ class TestBluetoothScannerListener(unittest.IsolatedAsyncioTestCase):
         listener = BluetoothScannerListener()
         listener._devices["x"] = {
             "address": "x", "name": None, "rssi": -50,
-            "last_seen": __import__("time").time(),
+            "first_seen": time.time(), "last_seen": time.time(),
         }
         self.assertEqual(listener.status()["device_count"], 1)
         listener.clear()
