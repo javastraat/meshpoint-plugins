@@ -47,12 +47,25 @@
         return new Date(ts * 1000).toLocaleString([], { hour12: false });
     }
 
-    function relTime(ts) {
+    // Exact same logic as reticulum_panel.js's own _fmtTime -- same-day
+    // shows just a clock time, anything older shows month/day too. Not
+    // relative ("Xs ago"): every other protocol table in this app
+    // (LoRaWAN, Meshtastic, MeshCore, Reticulum's own Peers) uses this
+    // same absolute-time convention for its time columns.
+    function smartTime(ts) {
         if (!Number.isFinite(ts)) return '--';
-        const secs = Math.max(0, Math.round(Date.now() / 1000 - ts));
-        if (secs < 5) return 'just now';
-        if (secs < 60) return `${secs}s ago`;
-        return `${Math.round(secs / 60)}m ago`;
+        const d = new Date(ts * 1000);
+        const now = new Date();
+        const sameDay = d.getFullYear() === now.getFullYear()
+            && d.getMonth() === now.getMonth()
+            && d.getDate() === now.getDate();
+        if (sameDay) {
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        }
+        return d.toLocaleString([], {
+            month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+        });
     }
 
     // Same RSSI tier breaks as node_drawer.js's _signalQuality -- same
@@ -193,7 +206,7 @@
                             <button class="terminal-button" data-clear>Clear</button>
                         </div>
                     </div>
-                    <div class="lw-stats">
+                    <div class="bts-stats">
                         <div class="stat-card">
                             <div class="stat-card__value" data-status>Stopped</div>
                             <div class="stat-card__label">Status</div>
@@ -208,17 +221,19 @@
                         <div class="lw-table-wrap">
                             <table class="lw-table lw-table--bluetooth">
                                 <colgroup>
-                                    <col class="col-id">
+                                    <col class="col-time">
                                     <col class="col-name">
+                                    <col class="col-id">
                                     <col class="col-rssi">
                                     <col class="col-time">
                                 </colgroup>
                                 <thead>
                                     <tr>
-                                        <th data-sort="address">Address</th>
-                                        <th data-sort="name">Name</th>
-                                        <th class="lw-r" data-sort="rssi">RSSI</th>
                                         <th data-sort="last_seen">Last seen</th>
+                                        <th data-sort="name">Name</th>
+                                        <th data-sort="address">Address</th>
+                                        <th class="lw-r" data-sort="rssi">RSSI</th>
+                                        <th data-sort="first_seen">First seen</th>
                                     </tr>
                                 </thead>
                                 <tbody data-rows></tbody>
@@ -299,10 +314,11 @@
 
             this._rowsEl.innerHTML = devices.map((d) => `
                 <tr class="lw-pkt-row" data-address="${esc(d.address)}" title="Click for details">
-                    <td class="lw-id">${esc(d.address)}</td>
+                    <td class="lw-time">${esc(smartTime(d.last_seen))}</td>
                     <td class="mt-name">${esc(d.name || '—')}</td>
+                    <td class="lw-id">${esc(d.address)}</td>
                     <td class="lw-num">${Number.isFinite(d.rssi) ? `${d.rssi} dBm` : '—'}</td>
-                    <td class="lw-time">${esc(relTime(d.last_seen))}</td>
+                    <td class="lw-time">${esc(smartTime(d.first_seen))}</td>
                 </tr>
             `).join('');
 

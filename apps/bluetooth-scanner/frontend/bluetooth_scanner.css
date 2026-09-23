@@ -11,6 +11,20 @@
  * so there's no existing class for that).
  */
 
+/* Same layout as lorawan.css's own .lw-stats (flex row, same gap and
+ * padding) but WITHOUT its `.stat-card { flex: 1 }` override -- that
+ * override stretches every card to fill the row evenly, which reads
+ * fine across Reticulum's five cards but blows up our two into two
+ * oversized, mostly-empty boxes. Leaving `.stat-card` at its own base
+ * rule (flex: 0 0 auto, dashboard.css) gives compact, natural-width
+ * cards regardless of how many there are. */
+.bts-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 4px clamp(16px, 3vw, 32px) 16px;
+}
+
 .lw-table--bluetooth col.col-id   { width: 160px; }
 .lw-table--bluetooth col.col-name { width: auto; }
 .lw-table--bluetooth col.col-rssi { width: 90px; }
