@@ -218,28 +218,31 @@
                     </div>
                     <p class="bts-error" data-error hidden></p>
                     <div class="lw-section">
-                        <div class="lw-table-wrap">
-                            <table class="lw-table lw-table--bluetooth">
-                                <colgroup>
-                                    <col class="col-time">
-                                    <col class="col-name">
-                                    <col class="col-id">
-                                    <col class="col-rssi">
-                                    <col class="col-time">
-                                </colgroup>
-                                <thead>
-                                    <tr>
-                                        <th data-sort="last_seen">Last seen</th>
-                                        <th data-sort="name">Name</th>
-                                        <th data-sort="address">Address</th>
-                                        <th class="lw-r" data-sort="rssi">RSSI</th>
-                                        <th data-sort="first_seen">First seen</th>
-                                    </tr>
-                                </thead>
-                                <tbody data-rows></tbody>
-                            </table>
+                        <div class="panel">
+                            <div class="panel__header">Devices</div>
+                            <div class="panel__body lw-table-wrap">
+                                <table class="lw-table lw-table--bluetooth">
+                                    <colgroup>
+                                        <col class="col-time">
+                                        <col class="col-name">
+                                        <col class="col-id">
+                                        <col class="col-rssi">
+                                        <col class="col-time">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th data-sort="last_seen">Last seen</th>
+                                            <th data-sort="name">Name</th>
+                                            <th data-sort="address">Address</th>
+                                            <th class="lw-r" data-sort="rssi">RSSI</th>
+                                            <th data-sort="first_seen">First seen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody data-rows></tbody>
+                                </table>
+                                <p class="lw-empty" data-empty hidden>No devices seen yet.</p>
+                            </div>
                         </div>
-                        <p class="lw-empty" data-empty hidden>No devices seen yet.</p>
                     </div>
                 </div>
             `;
