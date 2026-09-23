@@ -1,0 +1,93 @@
+/* Bluetooth Scanner plugin page.
+ *
+ * .plugin-page (core dashboard.css) already gives base padding/typography;
+ * everything here is specific to the controls row and the sortable table.
+ * Only theme tokens are used -- no hardcoded colors -- so every bundled
+ * and community theme keeps working.
+ */
+
+.bts-hint {
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.bts-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.25rem 0 0.75rem;
+    flex-wrap: wrap;
+}
+
+.bts-status {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.bts-status--live {
+    color: var(--accent-green);
+}
+
+.bts-count {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+.bts-error {
+    color: var(--accent-red);
+    margin: 0.5rem 0 0;
+}
+
+.bts-table-wrap {
+    overflow-x: auto;
+    margin-top: 0.75rem;
+}
+
+.bts-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.bts-table th,
+.bts-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--hairline);
+    white-space: nowrap;
+}
+
+.bts-table th {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.8em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.bts-sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.bts-sortable:hover {
+    color: var(--accent-cyan);
+}
+
+.bts-sort--asc::after {
+    content: " \25B2";
+}
+
+.bts-sort--desc::after {
+    content: " \25BC";
+}
+
+.bts-table tbody tr:hover {
+    background: var(--overlay-weak);
+}
+
+.bts-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 1.5rem 0;
+    white-space: normal;
+}

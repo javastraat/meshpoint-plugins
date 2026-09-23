@@ -3,6 +3,22 @@
   "name": "meshpoint-plugins",
   "plugins": [
     {
+      "id": "bluetooth-scanner",
+      "kind": "app",
+      "path": "apps/bluetooth-scanner",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "listener",
+        "routes",
+        "sidebar"
+      ],
+      "description": "Generic nearby-BLE-device radar: Start/Stop scan, live sortable table of every advertising Bluetooth LE device in range (address, name, RSSI, last seen).",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/javastraat/meshpoint-plugins",
+      "has_setup": true
+    },
+    {
       "id": "hello-world-github",
       "kind": "app",
       "path": "apps/hello-world-github",

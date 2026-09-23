@@ -1,0 +1,24 @@
+name = "bluetooth-scanner"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["listener", "routes", "sidebar"]
+
+[deps]
+apt = ["bluez"]
+setup = "setup.sh"
+check = "check.sh"
+
+[frontend]
+scripts = ["frontend/bluetooth_scanner.js"]
+styles = ["frontend/bluetooth_scanner.css"]
+
+[sidebar]
+route = "bluetooth-scanner"
+label = "Bluetooth Scanner"
+category = "networks"
+icon = "antenna"
+
+[meta]
+description = "Generic nearby-BLE-device radar: Start/Stop scan, live sortable table of every advertising Bluetooth LE device in range (address, name, RSSI, last seen)."
+homepage = "https://github.com/javastraat/meshpoint-plugins"
+author = "Einstein PD2EMC"
