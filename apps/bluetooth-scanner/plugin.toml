@@ -4,7 +4,7 @@ meshpoint_api = 1
 provides = ["listener", "routes", "sidebar"]
 
 [deps]
-apt = ["bluez"]
+apt = ["bluez", "pi-bluetooth", "raspberrypi-sys-mods", "wireless-regdb"]
 setup = "setup.sh"
 check = "check.sh"
 

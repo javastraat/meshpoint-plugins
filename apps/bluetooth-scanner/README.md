@@ -28,12 +28,20 @@ plugins:
     enabled: true
 ```
 
-Run setup first (installs `bluez` if missing, and `bleak` into Meshpoint's
-venv) — either **Settings → Plugins → Run setup**, or over SSH:
+Run setup first — either **Settings → Plugins → Run setup**, or over SSH:
 
 ```bash
 sudo meshpoint plugin setup bluetooth-scanner
 ```
+
+This installs `bluez`, the Raspberry-Pi-specific `pi-bluetooth` package
+(the onboard adapter is UART-attached and needs it specifically — plain
+`bluez` alone leaves `hciconfig` reporting "no such device"), enables and
+starts the `bluetooth` service, unblocks rfkill, and installs `bleak` into
+Meshpoint's venv. **If `pi-bluetooth` was just installed for the first
+time, reboot once** (`sudo reboot`) before trying Start scan — its
+`hciuart.service` only binds to the UART device at boot, not on a plain
+service restart.
 
 Restart, then **Networks → Bluetooth Scanner** in the sidebar.
 
@@ -46,11 +54,13 @@ Restart, then **Networks → Bluetooth Scanner** in the sidebar.
 - **Stale-device pruning.** A device that stops re-advertising drops off
   the table after 2 minutes, so what's shown is "still in range right now,"
   not "everything ever seen since Start was clicked."
-- **RF-kill / adapter not up.** If the onboard adapter is blocked (common
-  on a fresh Pi image), Start will fail with whatever error `bleak`/BlueZ
-  reports. Check with `rfkill list` and `sudo rfkill unblock bluetooth`,
-  then `sudo hciconfig hci0 up` to confirm the adapter itself comes up
-  before troubleshooting the plugin.
+- **`BleakDBusError: Failed to activate service 'org.bluez': timed out`**
+  on Start scan means bluetoothd itself never came up — confirmed on a
+  genuinely fresh Pi where `pi-bluetooth` had never been installed
+  before. Re-running setup (above) should now catch and fix this; if it
+  still happens after that plus a reboot, check `rfkill list` /
+  `sudo rfkill unblock bluetooth` and `sudo hciconfig hci0 up` to confirm
+  the adapter itself comes up outside of Meshpoint entirely.
 
 ## Layout
 
