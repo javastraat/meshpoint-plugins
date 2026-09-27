@@ -38,10 +38,17 @@ This installs `bluez`, the Raspberry-Pi-specific `pi-bluetooth` package
 (the onboard adapter is UART-attached and needs it specifically — plain
 `bluez` alone leaves `hciconfig` reporting "no such device"), enables and
 starts the `bluetooth` service, unblocks rfkill, and installs `bleak` into
-Meshpoint's venv.
+Meshpoint's venv. It also checks `config.txt` for an *active*
+`dtoverlay=disable-bt` line — some GPS/UART troubleshooting on this class
+of board frees the primary UART by disabling the onboard BT adapter
+entirely at the device-tree level, which is invisible to every other
+check here (packages can all be installed correctly and it'll still fail
+identically) since it disables the hardware itself. Comments it back out
+if found; never touches an already-commented line.
 
-**If `pi-bluetooth` was just installed for the first time**, setup stops
-there and asks for a reboot, then run it again:
+**If `pi-bluetooth` was just installed, or an active `disable-bt` line
+was just commented out**, setup stops there and asks for a reboot, then
+run it again:
 
 ```bash
 sudo reboot
