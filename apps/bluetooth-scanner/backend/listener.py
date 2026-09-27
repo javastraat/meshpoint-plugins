@@ -67,7 +67,23 @@ class BluetoothScannerListener:
             try:
                 await scanner.start()
             except Exception as exc:  # noqa: BLE001 -- surface whatever bleak/BlueZ raises
-                self._last_error = f"{type(exc).__name__}: {exc}"
+                detail = f"{type(exc).__name__}: {exc}"
+                # A real, distinct failure mode confirmed live: bleak
+                # reaches bluetoothd over D-Bus fine (unlike a missing-
+                # adapter/D-Bus-timeout error) but BlueZ's own adapter
+                # power state is off -- rfkill-unblocked and
+                # hciconfig-up don't imply this. Matching on the
+                # message text rather than a specific bleak exception
+                # class, since that class has moved across bleak
+                # versions and this substring hasn't.
+                if "power" in str(exc).lower():
+                    self._last_error = (
+                        f"{detail} -- run: sudo bluetoothctl power on "
+                        "(or re-run plugin setup, which now does this "
+                        "automatically)"
+                    )
+                else:
+                    self._last_error = detail
                 raise RuntimeError(self._last_error) from exc
 
             self._scanner = scanner

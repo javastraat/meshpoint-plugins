@@ -23,6 +23,18 @@
 # not a userspace package or service. Comments it back out if found --
 # never touches an already-commented line.
 #
+# Also explicitly powers the adapter on via `bluetoothctl power on` --
+# confirmed live as a genuinely separate failure mode from everything
+# above: rfkill-unblocked and hciconfig-up don't imply BlueZ's own
+# adapter is powered on. Without this, Start scan fails with:
+#   BleakBluetoothNotAvailableError: No powered Bluetooth adapters
+#   found. Turn on Bluetooth and try again. (POWERED_OFF)
+# even though bleak reaches bluetoothd over D-Bus just fine at that
+# point (this is a different, later-stage error than the D-Bus
+# activation timeout above -- that one means bluetoothd itself isn't
+# reachable at all; this one means it IS reachable, the adapter is
+# just logically switched off in BlueZ's own state).
+#
 # Idempotent: skips whichever piece is already satisfied. Two-phase:
 # stops right after fixing config.txt / installing pi-bluetooth and
 # asks for a single combined reboot + a second run, rather than
@@ -114,6 +126,16 @@ systemctl enable --now bluetooth 2>/dev/null || true
 # RF-kill soft-blocks the radio by default on some images/board revs.
 if command -v rfkill &>/dev/null; then
     rfkill unblock bluetooth 2>/dev/null || true
+fi
+
+# rfkill-unblocked and hciconfig-up aren't the same thing as BlueZ's own
+# adapter power state -- confirmed live: bleak can reach bluetoothd fine
+# at this point and still fail with BleakBluetoothNotAvailableError
+# ("No powered Bluetooth adapters found" / POWERED_OFF) until this is
+# set explicitly, via BlueZ's own management API (bluetoothctl), not
+# the legacy hci-level tools above.
+if command -v bluetoothctl &>/dev/null; then
+    bluetoothctl power on 2>/dev/null || true
 fi
 
 echo "bluetooth-scanner setup complete."

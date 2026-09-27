@@ -32,6 +32,10 @@ class _FakeBleakScanner:
     so a test can fire fake advertisements through it."""
 
     instances: list["_FakeBleakScanner"] = []
+    # Set by a test to make the next start() raise, simulating a real
+    # bleak/BlueZ failure (e.g. adapter powered off) instead of always
+    # succeeding.
+    raise_on_start: BaseException | None = None
 
     def __init__(self, detection_callback=None):
         self.detection_callback = detection_callback
@@ -40,6 +44,8 @@ class _FakeBleakScanner:
         _FakeBleakScanner.instances.append(self)
 
     async def start(self):
+        if _FakeBleakScanner.raise_on_start is not None:
+            raise _FakeBleakScanner.raise_on_start
         self.started = True
 
     async def stop(self):
@@ -71,6 +77,7 @@ class TestBluetoothScannerListener(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self) -> None:
         sys.modules.pop("bleak", None)
+        _FakeBleakScanner.raise_on_start = None  # belt-and-braces if a test's own try/finally didn't run
 
     async def test_not_running_initially(self) -> None:
         listener = BluetoothScannerListener()
@@ -112,6 +119,37 @@ class TestBluetoothScannerListener(unittest.IsolatedAsyncioTestCase):
         await listener.stop()
         self.assertFalse(listener.running)
         self.assertTrue(scanner.stopped)
+
+    async def test_powered_off_adapter_gets_an_actionable_error(self) -> None:
+        # Real error confirmed live: bleak reaches bluetoothd over
+        # D-Bus fine at this point (unlike the missing-adapter/D-Bus-
+        # timeout case), but BlueZ's own adapter power state is off.
+        _FakeBleakScanner.raise_on_start = RuntimeError(
+            "No powered Bluetooth adapters found. Turn on Bluetooth "
+            "and try again."
+        )
+        try:
+            listener = BluetoothScannerListener()
+            with self.assertRaises(RuntimeError) as ctx:
+                await listener.start()
+            self.assertIn("bluetoothctl power on", str(ctx.exception))
+            self.assertFalse(listener.running)
+        finally:
+            _FakeBleakScanner.raise_on_start = None
+
+    async def test_unrelated_start_failure_is_not_mislabeled(self) -> None:
+        # Only the "power" wording gets the actionable hint appended --
+        # a genuinely different failure shouldn't get a misleading
+        # suggestion bolted onto it.
+        _FakeBleakScanner.raise_on_start = RuntimeError("some other adapter fault")
+        try:
+            listener = BluetoothScannerListener()
+            with self.assertRaises(RuntimeError) as ctx:
+                await listener.start()
+            self.assertNotIn("bluetoothctl power on", str(ctx.exception))
+            self.assertIn("some other adapter fault", str(ctx.exception))
+        finally:
+            _FakeBleakScanner.raise_on_start = None
 
     async def test_missing_bleak_raises_runtime_error(self) -> None:
         # `sys.modules["bleak"] = None` is the standard idiom to force
