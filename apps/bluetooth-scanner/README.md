@@ -75,10 +75,21 @@ Restart, then **Networks → Bluetooth Scanner** in the sidebar.
 - **`BleakDBusError: Failed to activate service 'org.bluez': timed out`**
   on Start scan means bluetoothd itself never came up — confirmed on a
   genuinely fresh Pi where `pi-bluetooth` had never been installed
-  before. Re-running setup (above) should now catch and fix this; if it
-  still happens after that plus a reboot, check `rfkill list` /
-  `sudo rfkill unblock bluetooth` and `sudo hciconfig hci0 up` to confirm
-  the adapter itself comes up outside of Meshpoint entirely.
+  before. Re-running setup (above) should now catch and fix this.
+- **`BleakBluetoothNotAvailableError: No powered Bluetooth adapters
+  found` (`POWERED_OFF`)** means bluetoothd is reachable but the
+  adapter's own BlueZ-level power state is off — a genuinely separate
+  thing from rfkill or `hciconfig up`. Confirmed live: the actual root
+  cause turned out to be `rfkill list bluetooth` still reporting `Soft
+  blocked: yes` even after installing `pi-bluetooth` and rebooting —
+  bluetoothd's own journal showed `Failed to set mode: Failed (0x03)`
+  on every power-on attempt while that block was in place. Setup now
+  unblocks rfkill and explicitly runs `bluetoothctl power on`, in that
+  order (`org.bluez.Error.Busy` from the power-on step immediately
+  after is harmless — BlueZ auto-powers the adapter itself right after
+  an rfkill unblock and can race the script's own explicit attempt).
+  If Start scan still fails after re-running setup, check `rfkill list
+  bluetooth` directly to confirm it now says `Soft blocked: no`.
 
 ## Layout
 

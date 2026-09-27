@@ -123,10 +123,19 @@ fi
 # an on-demand-activation timeout.
 systemctl enable --now bluetooth 2>/dev/null || true
 
-# RF-kill soft-blocks the radio by default on some images/board revs.
+# RF-kill soft-blocks the radio by default on some images/board revs --
+# confirmed live as the actual, sole cause of a "Failed to set mode:
+# Failed (0x03)" loop in bluetoothd's own journal every time something
+# tried to power the adapter on while still soft-blocked.
 if command -v rfkill &>/dev/null; then
     rfkill unblock bluetooth 2>/dev/null || true
 fi
+
+# BlueZ tends to auto-power an adapter itself right after noticing an
+# rfkill unblock -- give it a moment before also trying explicitly
+# below, or the two race and bluetoothctl reports a (harmless)
+# "org.bluez.Error.Busy" instead of actually confirming power state.
+sleep 2
 
 # rfkill-unblocked and hciconfig-up aren't the same thing as BlueZ's own
 # adapter power state -- confirmed live: bleak can reach bluetoothd fine
