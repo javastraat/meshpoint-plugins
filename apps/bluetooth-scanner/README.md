@@ -38,10 +38,21 @@ This installs `bluez`, the Raspberry-Pi-specific `pi-bluetooth` package
 (the onboard adapter is UART-attached and needs it specifically — plain
 `bluez` alone leaves `hciconfig` reporting "no such device"), enables and
 starts the `bluetooth` service, unblocks rfkill, and installs `bleak` into
-Meshpoint's venv. **If `pi-bluetooth` was just installed for the first
-time, reboot once** (`sudo reboot`) before trying Start scan — its
-`hciuart.service` only binds to the UART device at boot, not on a plain
-service restart.
+Meshpoint's venv.
+
+**If `pi-bluetooth` was just installed for the first time**, setup stops
+there and asks for a reboot, then run it again:
+
+```bash
+sudo reboot
+sudo meshpoint plugin setup bluetooth-scanner
+```
+
+The one real tested-working sequence for this included a reboot at that
+point, so it's the recommended path — though that same reboot also
+happened to pick up an unrelated config.txt edit at the same time, so
+it isn't fully isolated proof pi-bluetooth alone requires one. Rebooting
+is low-cost either way.
 
 Restart, then **Networks → Bluetooth Scanner** in the sidebar.
 
