@@ -24,14 +24,18 @@ class OledDisplayPage {
     mount(rootEl) {
         this.root = rootEl;
         rootEl.innerHTML = `
-            <div class="plugin-page oled-page">
-                <h2>OLED Display</h2>
-                <p>Drives the board's I2C status OLED: a boot logo, then live device
-                    status (IP address, active capture sources, uptime). Auto-blanks
-                    after a timeout to avoid burn-in.</p>
+            <header class="lw-panel__head">
+                <h2 class="lw-panel__title">OLED Display</h2>
+            </header>
+            <p class="oled-page__intro">Drives the board's I2C status OLED: a boot logo, then live device
+                status (IP address, active capture sources, uptime). Auto-blanks
+                after a timeout to avoid burn-in.</p>
 
-                <article class="oled-card">
-                    <h3 class="oled-card__title">Live preview</h3>
+            <div class="cfg-section cfg-section--grid">
+                <article class="cfg-card">
+                    <header class="cfg-card__head">
+                        <h3 class="cfg-card__title">Live preview</h3>
+                    </header>
                     <p class="auth-status" data-oled-preview-status aria-live="polite">Loading…</p>
                     <div class="oled-preview">
                         <img data-oled-preview alt="Current OLED contents" hidden>
@@ -50,49 +54,55 @@ class OledDisplayPage {
                     </div>
                 </article>
 
-                <article class="oled-card">
-                    <h3 class="oled-card__title">Settings</h3>
-                    <form data-oled-form>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">
-                                <input type="checkbox" data-oled-enabled> Display enabled
-                            </span>
+                <article class="cfg-card">
+                    <header class="cfg-card__head">
+                        <h3 class="cfg-card__title">Settings</h3>
+                    </header>
+                    <form class="cfg-form" data-oled-form>
+                        <label class="cfg-field cfg-field--toggle">
+                            <input type="checkbox" data-oled-enabled>
+                            <span class="cfg-field__label">Display enabled</span>
                         </label>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">I2C address</span>
-                            <input class="cfg-field__input" data-oled-address placeholder="0x3D">
+                        <div class="cfg-row">
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">I2C address</span>
+                                <input class="cfg-field__input" data-oled-address placeholder="0x3D">
+                            </label>
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Controller</span>
+                                <select class="cfg-field__input" data-oled-driver>
+                                    <option value="ssd1306">SSD1306</option>
+                                    <option value="sh1106">SH1106</option>
+                                    <option value="ssd1309">SSD1309</option>
+                                </select>
+                            </label>
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Blank after (minutes, 0 = never)</span>
+                                <input class="cfg-field__input" type="number" min="0" max="1440" data-oled-blank>
+                            </label>
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Refresh interval (seconds)</span>
+                                <input class="cfg-field__input" type="number" min="1" max="300" data-oled-refresh>
+                            </label>
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Boot logo duration (seconds, 0 = skip it)</span>
+                                <input class="cfg-field__input" type="number" min="0" max="30" step="0.5" data-oled-boot-logo>
+                            </label>
+                        </div>
+                        <label class="cfg-field cfg-field--toggle">
+                            <input type="checkbox" data-oled-rotate>
+                            <span class="cfg-field__label">Rotate screens (Overview + one page per active protocol)</span>
                         </label>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">Controller</span>
-                            <select class="cfg-field__input" data-oled-driver>
-                                <option value="ssd1306">SSD1306</option>
-                                <option value="sh1106">SH1106</option>
-                                <option value="ssd1309">SSD1309</option>
-                            </select>
-                        </label>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">Blank after (minutes, 0 = never)</span>
-                            <input class="cfg-field__input" type="number" min="0" max="1440" data-oled-blank>
-                        </label>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">Refresh interval (seconds)</span>
-                            <input class="cfg-field__input" type="number" min="1" max="300" data-oled-refresh>
-                        </label>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">Boot logo duration (seconds, 0 = skip it)</span>
-                            <input class="cfg-field__input" type="number" min="0" max="30" step="0.5" data-oled-boot-logo>
-                        </label>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">
-                                <input type="checkbox" data-oled-rotate> Rotate screens (Overview + one page per active protocol)
-                            </span>
-                        </label>
-                        <label class="cfg-field">
-                            <span class="cfg-field__label">Seconds per page (when rotating)</span>
-                            <input class="cfg-field__input" type="number" min="1" max="60" step="0.5" data-oled-rotate-seconds>
-                        </label>
+                        <div class="cfg-row">
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Seconds per page (when rotating)</span>
+                                <input class="cfg-field__input" type="number" min="1" max="60" step="0.5" data-oled-rotate-seconds>
+                            </label>
+                        </div>
+                        <div class="cfg-card__actions">
+                            <button class="terminal-button terminal-button--primary" type="submit">Save</button>
+                        </div>
                         <p class="cfg-status" data-oled-save-status aria-live="polite"></p>
-                        <button class="terminal-button" type="submit">Save</button>
                     </form>
                 </article>
             </div>

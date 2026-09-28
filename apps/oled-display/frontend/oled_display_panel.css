@@ -1,20 +1,24 @@
-.oled-card {
-    /* --bg-card is the real token both themes define for an elevated
-       surface (#ffffff light, #162033 dark) -- --bg-elevated doesn't
-       exist anywhere in this app's theme system, so it was silently
-       always falling back to its hardcoded dark default regardless of
-       theme, while the text inside correctly switched via inheritance:
-       dark text on a permanently-dark card in light mode. */
-    border: 1px solid var(--border, #333);
-    border-radius: 6px;
-    padding: 14px 16px;
-    margin-top: 16px;
-    background: var(--bg-card, #1a1a1a);
+/* This page used to have its own bespoke `.oled-card`/`.oled-card__title`
+   card chrome and a bare `<h2>`/`<p>` page title (core's generic
+   `.plugin-page` fallback styling) -- visibly different from every other
+   settings-shaped page in the app. Switched to the real shared classes
+   instead (`.lw-panel__head`/`.lw-panel__title` for the title,
+   `.cfg-card`/`.cfg-card__head`/`.cfg-form`/`.cfg-row`/
+   `.cfg-field--narrow` for the cards, the exact same ones Configuration
+   -> Peripherals' own Fan/Status LED/User Button cards use) so this page
+   reads as part of the same app instead of a one-off. `.section` defaults
+   to `overflow: hidden` (dashboard.css) and `.plugin-page` was quietly
+   supplying this page's only scroll behavior -- opted back in directly,
+   same convention `lorawan.css` uses for its own pages. */
+.section[data-section="oled-display"] {
+    overflow-y: auto;
 }
 
-.oled-card__title {
-    margin: 0 0 10px;
-    font-size: 0.95rem;
+.oled-page__intro {
+    margin: 0 0 16px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 .oled-preview {
@@ -51,11 +55,4 @@
 .oled-current-page {
     font-size: 0.85rem;
     opacity: 0.8;
-}
-
-.oled-page form {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-width: 360px;
 }
