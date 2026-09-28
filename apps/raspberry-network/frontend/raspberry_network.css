@@ -2,21 +2,32 @@
    already cover -- this page's own warning banner, message rows, and
    the inline connect form. Uses the real global tokens from
    frontend/css/dashboard.css's :root (--bg-card, --border, --accent-*)
-   rather than inventing new ones. */
+   rather than inventing new ones.
+
+   Horizontal alignment: every top-level element here uses the exact
+   same `clamp(16px, 3vw, 32px)` side inset lorawan.css's own
+   .lw-panel__head and bluetooth-scanner's .bts-stats/.bts-error use --
+   `.plugin-page` (dashboard.css) already pads the page itself, so this
+   inset is what makes THIS page's own title, warning, stat cards, and
+   messages all line up with each other and with the header -- a plain
+   `margin: Xrem 0` (no horizontal component) was the bug in an earlier
+   version, flush against the page's own left edge instead of matching
+   the title's indent. */
 
 .rn-warning {
     background: var(--bg-card);
     border: 1px solid var(--accent-amber);
     border-radius: 6px;
     padding: 0.6rem 0.9rem;
-    margin: 0.75rem 0;
+    margin: 0 clamp(16px, 3vw, 32px) 12px;
     font-size: 0.9rem;
 }
 
 .rn-stats {
     display: flex;
-    gap: 1rem;
-    margin: 0.75rem 0;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 4px clamp(16px, 3vw, 32px) 16px;
 }
 
 .rn-error,
@@ -24,7 +35,7 @@
     background: var(--bg-card);
     border-radius: 6px;
     padding: 0.5rem 0.9rem;
-    margin: 0.5rem 0;
+    margin: 0 clamp(16px, 3vw, 32px) 8px;
     font-size: 0.9rem;
 }
 
@@ -42,7 +53,7 @@
 }
 
 .rn-connect-form {
-    margin-top: 0.75rem;
+    margin: 12px clamp(16px, 3vw, 32px) 0;
 }
 
 .rn-field {

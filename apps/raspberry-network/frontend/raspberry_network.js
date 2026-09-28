@@ -9,8 +9,9 @@
  *
  * No polling here, unlike most plugin pages -- a wifi scan is something
  * the user deliberately triggers (it briefly disrupts the radio), not a
- * continuously-refreshing feed. Status (current connection) is fetched
- * once on show() and again after a connect attempt.
+ * continuously-refreshing feed. Status (current connection, IP address,
+ * gateway, DNS) is fetched once on show() and again after a connect
+ * attempt.
  *
  * The connect flow deliberately never claims success until the backend
  * says so: `POST /connect` blocks until nmcli itself reports the real
@@ -72,6 +73,18 @@
                             <div class="stat-card__value" data-current-state>--</div>
                             <div class="stat-card__label">State</div>
                         </div>
+                        <div class="stat-card">
+                            <div class="stat-card__value" data-current-ip>--</div>
+                            <div class="stat-card__label">IP address</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__value" data-current-gateway>--</div>
+                            <div class="stat-card__label">Gateway</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__value" data-current-dns>--</div>
+                            <div class="stat-card__label">DNS</div>
+                        </div>
                     </div>
 
                     <p class="rn-error" data-error hidden></p>
@@ -119,6 +132,9 @@
             this._scanBtn = rootEl.querySelector('[data-scan]');
             this._currentSsidEl = rootEl.querySelector('[data-current-ssid]');
             this._currentStateEl = rootEl.querySelector('[data-current-state]');
+            this._currentIpEl = rootEl.querySelector('[data-current-ip]');
+            this._currentGatewayEl = rootEl.querySelector('[data-current-gateway]');
+            this._currentDnsEl = rootEl.querySelector('[data-current-dns]');
             this._errorEl = rootEl.querySelector('[data-error]');
             this._successEl = rootEl.querySelector('[data-success]');
             this._rowsEl = rootEl.querySelector('[data-rows]');
@@ -148,6 +164,12 @@
                 const status = body.status;
                 this._currentSsidEl.textContent = status && status.connection ? status.connection : '(not connected)';
                 this._currentStateEl.textContent = status ? status.state : 'no wifi device';
+                // IPv4 address comes as CIDR ("192.168.4.50/24") -- the
+                // prefix length is useful detail, not clutter, so it stays.
+                this._currentIpEl.textContent = (status && status.address) || '--';
+                this._currentGatewayEl.textContent = (status && status.gateway) || '--';
+                this._currentDnsEl.textContent = status && status.dns && status.dns.length
+                    ? status.dns.join(', ') : '--';
             } catch (_e) {
                 // Network blip -- next action (scan/connect) will surface anything real.
             }

@@ -2,11 +2,12 @@
 
 Scan for WiFi networks and switch the Pi's WiFi connection straight from
 the dashboard — no SSH, no shell, no editing `wpa_supplicant.conf` by
-hand. Shows the current connection/state at the top, a **Scan for
-networks** button, a sortable-by-signal table of what's nearby, and a
-small connect form (password field, for secured networks) per row.
-Leave the password blank to reconnect to an already-known network using
-its saved credentials, or to join a genuinely open one.
+hand. Shows the current connection, state, IP address, gateway, and DNS
+at the top, a **Scan for networks** button, a sortable-by-signal table
+of what's nearby, and a small connect form (password field, for secured
+networks) per row. Leave the password blank to reconnect to an
+already-known network using its saved credentials, or to join a
+genuinely open one.
 
 Uses [NetworkManager](https://networkmanager.dev/) (`nmcli`) — the real
 network stack on Bookworm-era Raspberry Pi OS, already installed by
