@@ -58,5 +58,9 @@ view — a stale or edited catalog can't smuggle anything in.
 | `adsb` | app | Live ADS-B air traffic tracking with a map |
 | `dab` | app | DAB/DAB+ digital radio |
 | `dapnet` | app | DAPNET/POCSAG amateur-radio paging via a companion board over USB serial |
+| `reticulum` | app | Native Reticulum/LXMF messaging -- peer roster, Peers/Messages/Send/Settings page |
+| `reticulum-call` | app | Voice calls over Reticulum -- adds a Call tab to the Reticulum page |
+| `reticulum-browser` | app | Full multi-tab NomadNet browser for Reticulum |
+| `reticulum-dashboard` | app | Standalone live Reticulum activity dashboard (stats, map, peer ticker) |
 | `github-dark-theme` | theme | GitHub's dark default (Primer) |
 | `github-light-theme` | theme | GitHub's light default (Primer) |

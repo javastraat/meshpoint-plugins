@@ -216,6 +216,69 @@
       "hook_host": "rtlsdr"
     },
     {
+      "id": "reticulum",
+      "kind": "app",
+      "path": "apps/reticulum",
+      "version": "1.0.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "service",
+        "routes",
+        "sidebar",
+        "topbar"
+      ],
+      "description": "Native Reticulum/LXMF messaging -- meshpoint's own LXMF delivery destination on the local rnsd shared instance, the peer roster built from announces, the Reticulum page (Peers/Messages/Send/Settings) and a compact topbar pill.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://reticulum.network",
+      "has_setup": true
+    },
+    {
+      "id": "reticulum-browser",
+      "kind": "app",
+      "path": "apps/reticulum-browser",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "sidebar"
+      ],
+      "description": "A full multi-tab NomadNet browser for Reticulum -- tabs, address bar, back/forward/reload, favourites (shared with the Reticulum page's own Browse tab and the Reticulum Dashboard's quick-browse modal), a raw/rendered view toggle, and keyboard shortcuts. Feature set inspired by fr33n0w's rBrowser (see homepage); this is a clean-room implementation for Meshpoint's own plugin architecture, not a code port -- full credit in README.md. Requires the reticulum plugin enabled.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/fr33n0w/rBrowser",
+      "has_setup": false,
+      "requires": "reticulum"
+    },
+    {
+      "id": "reticulum-call",
+      "kind": "app",
+      "path": "apps/reticulum-call",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "hook"
+      ],
+      "description": "Voice calls over Reticulum -- a Call tab on the Reticulum page, Codec2 encoded, browser to browser. Backend byte-pipe lives in the reticulum plugin itself (same RNS identity as LXMF delivery); this plugin is the call UI + Codec2 WASM only.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/javastraat/meshpoint-plugins",
+      "has_setup": false,
+      "hook_host": "reticulum",
+      "requires": "reticulum"
+    },
+    {
+      "id": "reticulum-dashboard",
+      "kind": "app",
+      "path": "apps/reticulum-dashboard",
+      "version": "1.0.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "sidebar"
+      ],
+      "description": "A live, standalone view of Reticulum activity -- stat cards, a telemetry map of located peers, a live peer list, and a flashing real-time announce ticker. Companion to the reticulum plugin's own Peers/Messages/Settings page; requires reticulum enabled to show data.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://reticulum.network",
+      "has_setup": false,
+      "requires": "reticulum"
+    },
+    {
       "id": "rtl433",
       "kind": "app",
       "path": "apps/rtl433",
