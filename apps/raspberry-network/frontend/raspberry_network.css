@@ -15,19 +15,21 @@
    cards *inside* the panel and nearly double-applied that padding;
    caught before shipping by checking exactly where Reticulum's own
    `.lw-stats` sits in its markup (outside the panel, a sibling
-   section) rather than assuming. `.rn-warning`/`.rn-error`/
-   `.rn-success` are page-level siblings the same way, so they need
-   their own matching horizontal margin -- `.panel`/`.panel__body`
-   have none of their own by design (a table fills it edge-to-edge on
-   purpose), which is also why the connect form below only needs a
-   simple top border, not its own outer margin. */
+   section) rather than assuming. `.rn-error`/`.rn-success` are still
+   page-level siblings, so they keep their own matching horizontal
+   margin -- `.panel`/`.panel__body` have none of their own by design
+   (a table fills it edge-to-edge on purpose). `.rn-warning` moved
+   *inside* the panel (below the scan table) so both tabs' top
+   sections match; it now uses the same `.lsn-panel-body`-style inset
+   as `.rn-note`/`.rn-connect-form` below, not the page-level clamp
+   margin. */
 
 .rn-warning {
     background: var(--bg-card);
     border: 1px solid var(--accent-amber);
     border-radius: 6px;
     padding: 0.6rem 0.9rem;
-    margin: 0 clamp(16px, 3vw, 32px) 12px;
+    margin: 12px 0.75rem 0;
     font-size: 0.9rem;
 }
 
@@ -51,6 +53,15 @@
 .rn-in-use {
     opacity: 0.7;
     font-size: 0.85em;
+}
+
+/* .stat-card__value is `white-space: nowrap` globally (dashboard.css) --
+   fine for a single IP, not for a multi-address DNS list, which
+   otherwise overflows past the card's own border. Scoped to the DNS
+   cards only, not a change to the shared class. */
+.rn-stat-value--wrap {
+    white-space: normal;
+    word-break: break-word;
 }
 
 /* A plain (non-table) panel body lines up with .panel__header's own

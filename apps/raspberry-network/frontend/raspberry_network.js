@@ -75,12 +75,6 @@
                     </div>
 
                     <div data-rn-view="wifi">
-                        <p class="rn-warning">
-                            ⚠️ Connecting to a network here can disconnect this dashboard
-                            if you're currently reached over WiFi and the new network
-                            doesn't work -- have Ethernet or physical access available
-                            as a fallback before trying an unfamiliar network.
-                        </p>
                         <div class="lw-stats">
                             <div class="stat-card">
                                 <div class="stat-card__value" data-current-ssid>--</div>
@@ -99,7 +93,7 @@
                                 <div class="stat-card__label">Gateway</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-card__value" data-current-dns>--</div>
+                                <div class="stat-card__value rn-stat-value--wrap" data-current-dns>--</div>
                                 <div class="stat-card__label">DNS</div>
                             </div>
                         </div>
@@ -126,7 +120,7 @@
                                 <div class="stat-card__label">Gateway</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-card__value" data-eth-dns>--</div>
+                                <div class="stat-card__value rn-stat-value--wrap" data-eth-dns>--</div>
                                 <div class="stat-card__label">DNS</div>
                             </div>
                         </div>
@@ -157,6 +151,13 @@
                                     </table>
                                     <p class="lw-empty" data-empty hidden>No networks found yet -- click Scan.</p>
                                 </div>
+
+                                <p class="rn-warning panel__body">
+                                    ⚠️ Connecting to a network here can disconnect this dashboard
+                                    if you're currently reached over WiFi and the new network
+                                    doesn't work -- have Ethernet or physical access available
+                                    as a fallback before trying an unfamiliar network.
+                                </p>
 
                                 <div class="rn-connect-form panel__body" data-connect-form hidden>
                                     <div class="rn-connect-form__title">Connect to <span data-connect-ssid></span></div>
