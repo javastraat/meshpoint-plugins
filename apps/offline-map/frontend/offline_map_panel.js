@@ -24,41 +24,63 @@ class OfflineMapPage {
     mount(rootEl) {
         this.root = rootEl;
         rootEl.innerHTML = `
-            <div class="plugin-page om-page">
-                <h2>Offline Maps</h2>
-                <p>Downloads OpenStreetMap tiles for offline use. Builds and runs
-                    <code>offline-map-tile-downloader</code> as a background process;
-                    once it's running, use its own web UI to pick an area and
-                    download tiles.</p>
+            <header class="lw-panel__head">
+                <h2 class="lw-panel__title">Offline Maps</h2>
+            </header>
+            <p class="om-page__intro">Downloads OpenStreetMap tiles for offline use. Builds and runs
+                <code>offline-map-tile-downloader</code> as a background process;
+                once it's running, use its own web UI to pick an area and
+                download tiles.</p>
 
-                <article class="om-card">
-                    <h3 class="om-card__title">Downloader</h3>
+            <div class="cfg-section cfg-section--grid">
+                <article class="cfg-card">
+                    <header class="cfg-card__head">
+                        <h3 class="cfg-card__title">Downloader</h3>
+                    </header>
                     <p class="auth-status" data-om-status aria-live="polite">Loading…</p>
-                    <div class="om-card__actions">
+                    <div class="cfg-card__actions">
                         <button class="terminal-button" type="button" data-om-toggle disabled>Start</button>
                         <a class="terminal-button" data-om-open href="#" target="_blank" rel="noopener" hidden>Open downloader UI</a>
                     </div>
                     <pre class="om-log" data-om-log hidden></pre>
                 </article>
 
-                <article class="om-card">
-                    <h3 class="om-card__title">Dashboard map source</h3>
-                    <p class="cfg-card__hint">Switches the Dashboard + Topology maps
-                        between the public OSM tile server and tiles already
-                        downloaded here -- takes effect immediately, no restart.</p>
+                <article class="cfg-card">
+                    <header class="cfg-card__head">
+                        <h3 class="cfg-card__title">Dashboard map source</h3>
+                        <p class="cfg-card__hint">Switches the Dashboard + Topology maps
+                            between the public OSM tile server and tiles already
+                            downloaded here -- takes effect immediately, no restart.</p>
+                    </header>
                     <p class="auth-status" data-om-source-current aria-live="polite">Loading…</p>
                     <div data-om-source-list></div>
                     <p class="auth-status" data-om-source-status aria-live="polite"></p>
                 </article>
 
-                <article class="om-card">
-                    <h3 class="om-card__title">Settings</h3>
-                    <p class="cfg-card__hint">Applies on the next Start. Stop the downloader first to change these.</p>
-                    <form class="om-form" data-om-form>
-                        <label class="cfg-field cfg-field--narrow">
-                            <span class="cfg-field__label">Port</span>
-                            <input class="cfg-field__input" type="number" name="port" min="1" max="65535" required>
-                        </label>
+                <article class="cfg-card">
+                    <header class="cfg-card__head">
+                        <h3 class="cfg-card__title">Settings</h3>
+                        <p class="cfg-card__hint">Applies on the next Start. Stop the downloader first to change these.</p>
+                    </header>
+                    <form class="cfg-form" data-om-form>
+                        <div class="cfg-row">
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Port</span>
+                                <input class="cfg-field__input" type="number" name="port" min="1" max="65535" required>
+                            </label>
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Max workers</span>
+                                <input class="cfg-field__input" type="number" name="max_workers" min="1" max="500" required>
+                            </label>
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Rate limit (tiles/s)</span>
+                                <input class="cfg-field__input" type="number" name="rate_limit" min="1" max="1000" required>
+                            </label>
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">Max retries</span>
+                                <input class="cfg-field__input" type="number" name="max_retries" min="1" max="50" required>
+                            </label>
+                        </div>
                         <label class="cfg-field">
                             <span class="cfg-field__label">Maps directory</span>
                             <input class="cfg-field__input" type="text" name="maps_directory" required>
@@ -71,24 +93,12 @@ class OfflineMapPage {
                             <span class="cfg-field__label">Log file</span>
                             <input class="cfg-field__input" type="text" name="log_file" required>
                         </label>
-                        <label class="cfg-field cfg-field--narrow">
-                            <span class="cfg-field__label">Max workers</span>
-                            <input class="cfg-field__input" type="number" name="max_workers" min="1" max="500" required>
-                        </label>
-                        <label class="cfg-field cfg-field--narrow">
-                            <span class="cfg-field__label">Rate limit (tiles/s)</span>
-                            <input class="cfg-field__input" type="number" name="rate_limit" min="1" max="1000" required>
-                        </label>
-                        <label class="cfg-field cfg-field--narrow">
-                            <span class="cfg-field__label">Max retries</span>
-                            <input class="cfg-field__input" type="number" name="max_retries" min="1" max="50" required>
-                        </label>
                         <label class="cfg-field cfg-field--toggle">
                             <input type="checkbox" name="quiet">
                             <span class="cfg-field__label">Quiet (suppress log output)</span>
                         </label>
                         <div class="cfg-card__actions">
-                            <button class="terminal-button" type="submit">Save settings</button>
+                            <button class="terminal-button terminal-button--primary" type="submit">Save settings</button>
                         </div>
                     </form>
                     <p class="auth-status" data-om-settings-status aria-live="polite"></p>
@@ -157,7 +167,7 @@ class OfflineMapPage {
             return;
         }
         this.sourceListEl.innerHTML = `
-            <div class="om-card__actions">
+            <div class="cfg-card__actions">
                 ${collections.map((c) => `
                     <button type="button" class="terminal-button" data-om-use-source
                         data-collection="${this._escape(c.collection)}" data-style="${this._escape(c.style)}">

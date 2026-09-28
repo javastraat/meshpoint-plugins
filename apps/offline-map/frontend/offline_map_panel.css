@@ -1,26 +1,24 @@
-/* Offline Maps -- layout only; colors/status states reuse the app's own
-   .auth-card / .auth-status / .cfg-field tokens (frontend/css/settings.css,
-   configuration.css) so this looks native in every theme without its own
-   theme handling. */
-
-.om-page .om-card {
-    background: var(--auth-card-bg);
-    border: 1px solid var(--auth-card-border);
-    border-radius: var(--auth-card-radius);
-    padding: 20px;
-    margin-top: 16px;
+/* This page used to have its own bespoke `.om-card`/`.om-card__title`/
+   `.om-card__actions`/`.om-form` -- a bare `<h2>`/`<p>` page title
+   (core's generic `.plugin-page` fallback) plus a card class that
+   happened to reuse `--auth-card-*` tokens directly, rather than the
+   real `.cfg-card`/`.cfg-card__head`/`.cfg-form` classes those tokens
+   actually belong to. Switched to the real shared ones (same convention
+   OLED Display and Configuration -> Peripherals now use) so this page
+   reads as part of the same app instead of a one-off with a
+   coincidentally-similar look. `.section` defaults to `overflow: hidden`
+   (dashboard.css) and `.plugin-page` was quietly supplying this page's
+   only scroll behavior -- opted back in directly, same convention
+   `lorawan.css` uses for its own pages. */
+.section[data-section="offline-map"] {
+    overflow-y: auto;
 }
 
-.om-card__title {
-    margin: 0 0 8px;
-    font-size: 0.95rem;
-}
-
-.om-card__actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin: 10px 0;
+.om-page__intro {
+    margin: 0 0 16px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 .om-log {
@@ -37,11 +35,4 @@
     color: var(--text-secondary);
     white-space: pre-wrap;
     word-break: break-all;
-}
-
-.om-form {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
-    margin-top: 12px;
 }

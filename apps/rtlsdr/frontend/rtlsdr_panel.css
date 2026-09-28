@@ -2,6 +2,17 @@
    Hello World. Uses the app's own theme variables so it looks right in
    every theme, light and dark, without any plugin-side theme handling. */
 
+/* Title switched from a bare `<h2>` (core's `.plugin-page` fallback) to
+   the real `.lw-panel__head`/`.lw-panel__title` every other plugin page
+   uses -- matching OLED Display/Offline Maps/Bluetooth Scanner, same
+   consistency pass. `.section` defaults to `overflow: hidden`
+   (dashboard.css) and `.plugin-page` was quietly supplying this page's
+   only scroll behavior -- opted back in directly, same convention
+   `lorawan.css` uses for its own pages. */
+.section[data-section="rtlsdr"] {
+    overflow-y: auto;
+}
+
 /* Only rendered when a "hook" plugin (e.g. DAB+) actually targets this
    page -- see rtlsdr_panel.js. A simple divider separates this page's own
    placeholder text from whatever a hook plugin injects below it -- one
