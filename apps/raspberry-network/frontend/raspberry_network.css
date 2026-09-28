@@ -1,0 +1,67 @@
+/* Only what core's shared lw-*/stat-card/terminal-button CSS doesn't
+   already cover -- this page's own warning banner, message rows, and
+   the inline connect form. Uses the real global tokens from
+   frontend/css/dashboard.css's :root (--bg-card, --border, --accent-*)
+   rather than inventing new ones. */
+
+.rn-warning {
+    background: var(--bg-card);
+    border: 1px solid var(--accent-amber);
+    border-radius: 6px;
+    padding: 0.6rem 0.9rem;
+    margin: 0.75rem 0;
+    font-size: 0.9rem;
+}
+
+.rn-stats {
+    display: flex;
+    gap: 1rem;
+    margin: 0.75rem 0;
+}
+
+.rn-error,
+.rn-success {
+    background: var(--bg-card);
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+}
+
+.rn-error {
+    border: 1px solid var(--accent-red);
+}
+
+.rn-success {
+    border: 1px solid var(--accent-green);
+}
+
+.rn-in-use {
+    opacity: 0.7;
+    font-size: 0.85em;
+}
+
+.rn-connect-form {
+    margin-top: 0.75rem;
+}
+
+.rn-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-width: 20rem;
+    margin-bottom: 0.75rem;
+}
+
+.rn-field input {
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--bg-inset);
+    color: inherit;
+}
+
+.rn-connect-actions {
+    display: flex;
+    gap: 0.5rem;
+}

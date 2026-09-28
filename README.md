@@ -62,5 +62,6 @@ view — a stale or edited catalog can't smuggle anything in.
 | `reticulum-call` | app | Voice calls over Reticulum -- adds a Call tab to the Reticulum page |
 | `reticulum-browser` | app | Full multi-tab NomadNet browser for Reticulum |
 | `reticulum-dashboard` | app | Standalone live Reticulum activity dashboard (stats, map, peer ticker) |
+| `raspberry-network` | app | Scan and connect to WiFi networks from the dashboard, no shell needed |
 | `github-dark-theme` | theme | GitHub's dark default (Primer) |
 | `github-light-theme` | theme | GitHub's light default (Primer) |

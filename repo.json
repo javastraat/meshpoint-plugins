@@ -216,6 +216,21 @@
       "hook_host": "rtlsdr"
     },
     {
+      "id": "raspberry-network",
+      "kind": "app",
+      "path": "apps/raspberry-network",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "routes",
+        "sidebar"
+      ],
+      "description": "Scan for WiFi networks and switch the Pi's WiFi connection from the dashboard -- no shell needed. Uses NetworkManager (nmcli), already installed on Bookworm-era Raspberry Pi OS. Read-only status is always available; scanning and connecting are admin-only.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/javastraat/meshpoint-plugins",
+      "has_setup": false
+    },
+    {
       "id": "reticulum",
       "kind": "app",
       "path": "apps/reticulum",

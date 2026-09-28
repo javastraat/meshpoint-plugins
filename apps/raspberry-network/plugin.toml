@@ -1,0 +1,22 @@
+name = "raspberry-network"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["routes", "sidebar"]
+
+[deps]
+check = "check.sh"
+
+[frontend]
+scripts = ["frontend/raspberry_network.js"]
+styles = ["frontend/raspberry_network.css"]
+
+[sidebar]
+route = "raspberry-network"
+label = "WiFi & Network"
+category = "settings"
+icon = "antenna"
+
+[meta]
+description = "Scan for WiFi networks and switch the Pi's WiFi connection from the dashboard -- no shell needed. Uses NetworkManager (nmcli), already installed on Bookworm-era Raspberry Pi OS. Read-only status is always available; scanning and connecting are admin-only."
+homepage = "https://github.com/javastraat/meshpoint-plugins"
+author = "Einstein PD2EMC"
