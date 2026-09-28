@@ -2,12 +2,13 @@
 
 Scan for WiFi networks and switch the Pi's WiFi connection straight from
 the dashboard — no SSH, no shell, no editing `wpa_supplicant.conf` by
-hand. Shows the current connection, state, IP address, gateway, and DNS
-at the top, a **Scan for networks** button, a sortable-by-signal table
-of what's nearby, and a small connect form (password field, for secured
-networks) per row. Leave the password blank to reconnect to an
-already-known network using its saved credentials, or to join a
-genuinely open one.
+hand. Two tabs: **WiFi** (current connection/state/IP/gateway/DNS, a
+**Scan for networks** button, a sortable-by-signal table of what's
+nearby, and a small connect form — password field, for secured networks
+— per row; leave the password blank to reconnect to an already-known
+network using its saved credentials, or to join a genuinely open one)
+and **Network** (the wired `eth0` connection's own status, read-only —
+no settings to change there yet).
 
 Uses [NetworkManager](https://networkmanager.dev/) (`nmcli`) — the real
 network stack on Bookworm-era Raspberry Pi OS, already installed by
@@ -53,6 +54,7 @@ Restart, then **Settings → WiFi & Network** in the sidebar.
 | Method | Path | Role | Description |
 |---|---|---|---|
 | `GET` | `/api/raspberry-network/status` | any session | Current wifi device state (`null` if no wifi device at all) |
+| `GET` | `/api/raspberry-network/status/ethernet` | any session | Current ethernet device state (`null` if no ethernet device at all) |
 | `POST` | `/api/raspberry-network/scan` | admin | Rescan and list nearby networks |
 | `POST` | `/api/raspberry-network/connect` | admin | `{ssid, password}` — connect; the password is never logged (audit trail records the SSID only) |
 
@@ -62,7 +64,7 @@ Restart, then **Settings → WiFi & Network** in the sidebar.
 plugin.toml                          manifest ([sidebar] + [deps] + [frontend])
 check.sh                             verifies nmcli + NetworkManager are actually usable
 backend/__init__.py                  register(reg) -- add_router
-backend/routes.py                    /api/raspberry-network/{status,scan,connect}
+backend/routes.py                    /api/raspberry-network/{status,status/ethernet,scan,connect}
 frontend/raspberry_network.js        the sidebar page (registerSidebarPage), scan/connect flow
 frontend/raspberry_network.css       only what core CSS doesn't already cover
 ```

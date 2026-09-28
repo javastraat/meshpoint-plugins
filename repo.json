@@ -225,7 +225,7 @@
         "routes",
         "sidebar"
       ],
-      "description": "Scan for WiFi networks and switch the Pi's WiFi connection from the dashboard -- no shell needed. Uses NetworkManager (nmcli), already installed on Bookworm-era Raspberry Pi OS. Read-only status is always available; scanning and connecting are admin-only.",
+      "description": "Scan for WiFi networks and switch the Pi's WiFi connection from the dashboard -- no shell needed. A Network tab shows the wired (eth0) connection's own status alongside it. Uses NetworkManager (nmcli), already installed on Bookworm-era Raspberry Pi OS. Read-only status is always available; scanning and connecting are admin-only.",
       "author": "Einstein PD2EMC",
       "homepage": "https://github.com/javastraat/meshpoint-plugins",
       "has_setup": false

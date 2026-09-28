@@ -1,18 +1,26 @@
-/* Only what core's shared lw-*/stat-card/terminal-button CSS doesn't
-   already cover -- this page's own warning banner, message rows, and
-   the inline connect form. Uses the real global tokens from
+/* Only what core's shared lw-*/stat-card/panel/terminal-button CSS
+   doesn't already cover -- this page's own warning banner, message
+   rows, and the inline connect form. Uses the real global tokens from
    frontend/css/dashboard.css's :root (--bg-card, --border, --accent-*)
    rather than inventing new ones.
 
-   Horizontal alignment: every top-level element here uses the exact
-   same `clamp(16px, 3vw, 32px)` side inset lorawan.css's own
-   .lw-panel__head and bluetooth-scanner's .bts-stats/.bts-error use --
-   `.plugin-page` (dashboard.css) already pads the page itself, so this
-   inset is what makes THIS page's own title, warning, stat cards, and
-   messages all line up with each other and with the header -- a plain
-   `margin: Xrem 0` (no horizontal component) was the bug in an earlier
-   version, flush against the page's own left edge instead of matching
-   the title's indent. */
+   Structure matches the Reticulum plugin's own tabs exactly: stat
+   cards use the REAL shared `.lw-stats` class (not a custom one) as
+   their own page-level section, same as Reticulum's; the tab bar +
+   per-tab table/form live inside one `.lw-section > .panel` below
+   that. `.lw-stats`/`.lw-section` each already carry their own
+   `clamp(16px, 3vw, 32px)` page alignment (lorawan.css) -- reusing
+   them as page-level siblings, not nesting one inside the other, is
+   what keeps that alignment correct. An earlier draft nested the stat
+   cards *inside* the panel and nearly double-applied that padding;
+   caught before shipping by checking exactly where Reticulum's own
+   `.lw-stats` sits in its markup (outside the panel, a sibling
+   section) rather than assuming. `.rn-warning`/`.rn-error`/
+   `.rn-success` are page-level siblings the same way, so they need
+   their own matching horizontal margin -- `.panel`/`.panel__body`
+   have none of their own by design (a table fills it edge-to-edge on
+   purpose), which is also why the connect form below only needs a
+   simple top border, not its own outer margin. */
 
 .rn-warning {
     background: var(--bg-card);
@@ -21,13 +29,6 @@
     padding: 0.6rem 0.9rem;
     margin: 0 clamp(16px, 3vw, 32px) 12px;
     font-size: 0.9rem;
-}
-
-.rn-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    padding: 4px clamp(16px, 3vw, 32px) 16px;
 }
 
 .rn-error,
@@ -52,8 +53,28 @@
     font-size: 0.85em;
 }
 
+/* A plain (non-table) panel body lines up with .panel__header's own
+   inset (0.75rem) rather than sitting flush against the card edge --
+   same convention listener.css's own .lsn-panel-body establishes for
+   exactly this case, .panel__body itself has no padding by design
+   (a table fills it edge-to-edge on purpose). */
+.rn-note,
 .rn-connect-form {
-    margin: 12px clamp(16px, 3vw, 32px) 0;
+    padding: 12px 0.75rem;
+}
+
+.rn-note {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.rn-connect-form {
+    border-top: 1px solid var(--border);
+}
+
+.rn-connect-form__title {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
 }
 
 .rn-field {

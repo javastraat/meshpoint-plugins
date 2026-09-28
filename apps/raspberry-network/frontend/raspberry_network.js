@@ -1,17 +1,32 @@
 /**
  * WiFi & Network -- scan for WiFi networks and switch the Pi's WiFi
- * connection from the dashboard, no shell needed.
+ * connection from the dashboard, no shell needed. A **Network** tab
+ * shows the wired (eth0) connection's own status alongside it.
+ *
+ * Two tabs, one plugin -- NOT the RTL-SDR host/hook pattern (separate
+ * plugins hooking into a shared host page via window.registerPageHook,
+ * see frontend/sidebar/page_hook_registry.js in core). That mechanism
+ * exists so independently-authored/installable plugins can share one
+ * page; WiFi and Ethernet are two views of the same "network settings"
+ * concern, always shipped together, nothing gained by splitting into
+ * two plugin folders just to get a tabbar. Instead this reuses the
+ * Reticulum plugin's own in-page tab pattern verbatim: `.lw-tabs`/
+ * `.lw-tab` (lorawan.css) for the tab buttons, `data-rn-tab`/
+ * `data-rn-view` for wiring instead of Reticulum's own `data-rt-*` --
+ * same mechanism, same look, no cross-plugin registration involved.
  *
  * Same visual system as the LoRaWAN/Meshtastic/MeshCore/Bluetooth Scanner
- * pages -- this renders the literal core CSS class names
+ * pages otherwise too -- this renders the literal core CSS class names
  * (`lw-panel__head`/`lw-table`/`stat-card` from lorawan.css) rather than
  * a hand-copied approximation.
  *
  * No polling here, unlike most plugin pages -- a wifi scan is something
  * the user deliberately triggers (it briefly disrupts the radio), not a
- * continuously-refreshing feed. Status (current connection, IP address,
- * gateway, DNS) is fetched once on show() and again after a connect
- * attempt.
+ * continuously-refreshing feed. WiFi status is fetched once on show()
+ * and again after a connect attempt; Ethernet status is fetched lazily,
+ * the first time the Network tab is actually opened (and again on every
+ * later visit to it) -- no reason to query a device the user isn't
+ * looking at.
  *
  * The connect flow deliberately never claims success until the backend
  * says so: `POST /connect` blocks until nmcli itself reports the real
@@ -44,6 +59,8 @@
             this._root = null;
             this._networks = [];
             this._selectedSsid = null;
+            this._tab = 'wifi';
+            this._ethernetLoaded = false;
         }
 
         mount(rootEl) {
@@ -53,75 +70,111 @@
                     <div class="lw-panel__head">
                         <h1 class="lw-panel__title">WiFi &amp; Network</h1>
                         <div class="lw-panel__actions">
-                            <button class="terminal-button terminal-button--primary" data-scan>Scan for networks</button>
+                            <button class="terminal-button terminal-button--primary" data-scan data-rn-wifi-only>Scan for networks</button>
                         </div>
                     </div>
 
-                    <p class="rn-warning">
-                        ⚠️ Connecting to a network here can disconnect this dashboard
-                        if you're currently reached over WiFi and the new network
-                        doesn't work -- have Ethernet or physical access available
-                        as a fallback before trying an unfamiliar network.
-                    </p>
-
-                    <div class="rn-stats">
-                        <div class="stat-card">
-                            <div class="stat-card__value" data-current-ssid>--</div>
-                            <div class="stat-card__label">Connected to</div>
+                    <div data-rn-view="wifi">
+                        <p class="rn-warning">
+                            ⚠️ Connecting to a network here can disconnect this dashboard
+                            if you're currently reached over WiFi and the new network
+                            doesn't work -- have Ethernet or physical access available
+                            as a fallback before trying an unfamiliar network.
+                        </p>
+                        <div class="lw-stats">
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-current-ssid>--</div>
+                                <div class="stat-card__label">Connected to</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-current-state>--</div>
+                                <div class="stat-card__label">State</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-current-ip>--</div>
+                                <div class="stat-card__label">IP address</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-current-gateway>--</div>
+                                <div class="stat-card__label">Gateway</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-current-dns>--</div>
+                                <div class="stat-card__label">DNS</div>
+                            </div>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-card__value" data-current-state>--</div>
-                            <div class="stat-card__label">State</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-card__value" data-current-ip>--</div>
-                            <div class="stat-card__label">IP address</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-card__value" data-current-gateway>--</div>
-                            <div class="stat-card__label">Gateway</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-card__value" data-current-dns>--</div>
-                            <div class="stat-card__label">DNS</div>
-                        </div>
+                        <p class="rn-error" data-error hidden></p>
+                        <p class="rn-success" data-success hidden></p>
                     </div>
 
-                    <p class="rn-error" data-error hidden></p>
-                    <p class="rn-success" data-success hidden></p>
+                    <div data-rn-view="network" hidden>
+                        <div class="lw-stats">
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-eth-connection>--</div>
+                                <div class="stat-card__label">Connection</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-eth-state>--</div>
+                                <div class="stat-card__label">State</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-eth-ip>--</div>
+                                <div class="stat-card__label">IP address</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-eth-gateway>--</div>
+                                <div class="stat-card__label">Gateway</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card__value" data-eth-dns>--</div>
+                                <div class="stat-card__label">DNS</div>
+                            </div>
+                        </div>
+                        <p class="lw-empty" data-eth-empty hidden>No ethernet device found on this board.</p>
+                    </div>
 
                     <div class="lw-section">
                         <div class="panel">
-                            <div class="panel__header">Nearby networks</div>
-                            <div class="panel__body lw-table-wrap">
-                                <table class="lw-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Network</th>
-                                            <th>Signal</th>
-                                            <th>Security</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody data-rows></tbody>
-                                </table>
-                                <p class="lw-empty" data-empty hidden>No networks found yet -- click Scan.</p>
+                            <div class="panel__header panel__header--tabs">
+                                <div class="lw-tabs" role="tablist">
+                                    <button class="lw-tab" type="button" role="tab" data-rn-tab="wifi">WiFi</button>
+                                    <button class="lw-tab" type="button" role="tab" data-rn-tab="network">Network</button>
+                                </div>
                             </div>
-                        </div>
-                    </div>
 
-                    <div class="rn-connect-form" data-connect-form hidden>
-                        <div class="panel">
-                            <div class="panel__header">Connect to <span data-connect-ssid></span></div>
-                            <div class="panel__body">
-                                <label class="rn-field">
-                                    <span>Password</span>
-                                    <input type="password" data-password autocomplete="off">
-                                    <small class="rn-field__hint">Leave blank to reconnect to an already-known network with its saved password, or to join an open network.</small>
-                                </label>
-                                <div class="rn-connect-actions">
-                                    <button class="terminal-button terminal-button--primary" data-connect-submit>Connect</button>
-                                    <button class="terminal-button" data-connect-cancel>Cancel</button>
+                            <div data-rn-view="wifi">
+                                <div class="panel__body lw-table-wrap">
+                                    <table class="lw-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Network</th>
+                                                <th>Signal</th>
+                                                <th>Security</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody data-rows></tbody>
+                                    </table>
+                                    <p class="lw-empty" data-empty hidden>No networks found yet -- click Scan.</p>
+                                </div>
+
+                                <div class="rn-connect-form panel__body" data-connect-form hidden>
+                                    <div class="rn-connect-form__title">Connect to <span data-connect-ssid></span></div>
+                                    <label class="rn-field">
+                                        <span>Password</span>
+                                        <input type="password" data-password autocomplete="off">
+                                        <small class="rn-field__hint">Leave blank to reconnect to an already-known network with its saved password, or to join an open network.</small>
+                                    </label>
+                                    <div class="rn-connect-actions">
+                                        <button class="terminal-button terminal-button--primary" data-connect-submit>Connect</button>
+                                        <button class="terminal-button" data-connect-cancel>Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div data-rn-view="network" hidden>
+                                <div class="panel__body">
+                                    <p class="rn-note">No additional Ethernet settings yet -- status only, above.</p>
                                 </div>
                             </div>
                         </div>
@@ -143,17 +196,52 @@
             this._formSsidEl = rootEl.querySelector('[data-connect-ssid]');
             this._passwordEl = rootEl.querySelector('[data-password]');
 
+            this._ethConnectionEl = rootEl.querySelector('[data-eth-connection]');
+            this._ethStateEl = rootEl.querySelector('[data-eth-state]');
+            this._ethIpEl = rootEl.querySelector('[data-eth-ip]');
+            this._ethGatewayEl = rootEl.querySelector('[data-eth-gateway]');
+            this._ethDnsEl = rootEl.querySelector('[data-eth-dns]');
+            this._ethEmptyEl = rootEl.querySelector('[data-eth-empty]');
+            this._ethStatsEl = rootEl.querySelector('[data-rn-view="network"] .lw-stats');
+
             this._scanBtn.addEventListener('click', () => this._scan());
             rootEl.querySelector('[data-connect-submit]').addEventListener('click', () => this._connect());
             rootEl.querySelector('[data-connect-cancel]').addEventListener('click', () => this._closeForm());
+            rootEl.querySelectorAll('[data-rn-tab]').forEach((btn) => {
+                btn.addEventListener('click', () => this._setTab(btn.dataset.rnTab));
+            });
+            this._applyTab();
         }
 
         show() {
             this._refreshStatus();
+            if (this._tab === 'network') this._refreshEthernetStatus();
         }
 
         hide() {
             this._closeForm();
+        }
+
+        _setTab(tab) {
+            if (tab === this._tab) return;
+            this._tab = tab;
+            this._applyTab();
+            if (tab === 'network') this._refreshEthernetStatus();
+        }
+
+        _applyTab() {
+            if (!this._root) return;
+            this._root.querySelectorAll('[data-rn-tab]').forEach((btn) => {
+                const active = btn.dataset.rnTab === this._tab;
+                btn.classList.toggle('lw-tab--active', active);
+                btn.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            this._root.querySelectorAll('[data-rn-view]').forEach((el) => {
+                el.hidden = el.dataset.rnView !== this._tab;
+            });
+            this._root.querySelectorAll('[data-rn-wifi-only]').forEach((el) => {
+                el.hidden = this._tab !== 'wifi';
+            });
         }
 
         async _refreshStatus() {
@@ -172,6 +260,30 @@
                     ? status.dns.join(', ') : '--';
             } catch (_e) {
                 // Network blip -- next action (scan/connect) will surface anything real.
+            }
+        }
+
+        async _refreshEthernetStatus() {
+            try {
+                const res = await fetch(`${API}/status/ethernet`, { credentials: 'same-origin' });
+                if (!res.ok) return;
+                const body = await res.json();
+                const status = body.status;
+                this._ethernetLoaded = true;
+                if (!status) {
+                    this._ethStatsEl.hidden = true;
+                    this._ethEmptyEl.hidden = false;
+                    return;
+                }
+                this._ethStatsEl.hidden = false;
+                this._ethEmptyEl.hidden = true;
+                this._ethConnectionEl.textContent = status.connection || '(not connected)';
+                this._ethStateEl.textContent = status.state;
+                this._ethIpEl.textContent = status.address || '--';
+                this._ethGatewayEl.textContent = status.gateway || '--';
+                this._ethDnsEl.textContent = status.dns && status.dns.length ? status.dns.join(', ') : '--';
+            } catch (_e) {
+                // Network blip -- next tab visit recovers.
             }
         }
 

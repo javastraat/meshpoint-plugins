@@ -17,7 +17,7 @@ from src.api.audit import AuditLogWriter
 from src.api.audit.dependencies import get_audit_writer
 from src.api.auth.dependencies import require_admin
 from src.api.auth.jwt_session import SessionClaims
-from src.api.nmcli import wifi_connect, wifi_scan, wifi_status
+from src.api.nmcli import ethernet_status, wifi_connect, wifi_scan, wifi_status
 
 router = APIRouter(prefix="/api/raspberry-network", tags=["raspberry-network"])
 
@@ -32,6 +32,13 @@ async def get_status():
     """Current wifi device state -- `None` (as `null`) if this box has
     no wifi device at all (Ethernet-only carriers)."""
     return {"status": await wifi_status()}
+
+
+@router.get("/status/ethernet")
+async def get_ethernet_status():
+    """Current ethernet device state -- `None` (as `null`) if this box
+    has no ethernet device at all (WiFi-only carriers)."""
+    return {"status": await ethernet_status()}
 
 
 @router.post("/scan")
