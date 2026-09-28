@@ -47,5 +47,15 @@ view — a stale or edited catalog can't smuggle anything in.
 | `hello-world-github-hook` | app | Minimal hook example (test plugin) |
 | `offline-map` | app | Downloads OSM tiles for offline/emergency dashboard maps |
 | `oled-display` | app | Drives a small I2C status OLED -- boot logo, live IP/sources/uptime, auto-blank |
+| `bluetooth-scanner` | app | Nearby-BLE-device radar -- live sortable table of advertising devices |
+| `rtlsdr` | app | RTL-SDR host page -- every RTL-SDR plugin below hooks a tab into it |
+| `radio` | app | FM/AM/SSB broadcast & utility radio listener, with RDS on FM |
+| `acars` | app | Aircraft VHF datalink (ACARS) decoding |
+| `pocsag` | app | POCSAG pager decoding, 439.9875 MHz |
+| `pagers` | app | POCSAG pager decoding, 172.45 MHz |
+| `p2000` | app | Dutch emergency dispatch (P2000/FLEX) decoding |
+| `rtl433` | app | Generic OOK/FSK decoder -- weather stations, TPMS, sensors, and more |
+| `adsb` | app | Live ADS-B air traffic tracking with a map |
+| `dab` | app | DAB/DAB+ digital radio |
 | `github-dark-theme` | theme | GitHub's dark default (Primer) |
 | `github-light-theme` | theme | GitHub's light default (Primer) |
