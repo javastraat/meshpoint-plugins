@@ -57,5 +57,6 @@ view — a stale or edited catalog can't smuggle anything in.
 | `rtl433` | app | Generic OOK/FSK decoder -- weather stations, TPMS, sensors, and more |
 | `adsb` | app | Live ADS-B air traffic tracking with a map |
 | `dab` | app | DAB/DAB+ digital radio |
+| `dapnet` | app | DAPNET/POCSAG amateur-radio paging via a companion board over USB serial |
 | `github-dark-theme` | theme | GitHub's dark default (Primer) |
 | `github-light-theme` | theme | GitHub's light default (Primer) |

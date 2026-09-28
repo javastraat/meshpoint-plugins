@@ -70,6 +70,24 @@
       "hook_host": "rtlsdr"
     },
     {
+      "id": "dapnet",
+      "kind": "app",
+      "path": "apps/dapnet",
+      "version": "1.0.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "capture",
+        "protocol",
+        "routes",
+        "sidebar",
+        "topbar"
+      ],
+      "description": "DAPNET/POCSAG amateur-radio paging via a companion board (pocsag_companion) over USB serial -- Recent Pages, Capcodes, Send, and Settings tabs, plus its own capture source and protocol registered with the core pipeline",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://hampager.de",
+      "has_setup": true
+    },
+    {
       "id": "hello-world-github",
       "kind": "app",
       "path": "apps/hello-world-github",
