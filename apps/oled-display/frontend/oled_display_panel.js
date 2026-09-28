@@ -54,15 +54,11 @@ class OledDisplayPage {
                     </div>
                 </article>
 
-                <article class="cfg-card">
-                    <header class="cfg-card__head">
-                        <h3 class="cfg-card__title">Settings</h3>
-                    </header>
-                    <form class="cfg-form" data-oled-form>
-                        <label class="cfg-field cfg-field--toggle">
-                            <input type="checkbox" data-oled-enabled>
-                            <span class="cfg-field__label">Display enabled</span>
-                        </label>
+                <form class="oled-settings-form" data-oled-form>
+                    <article class="cfg-card">
+                        <header class="cfg-card__head">
+                            <h3 class="cfg-card__title">Hardware</h3>
+                        </header>
                         <div class="cfg-row">
                             <label class="cfg-field cfg-field--narrow">
                                 <span class="cfg-field__label">I2C address</span>
@@ -76,6 +72,18 @@ class OledDisplayPage {
                                     <option value="ssd1309">SSD1309</option>
                                 </select>
                             </label>
+                        </div>
+                    </article>
+
+                    <article class="cfg-card">
+                        <header class="cfg-card__head">
+                            <h3 class="cfg-card__title">Settings</h3>
+                        </header>
+                        <label class="cfg-field cfg-field--toggle">
+                            <input type="checkbox" data-oled-enabled>
+                            <span class="cfg-field__label">Display enabled</span>
+                        </label>
+                        <div class="cfg-row">
                             <label class="cfg-field cfg-field--narrow">
                                 <span class="cfg-field__label">Blank after (minutes, 0 = never)</span>
                                 <input class="cfg-field__input" type="number" min="0" max="1440" data-oled-blank>
@@ -103,8 +111,8 @@ class OledDisplayPage {
                             <button class="terminal-button terminal-button--primary" type="submit">Save</button>
                         </div>
                         <p class="cfg-status" data-oled-save-status aria-live="polite"></p>
-                    </form>
-                </article>
+                    </article>
+                </form>
             </div>
         `;
 

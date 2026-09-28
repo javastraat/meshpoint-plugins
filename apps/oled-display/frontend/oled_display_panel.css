@@ -56,3 +56,24 @@
     font-size: 0.85rem;
     opacity: 0.8;
 }
+
+/* Settings used to be one card with eight fields, which -- sitting in a
+   2-item `.cfg-section--grid` next to Live preview -- got a much wider
+   column than Peripherals' own Fan/User Button cards ever get (those
+   share a grid with four similarly-sized cards, not two very
+   differently-shaped ones), so `.cfg-row`'s auto-fit spread every
+   narrow field into one very wide row with long labels wrapping over
+   lone 140px inputs. Split into "Hardware" (I2C address/controller --
+   physical wiring, set once per board) and "Settings" (everything
+   behavioural -- on/off, timing, rotation), matching how Peripherals
+   itself splits Fan/LED/Button into separate cards rather than one
+   giant form. Both still submit together as one PUT
+   /api/oled-display/settings call (`oled_display_panel.js`'s `_save()`
+   is unchanged) -- kept in a single `<form>` wrapping both `.cfg-card`s
+   rather than duplicating fields across two real forms, with
+   `display: contents` so the form itself doesn't become its own grid
+   cell and break the three cards (Live preview/Hardware/Settings) out
+   of the same `.cfg-section--grid` row. */
+.oled-settings-form {
+    display: contents;
+}
