@@ -54,6 +54,13 @@ class OledDisplayPage {
                     </div>
                 </article>
 
+                <!-- Hardware and Settings are one combined save (single
+                     PUT /api/oled-display/settings call, see _save()) --
+                     both cards' Save buttons are type=submit inside this
+                     one form, so either one submits everything. Two
+                     buttons instead of one shared bar below both cards
+                     so each card visually has its own action, matching
+                     every other multi-card page (Peripherals). -->
                 <form class="oled-settings-form" data-oled-form>
                     <article class="cfg-card">
                         <header class="cfg-card__head">
@@ -72,6 +79,9 @@ class OledDisplayPage {
                                     <option value="ssd1309">SSD1309</option>
                                 </select>
                             </label>
+                        </div>
+                        <div class="cfg-card__actions">
+                            <button class="terminal-button terminal-button--primary" type="submit">Save</button>
                         </div>
                     </article>
 
