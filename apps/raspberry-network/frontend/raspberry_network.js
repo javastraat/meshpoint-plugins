@@ -66,7 +66,7 @@
         mount(rootEl) {
             this._root = rootEl;
             rootEl.innerHTML = `
-                <div class="plugin-page rn-page">
+                <div class="rn-page">
                     <div class="lw-panel__head">
                         <h1 class="lw-panel__title">WiFi &amp; Network</h1>
                         <div class="lw-panel__actions">

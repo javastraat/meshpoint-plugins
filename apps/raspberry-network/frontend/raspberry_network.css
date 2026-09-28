@@ -24,6 +24,19 @@
    as `.rn-note`/`.rn-connect-form` below, not the page-level clamp
    margin. */
 
+/* This page used core's generic `.plugin-page` wrapper (free padding +
+   typography for a minimal plugin, dashboard.css) stacked on top of
+   `.lw-panel__head`'s own clamp() side padding, which is meant for
+   pages built the "real" lorawan.css way -- doubling the horizontal
+   inset and making this page's title/cards sit visibly further right
+   than LoRaWAN/Reticulum's. Dropped `.plugin-page` from the markup;
+   `.section` defaults to `overflow: hidden` (dashboard.css), so this
+   page needs its own scroll opt-in the same way lorawan.css's own
+   `.section[data-section="lorawan"]` etc. do. */
+.section[data-section="raspberry-network"] {
+    overflow-y: auto;
+}
+
 .rn-warning {
     background: var(--bg-card);
     border: 1px solid var(--accent-amber);

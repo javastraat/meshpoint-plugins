@@ -11,6 +11,19 @@
  * so there's no existing class for that).
  */
 
+/* This page used core's generic `.plugin-page` wrapper (free padding +
+ * typography for a minimal plugin, dashboard.css) stacked on top of
+ * `.lw-panel__head`'s own clamp() side padding, which is meant for
+ * pages built the "real" lorawan.css way -- doubling the horizontal
+ * inset and making this page's title/cards sit visibly further right
+ * than LoRaWAN/Reticulum's. Dropped `.plugin-page` from the markup;
+ * `.section` defaults to `overflow: hidden` (dashboard.css), so this
+ * page needs its own scroll opt-in the same way lorawan.css's own
+ * `.section[data-section="lorawan"]` etc. do. */
+.section[data-section="bluetooth-scanner"] {
+    overflow-y: auto;
+}
+
 /* Same layout as lorawan.css's own .lw-stats (flex row, same gap and
  * padding) but WITHOUT its `.stat-card { flex: 1 }` override -- that
  * override stretches every card to fill the row evenly, which reads

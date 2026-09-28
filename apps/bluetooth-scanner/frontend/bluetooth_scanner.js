@@ -197,7 +197,7 @@
         mount(rootEl) {
             this._root = rootEl;
             rootEl.innerHTML = `
-                <div class="plugin-page bts-page">
+                <div class="bts-page">
                     <div class="lw-panel__head">
                         <h1 class="lw-panel__title">Bluetooth Scanner</h1>
                         <div class="lw-panel__actions">
