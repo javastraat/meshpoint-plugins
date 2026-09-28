@@ -53,6 +53,11 @@
     margin-bottom: 0.75rem;
 }
 
+.rn-field__hint {
+    opacity: 0.7;
+    font-size: 0.8rem;
+}
+
 .rn-field input {
     padding: 0.4rem 0.6rem;
     border-radius: 4px;

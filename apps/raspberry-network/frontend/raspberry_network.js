@@ -104,6 +104,7 @@
                                 <label class="rn-field">
                                     <span>Password</span>
                                     <input type="password" data-password autocomplete="off">
+                                    <small class="rn-field__hint">Leave blank to reconnect to an already-known network with its saved password, or to join an open network.</small>
                                 </label>
                                 <div class="rn-connect-actions">
                                     <button class="terminal-button terminal-button--primary" data-connect-submit>Connect</button>
