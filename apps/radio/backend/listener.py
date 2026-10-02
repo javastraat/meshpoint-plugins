@@ -344,10 +344,14 @@ class RtlListener:
         self.rds_pty = ""
         self.rds_bler = -1.0
         proc, self._proc = self._proc, None
+        current = asyncio.current_task()
         for attr in ("_reader_task", "_stderr_task", "_idle_task", "_rds_task"):
             task = getattr(self, attr)
             setattr(self, attr, None)
-            if task is not None:
+            # Never cancel the task we run in (the idle watchdog calling
+            # stop): the CancelledError would hit the next await and abort
+            # the stop half-way, leaving the dongle claimed.
+            if task is not None and task is not current:
                 task.cancel()
         if proc is not None and proc.returncode is None:
             try:

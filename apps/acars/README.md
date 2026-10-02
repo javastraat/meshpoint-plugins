@@ -79,3 +79,18 @@ backend/__init__.py         register(reg)
 frontend/acars_panel.js     the ACARS tab (RTL-SDR Plugins page, reuses core PagerPanel)
 frontend/acars_panel.css    acars row styling
 ```
+
+## Staying on unattended
+
+By default acarsdec stops after **10 minutes with nobody watching its tab**
+(the tab only polls while it's on screen), so a forgotten listener doesn't
+hold the RTL-SDR dongle forever. To keep it running with the tab closed:
+
+```yaml
+plugins:
+  acars:
+    enabled: true
+    keep_running: true
+```
+
+Restart Meshpoint; it then runs until you press Stop.

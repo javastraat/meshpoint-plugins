@@ -16,4 +16,5 @@ def register(reg) -> None:
     from .routes import init_routes, router
 
     reg.add_router(router)
-    reg.add_listener("pagers", PagersListener, init_routes)
+    keep_running = bool(reg.config.get("keep_running", False))
+    reg.add_listener("pagers", lambda: PagersListener(keep_running=keep_running), init_routes)

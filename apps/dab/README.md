@@ -84,3 +84,18 @@ frontend/dab_panel.js          the player (channel picker, station list, playbac
 frontend/dab_config_panel.js   Config (scan results, renaming, run-scan panel) -- hooks into rtlsdr
 frontend/dab_panel.css         styling for both
 ```
+
+## Staying on unattended
+
+By default welle-cli stops after **10 minutes with nobody watching its tab**
+(the tab only polls while it's on screen), so a forgotten listener doesn't
+hold the RTL-SDR dongle forever. To keep it running with the tab closed:
+
+```yaml
+plugins:
+  dab:
+    enabled: true
+    keep_running: true
+```
+
+Restart Meshpoint; it then runs until you press Stop.

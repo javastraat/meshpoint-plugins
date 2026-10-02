@@ -16,4 +16,5 @@ def register(reg) -> None:
     from .routes import init_routes, router
 
     reg.add_router(router)
-    reg.add_listener("adsb", AdsbListener, init_routes)
+    keep_running = bool(reg.config.get("keep_running", False))
+    reg.add_listener("adsb", lambda: AdsbListener(keep_running=keep_running), init_routes)

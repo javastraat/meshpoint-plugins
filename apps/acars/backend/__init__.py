@@ -23,6 +23,7 @@ def register(reg) -> None:
             frequencies=cfg.get("freqs"),
             gain=cfg.get("gain"),
             device=cfg.get("device"),
+            keep_running=bool(cfg.get("keep_running", False)),
         )
 
     reg.add_listener("acars", build, init_routes)

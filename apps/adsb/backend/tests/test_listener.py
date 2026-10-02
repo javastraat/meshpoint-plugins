@@ -28,16 +28,35 @@ def _reader(*lines: bytes, eof: bool = True) -> asyncio.StreamReader:
     return r
 
 
+_LIVE_PROCS: list = []
+
+
 class _FakeProc:
+    """Behaves like a real process: wait() blocks until it exits, either via
+    exit() (a crash) or the patched os.killpg (a deliberate stop)."""
+
     def __init__(self, stderr: asyncio.StreamReader):
         self.stdout = None
         self.stderr = stderr
         self.returncode = None
         self.pid = 424242
+        self._exited = asyncio.Event()
+        _LIVE_PROCS.append(self)
+
+    def exit(self, code: int = 1) -> None:
+        if self.returncode is None:
+            self.returncode = code
+        self._exited.set()
 
     async def wait(self):
-        self.returncode = 0
-        return 0
+        await self._exited.wait()
+        return self.returncode
+
+
+def _fake_killpg(_pgid, sig) -> None:
+    for proc in list(_LIVE_PROCS):
+        proc.exit(-int(sig))
+        _LIVE_PROCS.remove(proc)
 
 
 _RAW_AIRCRAFT = [
@@ -53,9 +72,10 @@ _RAW_AIRCRAFT = [
 class TestAdsbListener(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         sdr_registry._owner = None
+        _LIVE_PROCS.clear()
         self.patchers = [
             mock.patch("shutil.which", return_value="/usr/local/bin/dump1090"),
-            mock.patch("os.killpg"),
+            mock.patch("os.killpg", side_effect=_fake_killpg),
             mock.patch("os.getpgid", return_value=1),
         ]
         for p in self.patchers:
@@ -66,11 +86,10 @@ class TestAdsbListener(unittest.IsolatedAsyncioTestCase):
             p.stop()
         sdr_registry._owner = None
 
-    async def _start(self, metric: bool = True) -> AdsbListener:
-        proc = _FakeProc(_reader())
-        lis = AdsbListener()
+    async def _start(self, metric: bool = True, keep_running: bool = False) -> AdsbListener:
+        lis = AdsbListener(keep_running=keep_running)
         with mock.patch("asyncio.create_subprocess_exec",
-                        new=mock.AsyncMock(return_value=proc)):
+                        new=mock.AsyncMock(side_effect=lambda *a, **k: _FakeProc(_reader()))):
             with mock.patch.object(adsb_listener, "_START_CHECK_SECS", 0.02):
                 await lis.start(metric=metric)
         self.assertTrue(lis.running)
@@ -124,7 +143,7 @@ class TestAdsbListener(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(st),
             {"running", "aircraft_count", "aircraft", "last_error",
-             "metric", "dongle_owner"},
+             "metric", "keep_running", "restarts", "restarting", "dongle_owner"},
         )
         self.assertFalse(st["metric"])
         await lis.stop()
@@ -135,6 +154,74 @@ class TestAdsbListener(unittest.IsolatedAsyncioTestCase):
         await lis.stop()
         self.assertEqual(lis.aircraft, [])
         self.assertFalse(lis.running)
+
+    async def test_idle_stop_releases_dongle_and_clears_aircraft(self) -> None:
+        """The watchdog used to cancel its own task mid-stop, leaving the
+        dongle claimed by 'adsb' and the stale aircraft table in place."""
+        lis = await self._start()
+        lis.aircraft = list(_RAW_AIRCRAFT)
+        lis._last_poll_at -= adsb_listener._IDLE_STOP_SECS + 1
+        with mock.patch("asyncio.sleep", new=mock.AsyncMock()):
+            await lis._idle_watchdog()
+        self.assertFalse(lis.running)
+        self.assertEqual(lis.aircraft, [])
+        self.assertIsNone(sdr_registry.current_owner())
+
+    async def test_keep_running_has_no_idle_watchdog(self) -> None:
+        lis = await self._start(keep_running=True)
+        self.assertIsNone(lis._idle_task)
+        self.assertTrue(lis.status()["keep_running"])
+        await lis.stop()
+
+    async def _wait_for(self, cond, timeout: float = 2.0) -> None:
+        for _ in range(int(timeout / 0.01)):
+            if cond():
+                return
+            await asyncio.sleep(0.01)
+        self.fail("condition not reached")
+
+    async def test_unexpected_exit_is_restarted(self) -> None:
+        lis = await self._start()
+        lis.aircraft = list(_RAW_AIRCRAFT)
+        with mock.patch.object(adsb_listener, "_RESTART_BACKOFF_SECS", (0.01,)), \
+             mock.patch.object(adsb_listener, "_START_CHECK_SECS", 0.01), \
+             mock.patch("asyncio.create_subprocess_exec",
+                        new=mock.AsyncMock(side_effect=lambda *a, **k: _FakeProc(_reader()))):
+            crashed = lis._proc
+            crashed.exit(1)
+            await self._wait_for(lambda: lis.restarts == 1 and lis.running)
+        self.assertIsNot(lis._proc, crashed)
+        self.assertEqual(lis.aircraft, [])               # stale table dropped
+        self.assertEqual(sdr_registry.current_owner(), "adsb")
+        await lis.stop()
+        self.assertIsNone(sdr_registry.current_owner())
+
+    async def test_gives_up_after_repeated_exits(self) -> None:
+        lis = await self._start()
+
+        def dying_proc(*_a, **_k):
+            proc = _FakeProc(_reader())
+            proc.exit(1)                                  # dies straight away
+            return proc
+
+        with mock.patch.object(adsb_listener, "_RESTART_BACKOFF_SECS", (0.0,)), \
+             mock.patch.object(adsb_listener, "_START_CHECK_SECS", 0.0), \
+             mock.patch.object(adsb_listener, "_DEVICE_SETTLE_SECS", 0.0), \
+             mock.patch("asyncio.create_subprocess_exec",
+                        new=mock.AsyncMock(side_effect=dying_proc)):
+            lis._proc.exit(1)
+            await self._wait_for(lambda: "kept exiting" in lis._last_error)
+        self.assertFalse(lis.running)
+        self.assertIsNone(sdr_registry.current_owner())
+
+    async def test_deliberate_stop_is_not_restarted(self) -> None:
+        lis = await self._start()
+        with mock.patch.object(adsb_listener, "_RESTART_BACKOFF_SECS", (0.0,)):
+            await lis.stop()
+            await asyncio.sleep(0.05)
+        self.assertFalse(lis.running)
+        self.assertEqual(lis.restarts, 0)
+        self.assertIsNone(sdr_registry.current_owner())
 
     async def test_missing_binary_raises(self) -> None:
         with mock.patch("shutil.which", return_value=None):

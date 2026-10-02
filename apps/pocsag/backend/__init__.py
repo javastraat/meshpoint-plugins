@@ -16,4 +16,5 @@ def register(reg) -> None:
     from .routes import init_routes, router
 
     reg.add_router(router)
-    reg.add_listener("pocsag", PocsagListener, init_routes)
+    keep_running = bool(reg.config.get("keep_running", False))
+    reg.add_listener("pocsag", lambda: PocsagListener(keep_running=keep_running), init_routes)

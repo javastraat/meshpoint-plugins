@@ -57,3 +57,18 @@ backend/routes.py           /api/rtl433  status / start / stop / clear
 backend/__init__.py         register(reg)
 frontend/rtl433_panel.js    the RTL433 tab (RTL-SDR Plugins page, reuses core PagerPanel)
 ```
+
+## Staying on unattended
+
+By default rtl_433 stops after **10 minutes with nobody watching its tab**
+(the tab only polls while it's on screen), so a forgotten listener doesn't
+hold the RTL-SDR dongle forever. To keep it running with the tab closed:
+
+```yaml
+plugins:
+  rtl433:
+    enabled: true
+    keep_running: true
+```
+
+Restart Meshpoint; it then runs until you press Stop.

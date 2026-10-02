@@ -10,6 +10,16 @@ live snapshot, not an append-only event log -- ADS-B naturally models as
 "which aircraft are visible right now", the same way every other ADS-B web
 UI, including dump1090's own bundled gmap.html, presents it).
 
+Two things keep it running unattended (2026-10, after a user report of
+"stops every so often, I have to press Start again"):
+
+- ``keep_running`` (``plugins.adsb.keep_running: true``) disables the idle
+  watchdog, which otherwise stops dump1090 after 10 minutes with nobody
+  watching the tab (the panel only polls while it's on screen).
+- A supervisor task restarts dump1090 if it exits on its own (USB hiccup,
+  crash), with backoff; after ``_RESTART_MAX_FAILURES`` restarts in a row
+  that don't stay up, it gives up, releases the dongle and reports why.
+
 Only one of RtlListener/PagerListener(*)/Rtl433Listener/DabListener/
 AdsbListener may hold the RTL-SDR dongle at a time -- see
 src/audio/sdr_registry.py. Manual-stop-required: starting one while another
@@ -40,6 +50,12 @@ _IDLE_STOP_SECS = 600  # mirrors the other listeners' convention
 _DEVICE_SETTLE_SECS = 0.4
 _START_CHECK_SECS = 1.0
 _START_RETRIES = 3
+# Auto-restart after dump1090 exits on its own: wait this long before
+# attempt n (last value repeats), give up after this many restarts in a
+# row, and count a restart as recovered once it stays up this long.
+_RESTART_BACKOFF_SECS = (5.0, 30.0, 120.0)
+_RESTART_MAX_FAILURES = 5
+_RESTART_STABLE_SECS = 300.0
 
 _ERROR_RE = re.compile(
     r"failed|error|cannot|could not|invalid|no supported|usb_",
@@ -50,11 +66,16 @@ _ERROR_RE = re.compile(
 class AdsbListener:
     """Owns one dump1090 process tracking ADS-B aircraft via its webserver API."""
 
-    def __init__(self) -> None:
+    def __init__(self, keep_running: bool = False) -> None:
+        self._keep_running = keep_running
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._stderr_task: Optional[asyncio.Task] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._idle_task: Optional[asyncio.Task] = None
+        self._watch_task: Optional[asyncio.Task] = None
+        self._restart_failures = 0
+        self._restarting = False
+        self.restarts = 0
         self._lock = asyncio.Lock()
         self._last_error: str = ""
         self._last_poll_at: float = 0.0
@@ -82,6 +103,7 @@ class AdsbListener:
             if self.running:
                 return  # already running, idempotent
             self._metric = metric
+            self._restart_failures = 0
             sdr_registry.claim(_OWNER)
             try:
                 await self._start_locked_retrying()
@@ -106,6 +128,10 @@ class AdsbListener:
             "aircraft": self.aircraft,
             "last_error": self._last_error,
             "metric": self._metric,
+            "keep_running": self._keep_running,
+            # Times dump1090 was restarted after exiting on its own.
+            "restarts": self.restarts,
+            "restarting": self._restarting,
             # Who currently holds the shared RTL-SDR dongle (None = free,
             # "adsb" = this listener, or one of the sibling listeners' owner
             # names) -- lets the frontend show "busy" instead of "idle".
@@ -129,7 +155,9 @@ class AdsbListener:
         loop = asyncio.get_running_loop()
         self._stderr_task = loop.create_task(self._stderr_loop(self._proc))
         self._poll_task = loop.create_task(self._poll_loop())
-        self._idle_task = loop.create_task(self._idle_watchdog())
+        if not self._keep_running:
+            self._idle_task = loop.create_task(self._idle_watchdog())
+        self._watch_task = loop.create_task(self._supervise(self._proc))
         self._last_poll_at = time.monotonic()
 
     async def _start_locked_retrying(self) -> None:
@@ -163,10 +191,15 @@ class AdsbListener:
         used mid-retry, where we're about to start again and must not let
         another listener steal the dongle in between attempts."""
         proc, self._proc = self._proc, None
-        for attr in ("_stderr_task", "_poll_task", "_idle_task"):
+        current = asyncio.current_task()
+        for attr in ("_stderr_task", "_poll_task", "_idle_task", "_watch_task"):
             task = getattr(self, attr)
             setattr(self, attr, None)
-            if task is not None:
+            # Never cancel the task we're running in (the idle watchdog or
+            # the supervisor calling stop): the CancelledError would land on
+            # the next await below and abort the stop half-way -- the
+            # dongle claim was never released that way.
+            if task is not None and task is not current:
                 task.cancel()
         if proc is not None and proc.returncode is None:
             try:
@@ -245,6 +278,59 @@ class AdsbListener:
                 logger.debug("dump1090: %s", text)
                 if _ERROR_RE.search(text):
                     self._last_error = text
+        except asyncio.CancelledError:
+            return
+
+    async def _supervise(self, proc: asyncio.subprocess.Process) -> None:
+        """Restart dump1090 if it exits while it's meant to be running.
+
+        A deliberate stop clears ``self._proc`` (and cancels this task)
+        before killing the process, so ``self._proc is not proc`` after the
+        wait means someone else stopped or replaced it: nothing to do.
+        """
+        try:
+            started = time.monotonic()
+            await proc.wait()
+            async with self._lock:
+                if self._proc is not proc:
+                    return
+                if time.monotonic() - started >= _RESTART_STABLE_SECS:
+                    self._restart_failures = 0
+                self._restart_failures += 1
+                self.aircraft = []  # stale snapshot from the dead process
+                reason = self._last_error or f"exit code {proc.returncode}"
+                if self._restart_failures > _RESTART_MAX_FAILURES:
+                    logger.error(
+                        "ADS-B listener: dump1090 exited %d times in a row (%s); giving up",
+                        _RESTART_MAX_FAILURES, reason,
+                    )
+                    await self._stop_locked()
+                    self._last_error = (
+                        f"dump1090 kept exiting ({reason}); press Start to retry"
+                    )
+                    return
+                delay = _RESTART_BACKOFF_SECS[
+                    min(self._restart_failures, len(_RESTART_BACKOFF_SECS)) - 1
+                ]
+                logger.warning(
+                    "ADS-B listener: dump1090 exited unexpectedly (%s); restart %d/%d in %.0fs",
+                    reason, self._restart_failures, _RESTART_MAX_FAILURES, delay,
+                )
+                await self._stop_locked_no_release()  # keep the dongle claimed
+                self._restarting = True
+            try:
+                await asyncio.sleep(delay)
+            finally:
+                self._restarting = False
+            async with self._lock:
+                if self._proc is not None or sdr_registry.current_owner() != _OWNER:
+                    return  # started again, or stopped (claim released) meanwhile
+                self.restarts += 1
+                try:
+                    await self._start_locked_retrying()
+                except Exception:
+                    logger.exception("ADS-B listener: restart failed")
+                    await self._stop_locked()
         except asyncio.CancelledError:
             return
 

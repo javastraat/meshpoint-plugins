@@ -60,6 +60,29 @@ like every other plugin.
 Shares the one RTL-SDR dongle with the FM / Pager / RTL433 / ACARS / DAB+
 listeners (only one active at a time; stop the other one first).
 
+## Staying on unattended
+
+By default dump1090 stops after **10 minutes with nobody watching the
+ADS-B tab** (the tab only polls while it's on screen), so a forgotten
+listener doesn't hold the dongle forever. To keep it tracking with the
+tab closed, set:
+
+```yaml
+plugins:
+  adsb:
+    enabled: true
+    keep_running: true
+```
+
+and restart Meshpoint. It then runs until you press Stop.
+
+Independently of that, if dump1090 **exits on its own** (a USB hiccup, a
+crash), it's restarted automatically after 5 s, then 30 s, then 2 min
+between tries. The tab says "restarting" meanwhile. After 5 restarts in a
+row that don't stay up, it gives up, frees the dongle and shows why;
+press Start to try again. A restart that stays up for 5 minutes resets
+the count.
+
 ## Layout
 
 ```

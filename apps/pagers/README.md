@@ -65,3 +65,18 @@ backend/routes.py           /api/pagers  status / start / stop / clear
 backend/__init__.py         register(reg)
 frontend/pagers_panel.js    the Pagers tab (RTL-SDR Plugins page, reuses core PagerPanel)
 ```
+
+## Staying on unattended
+
+By default the pager decoder stops after **10 minutes with nobody watching its tab**
+(the tab only polls while it's on screen), so a forgotten listener doesn't
+hold the RTL-SDR dongle forever. To keep it running with the tab closed:
+
+```yaml
+plugins:
+  pagers:
+    enabled: true
+    keep_running: true
+```
+
+Restart Meshpoint; it then runs until you press Stop.

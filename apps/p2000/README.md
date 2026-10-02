@@ -64,3 +64,18 @@ backend/routes.py           /api/p2000  status / start / stop / clear
 backend/__init__.py         register(reg)
 frontend/p2000_panel.js     the P2000 tab (RTL-SDR Plugins page, reuses core PagerPanel)
 ```
+
+## Staying on unattended
+
+By default the P2000 decoder stops after **10 minutes with nobody watching its tab**
+(the tab only polls while it's on screen), so a forgotten listener doesn't
+hold the RTL-SDR dongle forever. To keep it running with the tab closed:
+
+```yaml
+plugins:
+  p2000:
+    enabled: true
+    keep_running: true
+```
+
+Restart Meshpoint; it then runs until you press Stop.

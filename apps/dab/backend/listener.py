@@ -58,7 +58,9 @@ _BENIGN_PREFIX_RE = re.compile(r"^ofdm-processor:", re.IGNORECASE)
 class DabListener:
     """Owns one welle-cli process decoding a DAB+ ensemble via its webserver API."""
 
-    def __init__(self) -> None:
+    def __init__(self, keep_running: bool = False) -> None:
+        # True: no idle watchdog, runs until Stop (plugins.dab.keep_running).
+        self._keep_running = keep_running
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._stderr_task: Optional[asyncio.Task] = None
         self._poll_task: Optional[asyncio.Task] = None
@@ -180,7 +182,8 @@ class DabListener:
         loop = asyncio.get_running_loop()
         self._stderr_task = loop.create_task(self._stderr_loop(self._proc))
         self._poll_task = loop.create_task(self._mux_poll_loop())
-        self._idle_task = loop.create_task(self._idle_watchdog())
+        if not self._keep_running:
+            self._idle_task = loop.create_task(self._idle_watchdog())
         self._last_poll_at = time.monotonic()
 
     async def _start_locked_retrying(self) -> None:
@@ -213,10 +216,14 @@ class DabListener:
         used mid-retry, where we're about to start again and must not let
         another listener steal the dongle in between attempts."""
         proc, self._proc = self._proc, None
+        current = asyncio.current_task()
         for attr in ("_stderr_task", "_poll_task", "_idle_task"):
             task = getattr(self, attr)
             setattr(self, attr, None)
-            if task is not None:
+            # Never cancel the task we run in (the idle watchdog calling
+            # stop): the CancelledError would hit the next await and abort
+            # the stop half-way, leaving the dongle claimed.
+            if task is not None and task is not current:
                 task.cancel()
         if proc is not None and proc.returncode is None:
             try:
