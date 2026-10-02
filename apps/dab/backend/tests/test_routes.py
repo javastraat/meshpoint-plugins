@@ -142,5 +142,70 @@ class DabScanStreamTest(unittest.TestCase):
         self.assertEqual(res.status_code, 422)
 
 
+
+class _FakeAudit:
+    def __init__(self) -> None:
+        self.actions: list = []
+
+    def timed_action(self, **kw):
+        import contextlib
+        self.actions.append(kw)
+        return contextlib.nullcontext()
+
+
+class _FakeListener:
+    def __init__(self) -> None:
+        self.keep = False
+
+    def set_keep_running(self, value: bool) -> None:
+        self.keep = value
+
+    def status(self) -> dict:
+        return {"keep_running": self.keep}
+
+
+class DabKeepRunningRouteTest(unittest.TestCase):
+    """PUT /api/dab/keep-running: saved into plugins.dab without dropping
+    the section's other keys, and applied to the live listener."""
+
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from src.api.audit.dependencies import get_audit_writer
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.yaml_path = Path(self._tmp.name) / "local.yaml"
+        self.yaml_path.write_text("plugins:\n  dab:\n    enabled: true\n  adsb:\n    enabled: true\n")
+        self.listener = _FakeListener()
+        self.audit = _FakeAudit()
+        dab_routes._listener = self.listener
+        self.app = _build_app()
+        self.app.dependency_overrides[get_audit_writer] = lambda: self.audit
+        self.client = TestClient(self.app)
+
+    def tearDown(self) -> None:
+        dab_routes._listener = None
+        self._tmp.cleanup()
+
+    def test_saves_and_applies(self) -> None:
+        import yaml
+
+        with patch("src.config._get_local_yaml_path", return_value=self.yaml_path):
+            res = self.client.put("/api/dab/keep-running", json={"keep_running": True})
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["keep_running"])
+        self.assertTrue(self.listener.keep)
+        saved = yaml.safe_load(self.yaml_path.read_text())["plugins"]
+        self.assertEqual(saved["dab"], {"enabled": True, "keep_running": True})
+        self.assertEqual(saved["adsb"], {"enabled": True})      # sibling untouched
+        self.assertEqual(self.audit.actions[0]["params"]["keep_running"], True)
+
+    def test_503_without_listener(self) -> None:
+        dab_routes._listener = None
+        res = self.client.put("/api/dab/keep-running", json={"keep_running": True})
+        self.assertEqual(res.status_code, 503)
+
+
 if __name__ == "__main__":
     unittest.main()

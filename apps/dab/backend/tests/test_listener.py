@@ -100,7 +100,7 @@ class TestDabListener(unittest.IsolatedAsyncioTestCase):
         st = lis.status()
         self.assertEqual(
             set(st),
-            {"running", "channel", "ensemble_label", "snr", "services",
+            {"running", "keep_running", "channel", "ensemble_label", "snr", "services",
              "last_error", "dongle_owner"},
         )
         self.assertEqual(st["channel"], "12C")

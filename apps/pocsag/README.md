@@ -79,3 +79,11 @@ plugins:
 ```
 
 Restart Meshpoint; it then runs until you press Stop.
+
+Or tick **Keep running** on the tab itself (next to Start listening, admin only, plugin
+1.2.0+): it's saved to the same `keep_running` key in `local.yaml` and
+takes effect straight away, no restart needed. Unticking it while running
+brings back the 10-minute auto-stop, counting from that moment.
+This tab is drawn by Meshpoint itself (the shared pager panel), so the
+checkbox also needs a Meshpoint update from October 2026 or later; on an
+older Meshpoint it simply doesn't appear and the yaml key still works.

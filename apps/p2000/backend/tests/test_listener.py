@@ -104,7 +104,7 @@ class TestP2000Listener(unittest.IsolatedAsyncioTestCase):
         st = lis.status()
         self.assertEqual(
             set(st),
-            {"kind", "running", "frequency_hz", "frequency_mhz",
+            {"kind", "running", "keep_running", "frequency_hz", "frequency_mhz",
              "message_count", "messages", "last_error", "dongle_owner"},
         )
         self.assertEqual(st["kind"], "p2000")

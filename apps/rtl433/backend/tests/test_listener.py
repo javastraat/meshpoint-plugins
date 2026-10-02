@@ -100,7 +100,7 @@ class TestRtl433Listener(unittest.IsolatedAsyncioTestCase):
         st = lis.status()
         self.assertEqual(
             set(st),
-            {"running", "frequency_mhz", "message_count", "messages",
+            {"running", "keep_running", "frequency_mhz", "message_count", "messages",
              "last_error", "dongle_owner"},
         )
         self.assertEqual(st["frequency_mhz"], rtl433_listener._DEFAULT_FREQUENCY_MHZ)

@@ -102,7 +102,7 @@ class TestAcarsListener(unittest.IsolatedAsyncioTestCase):
         st = lis.status()
         self.assertEqual(
             set(st),
-            {"running", "frequencies", "message_count", "messages",
+            {"running", "keep_running", "frequencies", "message_count", "messages",
              "last_error", "dongle_owner"},
         )
         self.assertEqual(st["frequencies"], acars_listener._DEFAULT_FREQUENCIES)

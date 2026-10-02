@@ -173,6 +173,22 @@ class TestAdsbListener(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(lis.status()["keep_running"])
         await lis.stop()
 
+    async def test_set_keep_running_applies_live(self) -> None:
+        lis = await self._start()
+        self.assertIsNotNone(lis._idle_task)
+        lis.set_keep_running(True)
+        self.assertIsNone(lis._idle_task)          # watchdog cancelled
+        self.assertTrue(lis.status()["keep_running"])
+        lis.set_keep_running(False)
+        self.assertIsNotNone(lis._idle_task)       # watchdog back, counting from now
+        await lis.stop()
+
+    async def test_set_keep_running_while_stopped_only_sets_flag(self) -> None:
+        lis = AdsbListener()
+        lis.set_keep_running(True)
+        self.assertTrue(lis.status()["keep_running"])
+        self.assertIsNone(lis._idle_task)
+
     async def _wait_for(self, cond, timeout: float = 2.0) -> None:
         for _ in range(int(timeout / 0.01)):
             if cond():

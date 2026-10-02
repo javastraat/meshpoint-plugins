@@ -76,6 +76,11 @@ plugins:
 
 and restart Meshpoint. It then runs until you press Stop.
 
+Or tick **Keep running** on the tab itself (next to Metric units, admin only, plugin
+1.2.0+): it's saved to the same `keep_running` key in `local.yaml` and
+takes effect straight away, no restart needed. Unticking it while running
+brings back the 10-minute auto-stop, counting from that moment.
+
 Independently of that, if dump1090 **exits on its own** (a USB hiccup, a
 crash), it's restarted automatically after 5 s, then 30 s, then 2 min
 between tries. The tab says "restarting" meanwhile. After 5 restarts in a

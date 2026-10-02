@@ -99,3 +99,8 @@ plugins:
 ```
 
 Restart Meshpoint; it then runs until you press Stop.
+
+Or tick **Keep running** on the tab itself (in the Channel header, next to Stop, admin only, plugin
+1.2.0+): it's saved to the same `keep_running` key in `local.yaml` and
+takes effect straight away, no restart needed. Unticking it while running
+brings back the 10-minute auto-stop, counting from that moment.

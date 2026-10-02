@@ -146,10 +146,26 @@ class PagersListener:
         self._last_poll_at = time.monotonic()
         return self.status()
 
+    def set_keep_running(self, value: bool) -> None:
+        """Switch keep-running on/off, effective immediately: turning it off
+        while running starts the idle watchdog afresh (counting from now),
+        turning it on cancels a pending one. Call from the event loop."""
+        self._keep_running = bool(value)
+        if not self.running:
+            return
+        if self._keep_running:
+            if self._idle_task is not None:
+                self._idle_task.cancel()
+                self._idle_task = None
+        elif self._idle_task is None:
+            self._last_poll_at = time.monotonic()
+            self._idle_task = asyncio.get_running_loop().create_task(self._idle_watchdog())
+
     def status(self) -> dict:
         return {
             "kind": _OWNER,
             "running": self.running,
+            "keep_running": self._keep_running,
             "frequency_hz": _FREQUENCY_HZ,
             "frequency_mhz": round(_FREQUENCY_HZ / 1e6, 6),
             "message_count": len(self.messages),
