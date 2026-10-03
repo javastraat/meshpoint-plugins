@@ -249,12 +249,6 @@
                             <button class="terminal-button" data-clear>Clear</button>
                         </div>
                     </div>
-                    <div class="bts-toolbar">
-                        <label class="bts-toggle" title="While scanning, hide devices that haven't advertised for 2 minutes. After Stop the table always keeps its last state until Clear.">
-                            <input type="checkbox" data-hide-stale ${this._hideStale ? 'checked' : ''}>
-                            Hide devices not seen for 2 min
-                        </label>
-                        <span class="bts-db" data-db></span>
                     </div>
                     <div class="bts-stats">
                         <div class="stat-card">
@@ -265,11 +259,21 @@
                             <div class="stat-card__value" data-count>0</div>
                             <div class="stat-card__label" data-count-label>Devices in range</div>
                         </div>
+                        <div class="stat-card" title="Offline MAC vendor + Bluetooth SIG lists, used for the Vendor column and the device panel">
+                            <div class="stat-card__value bts-db-value" data-db-value>—</div>
+                            <div class="stat-card__label bts-db" data-db>Vendor database</div>
+                        </div>
                     </div>
                     <p class="bts-error" data-error hidden></p>
                     <div class="lw-section">
                         <div class="panel">
-                            <div class="panel__header">Devices</div>
+                            <div class="panel__header">
+                                <span>Devices</span>
+                                <label class="bts-toggle" title="While scanning, hide devices that haven't advertised for 2 minutes. After Stop the table always keeps its last state until Clear.">
+                                    <input type="checkbox" data-hide-stale ${this._hideStale ? 'checked' : ''}>
+                                    Hide devices not seen for 2 min
+                                </label>
+                            </div>
                             <div class="panel__body lw-table-wrap">
                                 <table class="lw-table lw-table--bluetooth">
                                     <colgroup>
@@ -309,6 +313,7 @@
             this._emptyEl = rootEl.querySelector('[data-empty]');
             this._countLabelEl = rootEl.querySelector('[data-count-label]');
             this._dbEl = rootEl.querySelector('[data-db]');
+            this._dbValueEl = rootEl.querySelector('[data-db-value]');
             rootEl.querySelector('[data-hide-stale]').addEventListener('change', (e) => {
                 this._hideStale = e.target.checked;
                 try { localStorage.setItem('meshpoint.btsHideStale', this._hideStale ? '1' : '0'); } catch (_e) { /* ignore */ }
@@ -408,28 +413,32 @@
             if (db.present) {
                 const when = db.updated_at ? new Date(db.updated_at * 1000).toLocaleDateString() : '?';
                 const n = (db.counts && db.counts.mac_prefixes) || 0;
-                this._dbEl.innerHTML = `Vendor database: ${esc(when)} · ${esc(n.toLocaleString())} MAC prefixes `
-                    + '<button type="button" class="bts-link" data-db-refresh>Refresh</button>';
+                this._dbValueEl.textContent = when;
+                this._dbValueEl.title = `${n.toLocaleString()} MAC prefixes`;
+                this._dbEl.innerHTML = 'Vendor database · <button type="button" class="bts-link" data-db-refresh>Refresh</button>';
             } else {
-                this._dbEl.innerHTML = 'Vendor database not downloaded yet — showing built-in names only '
-                    + '<button type="button" class="bts-link" data-db-refresh>Download</button>';
+                this._dbValueEl.textContent = 'Built-in only';
+                this._dbValueEl.title = 'No MAC vendors yet; common company and service names still work';
+                this._dbEl.innerHTML = 'Vendor database · <button type="button" class="bts-link" data-db-refresh>Download</button>';
             }
         }
 
         async _refreshDb(btn) {
             this._dbBusy = true;
             btn.disabled = true;
-            this._dbEl.textContent = 'Downloading vendor database (MAC vendors + Bluetooth SIG lists)…';
+            this._dbValueEl.textContent = 'Downloading…';
             try {
                 const res = await fetch(`${API}/vendor-db/refresh`, { method: 'POST', credentials: 'same-origin' });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
-                    this._dbEl.textContent = res.status === 403 ? 'Admin role required to refresh.' : (err.detail || `Failed (HTTP ${res.status}).`);
+                    this._dbValueEl.textContent = 'Failed';
+                    this._dbValueEl.title = res.status === 403 ? 'Admin role required to refresh.' : (err.detail || `HTTP ${res.status}`);
                     window.setTimeout(() => { this._dbBusy = false; }, 6000);
                     return;
                 }
             } catch (e) {
-                this._dbEl.textContent = e.message || 'Network error.';
+                this._dbValueEl.textContent = 'Failed';
+                this._dbValueEl.title = e.message || 'Network error.';
                 window.setTimeout(() => { this._dbBusy = false; }, 6000);
                 return;
             }

@@ -71,23 +71,20 @@
 }
 
 /* Vendor info + "hide stale" toolbar (2026-10) */
-.bts-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 18px;
-    margin: 0 0 12px;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-}
 .bts-toggle {
     display: inline-flex;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
     align-items: center;
     gap: 6px;
     cursor: pointer;
 }
 .bts-toggle input { margin: 0; cursor: pointer; }
-.bts-db { color: var(--text-muted); }
+.bts-db-value { font-size: 1rem; }
+.bts-db .bts-link { text-transform: none; letter-spacing: normal; }
 .bts-link {
     appearance: none;
     background: none;
