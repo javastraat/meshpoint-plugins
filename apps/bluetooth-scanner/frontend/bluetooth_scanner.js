@@ -19,6 +19,14 @@
  * node_id/telemetry shape, so building a small drawer of our own is
  * the right call, not a special case of the real one.
  *
+ * Vendor info (2026-10): a Vendor column (MAC vendor for public
+ * addresses, else the advertisement's Bluetooth company) and drawer
+ * sections for address type, manufacturer data, services, TX power and
+ * appearance -- all resolved server-side from an offline database
+ * (vendor_db.py), refreshable from the page. A "Hide devices not seen
+ * for 2 min" checkbox (default on, remembered per browser) only filters
+ * while scanning: after Stop the table keeps its last state until Clear.
+ *
  * Polling, not WebSocket, same as every listener-family plugin panel
  * (RTL433, ACARS, ...): a plain 2s poll loop that starts on show()
  * and stops on hide().
@@ -134,12 +142,41 @@
 
         _renderSections(device) {
             const body = this._drawer.querySelector('.nd-body');
+            const kind = device.address_kind || 'unknown';
+            const kindNote = kind === 'public'
+                ? 'public (vendor-assigned MAC)'
+                : `${kind} — no real MAC, so no vendor from the address`;
             body.appendChild(this._buildSection('Device Info', [
                 ['Address', esc(device.address)],
+                ['Address type', esc(kindNote)],
                 ['Name', device.name ? esc(device.name) : '(none advertised)'],
                 ['First seen', esc(fullTime(device.first_seen))],
                 ['Last seen', esc(fullTime(device.last_seen))],
             ]));
+
+            const ident = [];
+            if (device.mac_vendor) ident.push(['Vendor (MAC)', esc(device.mac_vendor)]);
+            (device.companies || []).forEach((c) => {
+                const label = c.name || 'Unknown company';
+                const extra = c.apple_type ? ` · ${c.apple_type}` : '';
+                ident.push(['Manufacturer', `${esc(label + extra)} <span class="bts-muted">${esc(c.id_hex)}</span>`]);
+            });
+            if (device.appearance_name) ident.push(['Appearance', esc(device.appearance_name)]);
+            const named = (device.services || []).filter((x) => x.name);
+            if (named.length) ident.push(['Services', named.map((x) => esc(x.name)).join('<br>')]);
+            body.appendChild(this._buildSection('Identification', ident));
+
+            const adv = [];
+            if (Number.isFinite(device.tx_power)) adv.push(['TX power', `${device.tx_power} dBm`]);
+            (device.companies || []).forEach((c) => {
+                adv.push([`Mfr data ${c.id_hex}`, `<code class="bts-hex">${esc(c.data)}</code>`]);
+            });
+            (device.services || []).forEach((x) => {
+                const data = (device.service_data || {})[x.uuid];
+                adv.push([x.name ? `UUID (${x.name})` : 'UUID',
+                    `<code class="bts-hex">${esc(x.uuid)}</code>${data ? `<br><code class="bts-hex">${esc(data)}</code>` : ''}`]);
+            });
+            body.appendChild(this._buildSection('Advertisement', adv));
 
             const quality = signalQuality(device.rssi);
             const signalRows = [];
@@ -192,6 +229,12 @@
             this._sortDir = 'desc';
             this._devicesByAddress = new Map();
             this._drawer = new BluetoothDeviceDrawer();
+            this._hideStale = true;
+            try {
+                const stored = localStorage.getItem('meshpoint.btsHideStale');
+                if (stored !== null) this._hideStale = stored === '1';
+            } catch (_e) { /* private mode etc. -- keep the default */ }
+            this._lastBody = null;
         }
 
         mount(rootEl) {
@@ -206,6 +249,13 @@
                             <button class="terminal-button" data-clear>Clear</button>
                         </div>
                     </div>
+                    <div class="bts-toolbar">
+                        <label class="bts-toggle" title="While scanning, hide devices that haven't advertised for 2 minutes. After Stop the table always keeps its last state until Clear.">
+                            <input type="checkbox" data-hide-stale ${this._hideStale ? 'checked' : ''}>
+                            Hide devices not seen for 2 min
+                        </label>
+                        <span class="bts-db" data-db></span>
+                    </div>
                     <div class="bts-stats">
                         <div class="stat-card">
                             <div class="stat-card__value" data-status>Stopped</div>
@@ -213,7 +263,7 @@
                         </div>
                         <div class="stat-card">
                             <div class="stat-card__value" data-count>0</div>
-                            <div class="stat-card__label">Devices in range</div>
+                            <div class="stat-card__label" data-count-label>Devices in range</div>
                         </div>
                     </div>
                     <p class="bts-error" data-error hidden></p>
@@ -225,6 +275,7 @@
                                     <colgroup>
                                         <col class="col-time">
                                         <col class="col-name">
+                                        <col class="col-vendor">
                                         <col class="col-id">
                                         <col class="col-rssi">
                                         <col class="col-time">
@@ -233,6 +284,7 @@
                                         <tr>
                                             <th data-sort="last_seen">Last seen</th>
                                             <th data-sort="name">Name</th>
+                                            <th data-sort="vendor">Vendor</th>
                                             <th data-sort="address">Address</th>
                                             <th class="lw-r" data-sort="rssi">RSSI</th>
                                             <th data-sort="first_seen">First seen</th>
@@ -255,6 +307,16 @@
             this._errorEl = rootEl.querySelector('[data-error]');
             this._rowsEl = rootEl.querySelector('[data-rows]');
             this._emptyEl = rootEl.querySelector('[data-empty]');
+            this._countLabelEl = rootEl.querySelector('[data-count-label]');
+            this._dbEl = rootEl.querySelector('[data-db]');
+            rootEl.querySelector('[data-hide-stale]').addEventListener('change', (e) => {
+                this._hideStale = e.target.checked;
+                try { localStorage.setItem('meshpoint.btsHideStale', this._hideStale ? '1' : '0'); } catch (_e) { /* ignore */ }
+                if (this._lastBody) this._render(this._lastBody);
+            });
+            this._dbEl.addEventListener('click', (e) => {
+                if (e.target.closest('[data-db-refresh]')) this._refreshDb(e.target.closest('[data-db-refresh]'));
+            });
 
             this._startBtn.addEventListener('click', () => this._start());
             this._stopBtn.addEventListener('click', () => this._stop());
@@ -295,7 +357,7 @@
             this._statusEl.classList.toggle('bts-status--live', !!body.running);
             this._startBtn.disabled = !!body.running;
             this._stopBtn.disabled = !body.running;
-            this._countEl.textContent = body.device_count || 0;
+            this._lastBody = body;
 
             if (body.last_error) {
                 this._errorEl.hidden = false;
@@ -304,7 +366,13 @@
                 this._errorEl.hidden = true;
             }
 
-            const devices = (body.devices || []).slice();
+            this._renderDb(body.vendor_db);
+            const now = Date.now() / 1000;
+            const staleAfter = body.stale_after_seconds || 120;
+            const filtering = this._hideStale && body.running;
+            const devices = (body.devices || []).filter((d) => !filtering || now - d.last_seen <= staleAfter);
+            this._countEl.textContent = devices.length;
+            this._countLabelEl.textContent = filtering ? 'Devices in range' : 'Devices seen';
             this._devicesByAddress = new Map(devices.map((d) => [d.address, d]));
             devices.sort((a, b) => this._compare(a, b));
 
@@ -319,6 +387,7 @@
                 <tr class="lw-pkt-row" data-address="${esc(d.address)}" title="Click for details">
                     <td class="lw-time">${esc(smartTime(d.last_seen))}</td>
                     <td class="mt-name">${esc(d.name || '—')}</td>
+                    <td class="bts-vendor" title="${esc(d.vendor_source ? `from ${d.vendor_source}` : (d.address_kind && d.address_kind !== 'public' ? 'random address, no vendor advertised' : ''))}">${esc(d.vendor || '—')}</td>
                     <td class="lw-id">${esc(d.address)}</td>
                     <td class="lw-num">${Number.isFinite(d.rssi) ? `${d.rssi} dBm` : '—'}</td>
                     <td class="lw-time">${esc(smartTime(d.first_seen))}</td>
@@ -331,6 +400,41 @@
                     if (device) this._drawer.open(device);
                 });
             });
+        }
+
+        _renderDb(db) {
+            if (!this._dbEl || !db) return;
+            if (this._dbBusy) return;
+            if (db.present) {
+                const when = db.updated_at ? new Date(db.updated_at * 1000).toLocaleDateString() : '?';
+                const n = (db.counts && db.counts.mac_prefixes) || 0;
+                this._dbEl.innerHTML = `Vendor database: ${esc(when)} · ${esc(n.toLocaleString())} MAC prefixes `
+                    + '<button type="button" class="bts-link" data-db-refresh>Refresh</button>';
+            } else {
+                this._dbEl.innerHTML = 'Vendor database not downloaded yet — showing built-in names only '
+                    + '<button type="button" class="bts-link" data-db-refresh>Download</button>';
+            }
+        }
+
+        async _refreshDb(btn) {
+            this._dbBusy = true;
+            btn.disabled = true;
+            this._dbEl.textContent = 'Downloading vendor database (MAC vendors + Bluetooth SIG lists)…';
+            try {
+                const res = await fetch(`${API}/vendor-db/refresh`, { method: 'POST', credentials: 'same-origin' });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    this._dbEl.textContent = res.status === 403 ? 'Admin role required to refresh.' : (err.detail || `Failed (HTTP ${res.status}).`);
+                    window.setTimeout(() => { this._dbBusy = false; }, 6000);
+                    return;
+                }
+            } catch (e) {
+                this._dbEl.textContent = e.message || 'Network error.';
+                window.setTimeout(() => { this._dbBusy = false; }, 6000);
+                return;
+            }
+            this._dbBusy = false;
+            this._refresh();
         }
 
         _compare(a, b) {

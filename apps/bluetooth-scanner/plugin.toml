@@ -1,5 +1,5 @@
 name = "bluetooth-scanner"
-version = "0.1.0"
+version = "0.2.0"
 meshpoint_api = 1
 provides = ["listener", "routes", "sidebar"]
 
@@ -19,6 +19,6 @@ category = "networks"
 icon = "antenna"
 
 [meta]
-description = "Generic nearby-BLE-device radar: Start/Stop scan, live sortable table of every advertising Bluetooth LE device in range (address, name, RSSI, last seen)."
+description = "Generic nearby-BLE-device radar: Start/Stop scan, live sortable table of every advertising Bluetooth LE device in range (address, name, vendor, RSSI, last seen), with manufacturer, services and address type per device from an offline vendor database."
 homepage = "https://github.com/javastraat/meshpoint-plugins"
 author = "Einstein PD2EMC"

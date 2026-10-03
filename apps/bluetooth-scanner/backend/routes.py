@@ -10,6 +10,7 @@ other write action in the dashboard.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.api.auth.dependencies import require_admin
 from src.api.auth.jwt_session import SessionClaims
 
+from . import vendor_db
 from .listener import BluetoothScannerListener
 
 router = APIRouter(prefix="/api/bluetooth-scanner", tags=["bluetooth-scanner"])
@@ -68,3 +70,20 @@ async def clear(_claims: SessionClaims = Depends(require_admin)):
     listener = _require_listener()
     listener.clear()
     return listener.status()
+
+
+@router.get("/vendor-db")
+async def vendor_db_status():
+    """Whether the offline lookup files are present, when they were
+    downloaded, and how many entries each holds."""
+    return vendor_db.status()
+
+
+@router.post("/vendor-db/refresh")
+async def vendor_db_refresh(_claims: SessionClaims = Depends(require_admin)):
+    """Re-download the MAC vendor + Bluetooth SIG lookup files (the same
+    thing setup.sh does). The old files stay in place if a download fails."""
+    try:
+        return await asyncio.to_thread(vendor_db.update)
+    except Exception as exc:  # noqa: BLE001 -- network/parse errors alike
+        raise HTTPException(502, f"Vendor database download failed: {exc}") from exc

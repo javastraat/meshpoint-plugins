@@ -108,3 +108,36 @@ frontend/bluetooth_scanner.css     only what core CSS doesn't already cover: thi
 
 Full plugin-architecture write-up: [docs/PLUGINS.md](https://github.com/KMX415/meshpoint/blob/main/docs/PLUGINS.md)
 (in the main Meshpoint repo — this satellite repo has no `docs/` of its own).
+
+## Vendor and device info
+
+Each device gets a **Vendor** column and, in its side panel, an
+**Identification** section (MAC vendor, manufacturer, appearance, known
+services) and an **Advertisement** section (TX power, raw manufacturer
+data, service UUIDs and service data).
+
+- **MAC vendor** only works for *public* addresses. Many BLE devices
+  (phones, watches, earbuds, trackers) advertise from a random, rotating
+  address with no vendor prefix; the panel's **Address type** says so.
+- **Manufacturer** comes from the company ID inside the advertisement
+  (Apple, Microsoft, Samsung, ...), so it works for random addresses too.
+  For Apple it also shows the Continuity type (Find My, AirPods, Nearby
+  Info, ...).
+- **Services** are named from the Bluetooth SIG lists plus a few
+  well-known 128-bit UUIDs (Meshtastic, Nordic UART as used by RNode and
+  MeshCore).
+
+The names come from an offline database in `data/bluetooth-scanner/`:
+the [maclookup.app](https://maclookup.app/downloads/csv-database) MAC
+vendor CSV and the Bluetooth SIG's company identifiers, service UUIDs and
+appearance values (about 2 MB). `setup.sh` downloads it; **Refresh** on
+the page (admin) downloads it again. Without it, a small built-in list
+still names the most common companies and services.
+
+## Keeping the table
+
+**Hide devices not seen for 2 min** (on by default, remembered per
+browser) hides devices that stopped advertising while a scan runs. After
+**Stop scan** the table keeps its last state either way, until **Clear**.
+With the box off, everything seen during the scan stays (capped at 2,000
+devices).

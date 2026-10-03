@@ -218,25 +218,22 @@ class TestBluetoothScannerListener(unittest.IsolatedAsyncioTestCase):
         finally:
             await listener.stop()
 
-    async def test_stale_devices_are_filtered_out(self) -> None:
+    async def test_stale_devices_are_kept_for_the_page_to_filter(self) -> None:
+        """The backend no longer drops devices unseen for 2 minutes: a
+        stopped scan keeps its last table, and the page's "Hide devices not
+        seen for 2 min" checkbox does the filtering while scanning."""
         listener = BluetoothScannerListener()
         listener._devices["stale"] = {
-            "address": "stale",
-            "name": None,
-            "rssi": -50,
-            "first_seen": 0.0,
-            "last_seen": 0.0,  # epoch -- guaranteed far older than the staleness window
+            "address": "stale", "name": None, "rssi": -50,
+            "first_seen": 0.0, "last_seen": 0.0,
         }
         listener._devices["fresh"] = {
-            "address": "fresh",
-            "name": None,
-            "rssi": -50,
-            "first_seen": time.time(),
-            "last_seen": time.time(),
+            "address": "fresh", "name": None, "rssi": -50,
+            "first_seen": time.time(), "last_seen": time.time(),
         }
         status = listener.status()
-        addresses = {d["address"] for d in status["devices"]}
-        self.assertEqual(addresses, {"fresh"})
+        self.assertEqual({d["address"] for d in status["devices"]}, {"stale", "fresh"})
+        self.assertEqual(status["stale_after_seconds"], 120.0)
 
     async def test_clear_empties_the_table(self) -> None:
         listener = BluetoothScannerListener()
@@ -253,6 +250,144 @@ class TestBluetoothScannerListener(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(listener._last_poll_at)
         listener.poll()
         self.assertIsNotNone(listener._last_poll_at)
+
+
+class _FakeAdv:
+    def __init__(self, rssi=-60, local_name=None, manufacturer_data=None,
+                 service_uuids=None, service_data=None, tx_power=None):
+        self.rssi = rssi
+        self.local_name = local_name
+        self.manufacturer_data = manufacturer_data or {}
+        self.service_uuids = service_uuids or []
+        self.service_data = service_data or {}
+        self.tx_power = tx_power
+
+
+class _BlueZDevice(_FakeDevice):
+    def __init__(self, address, name=None, props=None):
+        super().__init__(address, name)
+        self.details = {"path": "/org/bluez/hci0/dev_x", "props": props or {}}
+
+
+class TestAdvertisementDetails(unittest.TestCase):
+    def setUp(self) -> None:
+        import tempfile
+        from backend import vendor_db
+        self.vendor_db = vendor_db
+        self._tmp = tempfile.TemporaryDirectory()
+        self._saved_dir = vendor_db.DATA_DIR
+        vendor_db.DATA_DIR = Path(self._tmp.name)
+        vendor_db.reload()
+
+    def tearDown(self) -> None:
+        self.vendor_db.DATA_DIR = self._saved_dir
+        self.vendor_db.reload()
+        self._tmp.cleanup()
+
+    def _write_db(self) -> None:
+        import json
+        d = self.vendor_db.DATA_DIR
+        macs = self.vendor_db.parse_mac_csv(
+            "Mac Prefix,Vendor Name,Private,Block Type,Last Update\n"
+            "44:1B:F6,Espressif Inc.,false,MA-L,2026/06/05\n"
+            "A0:02:4A,IEEE Registration Authority,false,MA-L,2023/03/10\n"
+            "A0:02:4A:9,Kontakt Micro-Location Sp z o.o.,false,MA-M,2020/11/07\n"
+        )
+        (d / "macs.json").write_text(json.dumps(macs))
+        (d / "companies.json").write_text(json.dumps({"76": "Apple, Inc.", "1234": "Acme"}))
+        (d / "services.json").write_text(json.dumps({"180d": "Heart Rate"}))
+        (d / "meta.json").write_text(json.dumps({"updated_at": 1.0, "counts": {"mac_prefixes": 3}}))
+        self.vendor_db.reload()
+
+    def test_address_kind(self) -> None:
+        k = self.vendor_db.address_kind
+        self.assertEqual(k("44:1B:F6:69:D5:F1"), "public")
+        self.assertEqual(k("77:FA:BE:C9:F8:16"), "random (resolvable private)")
+        # Bit 0x02 clear + top bits 11: without a vendor DB it's taken as
+        # public (can't tell) ...
+        self.assertEqual(k("C0:28:8D:8E:B8:DF"), "public")
+        self.assertEqual(k("C0:28:8D:8E:B8:DF", "random"), "random static")
+        self.assertEqual(k("32:DE:00:84:5C:FA"), "random (non-resolvable)")
+        # BlueZ's own AddressType wins over the bit heuristic.
+        self.assertEqual(k("44:1B:F6:69:D5:F1", "random"), "random (resolvable private)")  # 0x44 = 01xxxxxx
+        self.assertEqual(k("77:FA:BE:C9:F8:16", "public"), "public")
+
+    def test_address_kind_uses_vendor_db_for_ambiguous_addresses(self) -> None:
+        self._write_db()
+        k = self.vendor_db.address_kind
+        # ... with one, an unknown prefix with top bits 11 is random static,
+        # a known vendor prefix stays public.
+        self.assertEqual(k("D1:22:33:44:55:66"), "random static")
+        self.assertEqual(k("44:1B:F6:69:D5:F1"), "public")
+
+    def test_mac_vendor_longest_prefix_wins(self) -> None:
+        self._write_db()
+        self.assertEqual(self.vendor_db.mac_vendor("A0:02:4A:9A:8E:AC"), "Kontakt Micro-Location Sp z o.o.")
+        self.assertEqual(self.vendor_db.mac_vendor("A0:02:4A:1A:00:00"), "IEEE Registration Authority")
+        self.assertEqual(self.vendor_db.mac_vendor("44:1B:F6:69:D5:F1"), "Espressif Inc.")
+        self.assertIsNone(self.vendor_db.mac_vendor("12:34:56:78:9A:BC"))
+
+    def test_names_fall_back_to_builtin_without_db(self) -> None:
+        self.assertFalse(self.vendor_db.status()["present"])
+        self.assertEqual(self.vendor_db.company_name(0x004C), "Apple, Inc.")
+        self.assertEqual(self.vendor_db.service_name("0000180d-0000-1000-8000-00805f9b34fb"), "Heart Rate")
+        self.assertEqual(self.vendor_db.service_name("6BA1B218-15A8-461F-9FA8-5DCAE273EAFD"), "Meshtastic")
+        self.assertEqual(self.vendor_db.appearance_name(0x00C1), "Watch")   # category 3
+        self.assertEqual(self.vendor_db.apple_type("1205aabb"), "Find My")
+
+    def test_detection_merges_adverts_and_describes(self) -> None:
+        self._write_db()
+        listener = BluetoothScannerListener()
+        dev = _BlueZDevice("44:1B:F6:69:D5:F1", props={"AddressType": "public", "Appearance": 0x00C1})
+        listener._on_detection(dev, _FakeAdv(local_name="RNode 2726", manufacturer_data={1234: b"\x01\x02"}))
+        # A scan response with only service info must not wipe the name/mfr data.
+        listener._on_detection(dev, _FakeAdv(service_uuids=["0000180D-0000-1000-8000-00805F9B34FB"],
+                                             service_data={"0000180d-0000-1000-8000-00805f9b34fb": b"\xff"},
+                                             tx_power=4))
+        d = listener.status()["devices"][0]
+        self.assertEqual(d["name"], "RNode 2726")
+        self.assertEqual(d["address_kind"], "public")
+        self.assertEqual(d["mac_vendor"], "Espressif Inc.")
+        self.assertEqual(d["vendor"], "Espressif Inc.")
+        self.assertEqual(d["vendor_source"], "mac")
+        self.assertEqual(d["companies"], [{"id": 1234, "id_hex": "0x04D2", "name": "Acme", "data": "0102"}])
+        self.assertEqual(d["services"], [{"uuid": "0000180d-0000-1000-8000-00805f9b34fb", "name": "Heart Rate"}])
+        self.assertEqual(d["service_data"], {"0000180d-0000-1000-8000-00805f9b34fb": "ff"})
+        self.assertEqual(d["tx_power"], 4)
+        self.assertEqual(d["appearance_name"], "Watch")
+
+    def test_random_address_named_by_company_not_mac(self) -> None:
+        self._write_db()
+        listener = BluetoothScannerListener()
+        listener._on_detection(_FakeDevice("77:FA:BE:C9:F8:16"),
+                               _FakeAdv(manufacturer_data={0x004C: bytes.fromhex("1005")}))
+        d = listener.status()["devices"][0]
+        self.assertIsNone(d["mac_vendor"])
+        self.assertEqual(d["vendor"], "Apple, Inc.")
+        self.assertEqual(d["vendor_source"], "company id")
+        self.assertEqual(d["companies"][0]["apple_type"], "Nearby Info")
+
+    def test_device_cap_drops_least_recently_seen(self) -> None:
+        from backend import listener as listener_mod
+        saved = listener_mod._MAX_DEVICES
+        listener_mod._MAX_DEVICES = 2
+        try:
+            lis = BluetoothScannerListener()
+            for i, addr in enumerate(["00:00:00:00:00:01", "00:00:00:00:00:02", "00:00:00:00:00:03"]):
+                lis._on_detection(_FakeDevice(addr), _FakeAdv())
+                lis._devices[addr]["last_seen"] = float(i)
+            self.assertEqual(set(lis._devices), {"00:00:00:00:00:02", "00:00:00:00:00:03"})
+        finally:
+            listener_mod._MAX_DEVICES = saved
+
+    def test_parsers_on_sig_shapes(self) -> None:
+        companies = self.vendor_db.parse_companies("company_identifiers:\n  - value: 0x004C\n    name: 'Apple, Inc.'\n")
+        self.assertEqual(companies, {"76": "Apple, Inc."})
+        services = self.vendor_db.parse_services("uuids:\n - uuid: 0x180D\n   name: Heart Rate\n   id: x\n",
+                                                 "uuids:\n - uuid: 0xFEED\n   name: \"Tile, Inc.\"\n")
+        self.assertEqual(services, {"180d": "Heart Rate", "feed": "Tile, Inc."})
+        appearance = self.vendor_db.parse_appearance("appearance_values:\n  - category: 0x003\n    name: Watch\n")
+        self.assertEqual(appearance, {"3": "Watch"})
 
 
 if __name__ == "__main__":

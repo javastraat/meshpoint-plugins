@@ -147,4 +147,17 @@ if command -v bluetoothctl &>/dev/null; then
     bluetoothctl power on 2>/dev/null || true
 fi
 
+# ---- offline vendor lookup data (MAC vendors + Bluetooth SIG names) ----
+# Downloaded as the service user so the page's "Refresh" button (which
+# runs as meshpoint) can overwrite the files later. Not fatal: the
+# scanner works without it, it just shows fewer vendor names.
+echo "Downloading the vendor lookup database ..."
+if id meshpoint &>/dev/null; then
+    runuser -u meshpoint -- "${VENV_PY}" "${HERE}/backend/vendor_db.py" --update \
+        || echo "  (download failed -- use Refresh on the Bluetooth Scanner page later)"
+else
+    "${VENV_PY}" "${HERE}/backend/vendor_db.py" --update \
+        || echo "  (download failed -- use Refresh on the Bluetooth Scanner page later)"
+fi
+
 echo "bluetooth-scanner setup complete."

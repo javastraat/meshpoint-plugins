@@ -40,6 +40,7 @@
 
 .lw-table--bluetooth col.col-id   { width: 160px; }
 .lw-table--bluetooth col.col-name { width: auto; }
+.lw-table--bluetooth col.col-vendor { width: 28%; }
 .lw-table--bluetooth col.col-rssi { width: 90px; }
 .lw-table--bluetooth col.col-time { width: 100px; }
 
@@ -67,4 +68,46 @@
 .bts-error {
     color: var(--accent-red);
     margin: 0 clamp(16px, 3vw, 32px);
+}
+
+/* Vendor info + "hide stale" toolbar (2026-10) */
+.bts-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    margin: 0 0 12px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.bts-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+.bts-toggle input { margin: 0; cursor: pointer; }
+.bts-db { color: var(--text-muted); }
+.bts-link {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent-cyan);
+    cursor: pointer;
+}
+.bts-link:hover { text-decoration: underline; }
+.bts-link:disabled { opacity: 0.5; cursor: default; }
+.bts-vendor {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.bts-muted { color: var(--text-muted); font-size: 0.85em; }
+.bts-hex {
+    font-size: 0.78em;
+    word-break: break-all;
+    white-space: normal;
 }
