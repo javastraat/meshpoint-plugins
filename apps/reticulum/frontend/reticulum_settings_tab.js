@@ -11,8 +11,9 @@
  * scripts/write_rnsd_config.py turns into rnsd's own config file. There's
  * no "enabled" checkbox -- Settings -> Plugins' own toggle is the sole
  * on/off switch. Saving only updates local.yaml; the RNode/backbone
- * fields need an rnsd restart ("Restart rnsd" below) to apply, and
- * display name needs the usual meshpoint restart.
+ * fields need a restart ("Restart rnsd" below, which also restarts
+ * meshpoint -- see its own backend docstring for why both are needed) to
+ * apply, and display name needs the usual meshpoint restart.
  */
 
 const RT_BANDWIDTHS_HZ = [
@@ -368,7 +369,8 @@ class ReticulumSettingsTab {
                                 byte-pipe — install and enable the <strong>reticulum-call</strong>
                                 plugin for an actual call UI (dial/ring/answer, Codec2 in the
                                 browser). Turning this on or off takes effect after the next
-                                Meshpoint restart — "Restart rnsd" below does not apply it.
+                                Meshpoint restart — "Restart rnsd" below also covers this, since
+                                it restarts meshpoint too.
                             </p>
                         </fieldset>
                         <div class="cfg-card__actions">
@@ -380,14 +382,18 @@ class ReticulumSettingsTab {
                     </form>
                     <div class="cfg-card__actions">
                         <button class="terminal-button" type="button" data-rt-restart-rnsd>
-                            Restart rnsd
+                            Restart rnsd + meshpoint
                         </button>
                     </div>
                     <p class="cfg-field__hint">
-                        Applies saved RNode/backbone settings by restarting the
-                        <code>rnsd</code> service directly, without a full meshpoint
-                        restart. Display name changes still need the usual meshpoint
-                        service restart (Settings → System).
+                        Applies saved RNode/backbone settings by restarting <code>rnsd</code>,
+                        then restarting meshpoint itself right after. Both are needed: meshpoint's
+                        own Reticulum client shares the same live RNS instance as
+                        <code>rnsd</code>, and whichever of the two has been running longer stays
+                        in charge of the actual radio/backbone interfaces — restarting rnsd alone
+                        can silently leave your old settings running. The dashboard briefly
+                        disconnects and reconnects on its own, same as Settings → System's
+                        restart button.
                     </p>
                     <p class="cfg-status" data-rt-rnsd-status aria-live="polite"></p>
                     <fieldset class="cfg-fieldset">
@@ -999,11 +1005,13 @@ class ReticulumSettingsTab {
     async _restartRnsd() {
         const ok = window.confirmModal
             ? await window.confirmModal({
-                label: 'Restart rnsd',
-                description: 'Restart the rnsd service now? It briefly drops the RNode '
-                    + 'interface and Reticulum messaging while it reconnects.',
+                label: 'Restart rnsd + meshpoint',
+                description: 'Restart rnsd, then meshpoint itself? Both are needed to '
+                    + 'reliably apply RNode/backbone changes (see the hint above). '
+                    + 'Reticulum messaging drops briefly and the dashboard reconnects '
+                    + 'on its own in a few seconds.',
             })
-            : window.confirm('Restart the rnsd service now?');
+            : window.confirm('Restart rnsd and meshpoint now?');
         if (!ok) return;
 
         const button = this._q('[data-rt-restart-rnsd]');
@@ -1012,7 +1020,8 @@ class ReticulumSettingsTab {
         try {
             const result = await this._request('POST', '/api/config/reticulum/restart-rnsd', {});
             if (result && result.success) {
-                this._setRnsdStatus('success', 'rnsd restarted.');
+                this._setRnsdStatus('success', 'rnsd restarted — meshpoint is restarting too, '
+                    + 'the dashboard will reconnect in a few seconds.');
             } else {
                 this._setRnsdStatus('error', 'Restart failed.');
             }

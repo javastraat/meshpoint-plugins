@@ -15,6 +15,27 @@ restart too. ``restart_rnsd()`` gives the Settings tab a direct way to
 trigger that, reusing the narrowly-scoped ``sudo systemctl ... rnsd``
 helper (now ``src.api.systemctl``).
 
+``restart_rnsd()`` restarts ``meshpoint`` itself right after rnsd, not
+just rnsd alone. ``LxmfService`` (``backend/lxmf_service.py``) opens its
+own ``RNS.Reticulum(configdir=...)`` on the SAME configdir, with
+``share_instance = Yes`` -- only one of the two processes actually ends
+up "master" (the one that reads the config file and opens the live
+interfaces); the other just rides along as an RPC client on whatever the
+master already has open. If meshpoint has been master since before a
+settings change (the common case -- meshpoint runs continuously, rnsd
+gets bounced far more often, e.g. around an RNode firmware flash), then
+restarting rnsd alone just makes the freshly-started rnsd rejoin as a
+client of meshpoint's STALE master -- the new RNode/backbone interfaces
+written above are silently never applied, even though rnsd's own log
+looks completely normal. Confirmed live: a user who disabled the TCP
+backbone and enabled the RNode kept receiving over TCP and nothing over
+RNode after clicking "Restart rnsd" -- rnsd's journal showed it writing
+the correct config but logged zero interface bring-up at all, meaning it
+never got the chance to open anything itself. Restarting meshpoint right
+after rnsd gives meshpoint a clean restart too, so it comes back up and
+joins rnsd's (now freshly master) instance instead of staying stuck on
+its own old one.
+
 NOTE (until the reticulum-to-plugin cutover): ``scripts/write_rnsd_config.py``
 still reads the core ``reticulum:`` section, not ``plugins.reticulum``, so
 edits made here don't reach rnsd yet. Repointed in the Phase 5 cutover.
@@ -32,6 +53,7 @@ from src.api.audit import AuditLogWriter
 from src.api.audit.dependencies import get_audit_writer
 from src.api.auth.dependencies import require_admin
 from src.api.auth.jwt_session import SessionClaims
+from src.api.dangerous.handlers import schedule_systemctl_restart
 from src.api.systemctl import run_systemctl
 
 from . import state
@@ -317,11 +339,23 @@ async def update_reticulum(
 async def restart_rnsd(_claims: SessionClaims = Depends(require_admin)):
     """Restart the opt-in ``rnsd`` systemd unit so it re-runs
     ``write_rnsd_config.py`` and reconnects with the saved RNode/backbone
-    settings. Errors clearly if rnsd isn't installed as a service."""
+    settings -- THEN restart ``meshpoint`` itself, so whichever process was
+    previously holding the shared RNS instance as a stale master gets a
+    clean restart and rejoins rnsd's freshly-opened one instead (see this
+    module's own docstring for why both are needed). Errors clearly if rnsd
+    isn't installed as a service.
+
+    The meshpoint restart is detached, fire-and-forget: it's this very
+    request's own process, so by the time it actually happens the response
+    below has already been sent. The dashboard connection drops for a few
+    seconds and reconnects on its own, same as Settings -> System's restart
+    button.
+    """
     rc, out = await run_systemctl("restart", "rnsd")
     if rc != 0:
         raise HTTPException(
             502,
             f"systemctl restart rnsd failed (exit {rc}): {out or 'no output'}",
         )
-    return {"success": True, "output": out}
+    schedule_systemctl_restart("meshpoint")
+    return {"success": True, "output": out, "meshpoint_restart": "initiated"}
