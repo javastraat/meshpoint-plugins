@@ -129,6 +129,29 @@ class TestNomadTimeouts(unittest.TestCase):
         self.assertGreaterEqual(nomad._link_timeout_s, 5)
 
 
+class TestEvictStaleLink(unittest.TestCase):
+    """Pure dict logic, no RNS involved -- runs on every machine."""
+
+    def tearDown(self) -> None:
+        nomad.reset()
+
+    def test_evicts_when_cache_still_holds_that_exact_link(self) -> None:
+        link = object()
+        nomad._links["deadbeef"] = link
+        nomad._evict_stale_link("deadbeef", link)
+        self.assertNotIn("deadbeef", nomad._links)
+
+    def test_leaves_a_different_cached_link_alone(self) -> None:
+        stale_link = object()
+        fresh_link = object()
+        nomad._links["deadbeef"] = fresh_link
+        nomad._evict_stale_link("deadbeef", stale_link)
+        self.assertIs(nomad._links["deadbeef"], fresh_link)
+
+    def test_missing_key_does_not_raise(self) -> None:
+        nomad._evict_stale_link("not-cached", object())
+
+
 class TestExtractFile(unittest.TestCase):
     def test_bytes_plus_name_metadata_list(self) -> None:
         name, data = nomad._extract_file([b"payload", {"name": b"/x/report.pdf"}], None)

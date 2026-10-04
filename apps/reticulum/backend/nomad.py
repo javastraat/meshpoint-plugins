@@ -106,6 +106,29 @@ async def _ensure_path(dest_hash: bytes) -> bool:
     return RNS.Transport.has_path(dest_hash)
 
 
+def _evict_stale_link(destination_hash_hex: str, link) -> None:
+    """Drop a cached Link that just proved itself dead (failed request, or
+    no response at all within our own timeout) so the next attempt builds a
+    fresh one instead of retrying the same dead Link forever.
+
+    Needed because RNS.Link has no concept of "the remote process restarted
+    out from under me" -- a Link torn down by the other end simply vanishing
+    (e.g. an RTNode reboot, which sends no graceful close) can keep reporting
+    ACTIVE here for minutes via RNS's own keepalive/staleness timers, well
+    past the point every request over it starts failing. Only evicts if the
+    cache still holds this exact Link object -- a concurrent request may
+    have already replaced it with a working one.
+
+    Called from both the asyncio loop (the timeout/exception paths in
+    ``_request``) and RNS's own callback thread (``_on_failed`` below, same
+    reason that one already has to hop back via ``call_soon_threadsafe`` --
+    it does not run on the loop thread) -- ``pop`` rather than ``del`` so a
+    callback racing a concurrent re-link never raises a ``KeyError``.
+    """
+    if _links.get(destination_hash_hex) is link:
+        _links.pop(destination_hash_hex, None)
+
+
 async def _ensure_link(destination_hash_hex: str, dest_hash: bytes):
     """Return an ACTIVE RNS.Link to the node, from cache or freshly made."""
     loop = asyncio.get_running_loop()
@@ -155,6 +178,7 @@ async def _request(destination_hash_hex: str, path: str, field_data: Optional[di
             loop.call_soon_threadsafe(fut.set_result, ("ok", receipt))
 
     def _on_failed(receipt=None) -> None:
+        _evict_stale_link(destination_hash_hex, link)
         if not fut.done():
             loop.call_soon_threadsafe(fut.set_result, ("err", "the node rejected or dropped the request"))
 
@@ -167,11 +191,13 @@ async def _request(destination_hash_hex: str, path: str, field_data: Optional[di
             timeout=_request_timeout_s,
         )
     except Exception as exc:  # noqa: BLE001
+        _evict_stale_link(destination_hash_hex, link)
         return "err", f"Request could not be sent: {exc}"
 
     try:
         return await asyncio.wait_for(fut, timeout=_request_timeout_s + 5)
     except asyncio.TimeoutError:
+        _evict_stale_link(destination_hash_hex, link)
         return "err", "Timed out waiting for a response"
 
 
