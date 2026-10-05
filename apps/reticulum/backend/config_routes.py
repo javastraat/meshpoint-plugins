@@ -84,6 +84,10 @@ def _clean_dest_hash(value: str) -> str | None:
     return stripped
 
 
+# RNS interface modes the Settings tab offers -- mirrors
+# write_rnsd_config.py's _INTERFACE_MODES.
+InterfaceMode = Literal["full", "gateway", "access_point", "roaming", "boundary"]
+
 _RESERVED_IFACE_NAMES = {"default interface", "rnode lora", "reticulumnet internet"}
 
 
@@ -94,6 +98,7 @@ class ExtraInterface(BaseModel):
     name: str = Field(..., min_length=1, max_length=48)
     type: Literal["TCPClientInterface", "TCPServerInterface", "UDPInterface"]
     enabled: bool = True
+    mode: InterfaceMode = "full"
     target_host: str = ""
     target_port: int = Field(0, ge=0, le=65535)
     listen_ip: str = ""
@@ -127,6 +132,8 @@ class ExtraInterface(BaseModel):
         """Only the fields this type actually uses -- keeps local.yaml tidy
         and matches what write_rnsd_config.py reads back."""
         base = {"name": self.name, "type": self.type, "enabled": self.enabled}
+        if self.mode != "full":
+            base["mode"] = self.mode
         if self.type == "TCPClientInterface":
             base["target_host"] = self.target_host.strip()
             base["target_port"] = self.target_port
@@ -169,9 +176,11 @@ class ReticulumUpdate(BaseModel):
     rnode_tx_power: int = Field(20, ge=0, le=22)
     rnode_spreading_factor: int = Field(8, ge=5, le=12)
     rnode_coding_rate: int = Field(5, ge=5, le=8)
+    rnode_interface_mode: InterfaceMode = "access_point"
     backbone_enabled: bool = True
     backbone_host: str = "node.reticulumnet.nl"
     backbone_port: int = Field(4242, ge=1, le=65535)
+    backbone_interface_mode: InterfaceMode = "full"
     extra_interfaces: list[ExtraInterface] = Field(default_factory=list, max_length=20)
 
     @field_validator("rnode_bandwidth_hz")
@@ -316,9 +325,11 @@ async def update_reticulum(
         "rnode_tx_power": req.rnode_tx_power,
         "rnode_spreading_factor": req.rnode_spreading_factor,
         "rnode_coding_rate": req.rnode_coding_rate,
+        "rnode_interface_mode": req.rnode_interface_mode,
         "backbone_enabled": req.backbone_enabled,
         "backbone_host": req.backbone_host,
         "backbone_port": req.backbone_port,
+        "backbone_interface_mode": req.backbone_interface_mode,
         "extra_interfaces": [i.to_stored() for i in req.extra_interfaces],
     }
     with audit.timed_action(

@@ -20,6 +20,24 @@ const RT_BANDWIDTHS_HZ = [
     7800, 10400, 15600, 20800, 31250, 41700, 62500, 125000, 250000, 500000,
 ];
 
+// RNS interface modes (write_rnsd_config.py's _INTERFACE_MODES). No
+// forwarded announce is ever rebroadcast onto an access-point interface --
+// so RNode=access_point keeps internet announce traffic off the LoRa
+// channel, while RF announces still go out on a full-mode backbone.
+const RT_IFACE_MODES = [
+    ['full', 'Full (rebroadcast everything)'],
+    ['gateway', 'Gateway'],
+    ['access_point', 'Access point (no forwarded announces)'],
+    ['roaming', 'Roaming (RF / mobile)'],
+    ['boundary', 'Boundary (internet / large network)'],
+];
+
+function rtIfaceModeOptions(selected) {
+    return RT_IFACE_MODES.map(([v, label]) => (
+        `<option value="${v}"${v === selected ? ' selected' : ''}>${label}</option>`
+    )).join('');
+}
+
 // Per-browser only -- never sent to the server. Same key/event *strings*
 // also used directly by reticulum_panel.js, but under this file's own
 // symbol names -- both files are loaded as plain <script> tags into one
@@ -132,6 +150,21 @@ class ReticulumSettingsTab {
                                            min="5" max="8" step="1" data-rt-cr>
                                 </label>
                             </div>
+                            <label class="cfg-field">
+                                <span class="cfg-field__label">Interface mode</span>
+                                <select class="cfg-field__input" data-rt-rnode-mode>
+                                    ${rtIfaceModeOptions('access_point')}
+                                </select>
+                                <span class="cfg-field__hint">
+                                    Default <em>Access point</em>: announces from the internet
+                                    (or any other interface) are not re-sent over LoRa, so the
+                                    radio isn't busy transmitting and can still hear local RF
+                                    (repeaters, nodes). Announces heard over RF still go to the
+                                    backbone. This node's own announces aren't sent over LoRa
+                                    either; local clients still find it when they look it up.
+                                    <em>Full</em> forwards everything onto LoRa.
+                                </span>
+                            </label>
                         </fieldset>
                         <fieldset class="cfg-fieldset">
                             <legend class="cfg-fieldset__legend">TCP backbone</legend>
@@ -156,6 +189,17 @@ class ReticulumSettingsTab {
                                            min="1" max="65535" data-rt-backbone-port>
                                 </label>
                             </div>
+                            <label class="cfg-field">
+                                <span class="cfg-field__label">Interface mode</span>
+                                <select class="cfg-field__input" data-rt-backbone-mode>
+                                    ${rtIfaceModeOptions('full')}
+                                </select>
+                                <span class="cfg-field__hint">
+                                    Default <em>Full</em>, so announces heard over RF are passed
+                                    on to the backbone. Keeping internet traffic off LoRa is the
+                                    RNode's mode above.
+                                </span>
+                            </label>
                         </fieldset>
                         <fieldset class="cfg-fieldset">
                             <legend class="cfg-fieldset__legend">LAN auto-discovery</legend>
@@ -456,6 +500,8 @@ class ReticulumSettingsTab {
         this._txPower = this._q('[data-rt-tx-power]');
         this._sf = this._q('[data-rt-sf]');
         this._cr = this._q('[data-rt-cr]');
+        this._rnodeMode = this._q('[data-rt-rnode-mode]');
+        this._backboneMode = this._q('[data-rt-backbone-mode]');
         this._backboneEnabled = this._q('[data-rt-backbone-enabled]');
         this._backboneHost = this._q('[data-rt-backbone-host]');
         this._backbonePort = this._q('[data-rt-backbone-port]');
@@ -583,6 +629,12 @@ class ReticulumSettingsTab {
                                     .map((t) => `<option value="${t}"${t === type ? ' selected' : ''}>${t}</option>`).join('')}
                             </select>
                         </label>
+                        <label class="cfg-field rt-iface-head__mode">
+                            <span class="cfg-field__label">Mode</span>
+                            <select class="cfg-field__input" data-rt-iface-mode data-rt-iface-idx="${idx}">
+                                ${rtIfaceModeOptions(iface.mode || 'full')}
+                            </select>
+                        </label>
                         <label class="cfg-field cfg-field--toggle rt-iface-head__enabled">
                             <input type="checkbox" data-rt-iface-enabled data-rt-iface-idx="${idx}"
                                    ${iface.enabled === false ? '' : 'checked'}>
@@ -632,6 +684,7 @@ class ReticulumSettingsTab {
             cur.name = row.querySelector('[data-rt-iface-name]')?.value.trim() || '';
             cur.type = row.querySelector('[data-rt-iface-type]')?.value || 'TCPClientInterface';
             cur.enabled = !!row.querySelector('[data-rt-iface-enabled]')?.checked;
+            cur.mode = row.querySelector('[data-rt-iface-mode]')?.value || 'full';
             row.querySelectorAll('[data-rt-iface-field]').forEach((inp) => {
                 cur[inp.dataset.rtIfaceField] = inp.type === 'number'
                     ? (inp.value === '' ? '' : Number(inp.value))
@@ -697,6 +750,8 @@ class ReticulumSettingsTab {
         if (this._txPower) this._txPower.value = rt.rnode_tx_power ?? 20;
         if (this._sf) this._sf.value = rt.rnode_spreading_factor ?? 8;
         if (this._cr) this._cr.value = rt.rnode_coding_rate ?? 5;
+        if (this._rnodeMode) this._rnodeMode.value = rt.rnode_interface_mode || 'access_point';
+        if (this._backboneMode) this._backboneMode.value = rt.backbone_interface_mode || 'full';
         if (this._backboneEnabled) this._backboneEnabled.checked = rt.backbone_enabled !== false;
         if (this._backboneHost) this._backboneHost.value = rt.backbone_host || 'node.reticulumnet.nl';
         if (this._backbonePort) this._backbonePort.value = rt.backbone_port ?? 4242;
@@ -975,9 +1030,11 @@ class ReticulumSettingsTab {
             rnode_tx_power: Number(this._txPower.value),
             rnode_spreading_factor: Number(this._sf.value),
             rnode_coding_rate: Number(this._cr.value),
+            rnode_interface_mode: this._rnodeMode?.value || 'access_point',
             backbone_enabled: backboneEnabled,
             backbone_host: this._backboneHost.value.trim() || 'node.reticulumnet.nl',
             backbone_port: Number(this._backbonePort.value),
+            backbone_interface_mode: this._backboneMode?.value || 'full',
             lan_autodiscovery_enabled: !!this._lanAutodiscoveryEnabled?.checked,
             extra_interfaces: this._extraIfaces.map((i) => ({ ...i })),
         };

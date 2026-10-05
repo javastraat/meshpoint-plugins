@@ -92,6 +92,26 @@ class TestExtraInterfaces(unittest.TestCase):
             )
 
 
+class TestInterfaceModes(unittest.TestCase):
+    def test_defaults(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED)
+        self.assertEqual(m.rnode_interface_mode, "access_point")
+        self.assertEqual(m.backbone_interface_mode, "full")
+
+    def test_unknown_mode_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            ReticulumUpdate(**_REQUIRED, backbone_interface_mode="internal")
+
+    def test_extra_interface_mode_stored_only_when_not_full(self) -> None:
+        iface = {"name": "X", "type": "TCPClientInterface",
+                 "target_host": "h.example", "target_port": 4242}
+        m = ReticulumUpdate(**_REQUIRED, extra_interfaces=[
+            dict(iface, mode="boundary"), dict(iface, name="Y", mode="full"),
+        ])
+        self.assertEqual(m.extra_interfaces[0].to_stored()["mode"], "boundary")
+        self.assertNotIn("mode", m.extra_interfaces[1].to_stored())
+
+
 class TestPropagationOutboundNode(unittest.TestCase):
     def test_blank_is_fine(self) -> None:
         m = ReticulumUpdate(**_REQUIRED, propagation_outbound_node="")

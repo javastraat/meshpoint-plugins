@@ -71,6 +71,7 @@ _RNODE_TEMPLATE = """
     type = RNodeInterface
     enabled = Yes
     port = {rnode_serial_port}
+    mode = {rnode_interface_mode}
 
     frequency = {rnode_frequency_hz}
     bandwidth = {rnode_bandwidth_hz}
@@ -85,7 +86,22 @@ _BACKBONE_TEMPLATE = """
     enabled = Yes
     target_host = {backbone_host}
     target_port = {backbone_port}
+    mode = {backbone_interface_mode}
 """
+
+# RNS interface modes the Settings tab offers (ptp/internal are left out --
+# not useful for anything this generator writes). Default RNode =
+# access_point: RNS never rebroadcasts any forwarded announce onto an AP
+# interface (RNS/Transport.py's announce broadcast rules), so the busy
+# internet backbone's announce stream stays off the half-duplex LoRa
+# channel, which otherwise spends its airtime transmitting it and can't
+# hear local RF (confirmed live: the local RT repeater went unheard until
+# TCP was turned off). Announces heard over RF still go out on the
+# backbone (full). The only stock-mode pair that is one-way like this --
+# roaming/boundary blocks BOTH directions. Cost: this node's own
+# announces aren't sent over RF either (RF clients find it by path
+# request), and RF paths expire after a day instead of a week.
+_INTERFACE_MODES = ("full", "gateway", "access_point", "roaming", "boundary")
 
 # Operator-added extra interfaces (Settings tab -> "Extra interfaces").
 # Only these three types are emitted; the fields listed are the ones each
@@ -133,6 +149,12 @@ def _extra_interface_blocks(entries) -> str:
                   f"-- empty, reserved or duplicate name")
             continue
         lines = [f"\n  [[{name}]]", f"    type = {itype}", "    enabled = Yes"]
+        mode = str(entry.get("mode") or "full").strip().lower()
+        if mode not in _INTERFACE_MODES:
+            print(f"reticulum: extra interface {name!r} has unknown mode {mode!r} -- using full")
+            mode = "full"
+        if mode != "full":  # RNS's own default -- keep pre-mode configs byte-identical
+            lines.append(f"    mode = {mode}")
         missing = [f for f in fields if entry.get(f) in (None, "")]
         if missing:
             print(f"reticulum: skipping extra interface {name!r} -- missing {', '.join(missing)}")
@@ -160,10 +182,22 @@ _DEFAULTS = {
     "rnode_tx_power": 20,
     "rnode_spreading_factor": 8,
     "rnode_coding_rate": 5,
+    "rnode_interface_mode": "access_point",
     "backbone_enabled": True,
     "backbone_host": "node.reticulumnet.nl",
     "backbone_port": 4242,
+    "backbone_interface_mode": "full",
 }
+
+
+def _interface_mode(rc: dict, key: str) -> str:
+    """A configured interface mode, or the default with a warning if it
+    isn't one rnsd understands -- never raises (ExecStartPre)."""
+    mode = str(rc[key]).strip().lower()
+    if mode in _INTERFACE_MODES:
+        return mode
+    print(f"plugins.reticulum.{key} {rc[key]!r} is not a valid mode -- using {_DEFAULTS[key]}")
+    return _DEFAULTS[key]
 
 
 def main() -> int:
@@ -198,6 +232,7 @@ def main() -> int:
             rnode_tx_power=rc["rnode_tx_power"],
             rnode_spreading_factor=rc["rnode_spreading_factor"],
             rnode_coding_rate=rc["rnode_coding_rate"],
+            rnode_interface_mode=_interface_mode(rc, "rnode_interface_mode"),
         )
 
     backbone_block = ""
@@ -207,6 +242,7 @@ def main() -> int:
         backbone_block = _BACKBONE_TEMPLATE.format(
             backbone_host=rc["backbone_host"],
             backbone_port=rc["backbone_port"],
+            backbone_interface_mode=_interface_mode(rc, "backbone_interface_mode"),
         )
 
     extra_block = ""

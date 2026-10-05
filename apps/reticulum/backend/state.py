@@ -21,9 +21,11 @@ user a migration diff moving their real ``reticulum:`` values here:
         rnode_tx_power: 20
         rnode_spreading_factor: 8
         rnode_coding_rate: 5
+        rnode_interface_mode: access_point
         backbone_enabled: true
         backbone_host: node.reticulumnet.nl
         backbone_port: 4242
+        backbone_interface_mode: full
 
 The ``rnode_*`` / ``backbone_*`` fields are consumed by
 ``scripts/write_rnsd_config.py`` (rnsd's own interfaces), not by
@@ -97,6 +99,12 @@ _DEFAULTS: dict[str, Any] = {
     "backbone_enabled": True,
     "backbone_host": "node.reticulumnet.nl",
     "backbone_port": 4242,
+    # RNS interface modes for the two built-in interfaces. access_point on
+    # the RNode keeps the backbone's announce flood off the LoRa channel
+    # while RF announces still reach the backbone -- see
+    # write_rnsd_config.py's _INTERFACE_MODES. rnsd restart.
+    "rnode_interface_mode": "access_point",
+    "backbone_interface_mode": "full",
     # Operator-added extra RNS interfaces (Settings tab). A list of
     # {name, type, enabled, ...type-specific fields}. Consumed only by
     # write_rnsd_config.py -- rnsd needs a restart to apply.

@@ -87,5 +87,38 @@ class TestExtraInterfaceBlocks(unittest.TestCase):
         self.assertIn("[[Default Interface]]\n    type = AutoInterface\n    enabled = Yes", rendered)
 
 
+class TestInterfaceModes(unittest.TestCase):
+    def test_defaults_keep_backbone_announces_off_rf(self) -> None:
+        self.assertEqual(w._DEFAULTS["rnode_interface_mode"], "access_point")
+        self.assertEqual(w._DEFAULTS["backbone_interface_mode"], "full")
+
+    def test_templates_render_mode(self) -> None:
+        rnode = w._RNODE_TEMPLATE.format(
+            rnode_serial_port="/dev/ttyACM0", rnode_frequency_hz=1, rnode_bandwidth_hz=1,
+            rnode_tx_power=1, rnode_spreading_factor=8, rnode_coding_rate=5,
+            rnode_interface_mode="roaming",
+        )
+        self.assertIn("mode = roaming", rnode)
+        backbone = w._BACKBONE_TEMPLATE.format(
+            backbone_host="h", backbone_port=4242, backbone_interface_mode="boundary",
+        )
+        self.assertIn("mode = boundary", backbone)
+
+    def test_invalid_mode_falls_back_to_default(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_interface_mode="bogus", backbone_interface_mode="FULL")
+        self.assertEqual(w._interface_mode(rc, "rnode_interface_mode"), "access_point")
+        self.assertEqual(w._interface_mode(rc, "backbone_interface_mode"), "full")
+
+    def test_extra_interface_mode(self) -> None:
+        base = {"type": "TCPClientInterface", "target_host": "x", "target_port": 1}
+        out = w._extra_interface_blocks([
+            dict(base, name="A", mode="boundary"),
+            dict(base, name="B"),               # no mode -> RNS default, no line
+            dict(base, name="C", mode="weird"),  # unknown -> full, no line
+        ])
+        self.assertEqual(out.count("mode = "), 1)
+        self.assertIn("[[A]]\n    type = TCPClientInterface\n    enabled = Yes\n    mode = boundary", out)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
