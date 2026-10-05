@@ -13,6 +13,7 @@ user a migration diff moving their real ``reticulum:`` values here:
         reticulum_config_dir: data/reticulum/rns_config
         identity_path: data/reticulum/identity
         lxmf_storage_dir: data/reticulum/lxmf
+        lan_autodiscovery_enabled: false
         rnode_enabled: true
         rnode_serial_port: ""
         rnode_frequency_hz: 869463000
@@ -78,6 +79,14 @@ _DEFAULTS: dict[str, Any] = {
     # separately -- at least one must stay on (enforced by config_routes.py's
     # ReticulumUpdate validator), same as NomadNet needs one of them to
     # actually reach anyone.
+    # Off by default: AutoInterface auto-peers with any other RNS instance
+    # on the same LAN with zero config, which also means transparently
+    # inheriting whatever that peer is itself connected to -- on a LAN with
+    # another always-on node bridged to the public network, this silently
+    # floods the Activity feed with global traffic unrelated to this box's
+    # own RNode radio or TCP backbone (confirmed live). Written into rnsd's
+    # config by write_rnsd_config.py -- a restart applies a change.
+    "lan_autodiscovery_enabled": False,
     "rnode_enabled": True,
     "rnode_serial_port": "",
     "rnode_frequency_hz": 869_463_000,

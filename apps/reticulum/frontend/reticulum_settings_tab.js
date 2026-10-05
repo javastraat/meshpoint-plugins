@@ -158,6 +158,23 @@ class ReticulumSettingsTab {
                             </div>
                         </fieldset>
                         <fieldset class="cfg-fieldset">
+                            <legend class="cfg-fieldset__legend">LAN auto-discovery</legend>
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" data-rt-lan-autodiscovery-enabled>
+                                <span class="cfg-field__label">Enable LAN auto-discovery interface</span>
+                            </label>
+                            <p class="cfg-field__hint">
+                                Zero-config peering with any other Reticulum instance on the
+                                same local network (e.g. reticulum-meshchat on another
+                                machine here). Off by default — if that peer is itself
+                                connected to the wider public network, this interface
+                                transparently inherits all of its traffic too, which can
+                                flood the Activity feed with announces unrelated to this
+                                box's own RNode radio or TCP backbone. Applied on
+                                <em>Restart rnsd</em> below.
+                            </p>
+                        </fieldset>
+                        <fieldset class="cfg-fieldset">
                             <legend class="cfg-fieldset__legend">Extra interfaces</legend>
                             <p class="cfg-field__hint">
                                 Additional RNS interfaces beyond the RNode radio and the TCP
@@ -442,6 +459,7 @@ class ReticulumSettingsTab {
         this._backboneEnabled = this._q('[data-rt-backbone-enabled]');
         this._backboneHost = this._q('[data-rt-backbone-host]');
         this._backbonePort = this._q('[data-rt-backbone-port]');
+        this._lanAutodiscoveryEnabled = this._q('[data-rt-lan-autodiscovery-enabled]');
         this._extraIfacesEl = this._q('[data-rt-extra-ifaces]');
         this._propEnabled = this._q('[data-rt-prop-enabled]');
         this._propStorage = this._q('[data-rt-prop-storage]');
@@ -682,6 +700,7 @@ class ReticulumSettingsTab {
         if (this._backboneEnabled) this._backboneEnabled.checked = rt.backbone_enabled !== false;
         if (this._backboneHost) this._backboneHost.value = rt.backbone_host || 'node.reticulumnet.nl';
         if (this._backbonePort) this._backbonePort.value = rt.backbone_port ?? 4242;
+        if (this._lanAutodiscoveryEnabled) this._lanAutodiscoveryEnabled.checked = !!rt.lan_autodiscovery_enabled;
         this._extraIfaces = Array.isArray(rt.extra_interfaces)
             ? rt.extra_interfaces.map((i) => ({ ...i })) : [];
         this._renderExtraInterfaces();
@@ -959,6 +978,7 @@ class ReticulumSettingsTab {
             backbone_enabled: backboneEnabled,
             backbone_host: this._backboneHost.value.trim() || 'node.reticulumnet.nl',
             backbone_port: Number(this._backbonePort.value),
+            lan_autodiscovery_enabled: !!this._lanAutodiscoveryEnabled?.checked,
             extra_interfaces: this._extraIfaces.map((i) => ({ ...i })),
         };
 

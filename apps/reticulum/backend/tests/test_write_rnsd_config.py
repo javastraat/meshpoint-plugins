@@ -71,9 +71,20 @@ class TestExtraInterfaceBlocks(unittest.TestCase):
 
     def test_template_has_the_extra_slot(self) -> None:
         # a formatting regression here means rnsd gets a broken config
-        rendered = w._TEMPLATE.format(rnode_block="", backbone_block="", extra_block="X")
+        rendered = w._TEMPLATE.format(
+            lan_autodiscovery_enabled="No", rnode_block="", backbone_block="", extra_block="X",
+        )
         self.assertIn("X", rendered)
         self.assertIn("[interfaces]", rendered)
+
+    def test_lan_autodiscovery_defaults_off(self) -> None:
+        self.assertFalse(w._DEFAULTS["lan_autodiscovery_enabled"])
+
+    def test_lan_autodiscovery_enabled_renders_yes(self) -> None:
+        rendered = w._TEMPLATE.format(
+            lan_autodiscovery_enabled="Yes", rnode_block="", backbone_block="", extra_block="",
+        )
+        self.assertIn("[[Default Interface]]\n    type = AutoInterface\n    enabled = Yes", rendered)
 
 
 if __name__ == "__main__":  # pragma: no cover

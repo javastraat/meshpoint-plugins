@@ -63,7 +63,7 @@ _TEMPLATE = """\
 
   [[Default Interface]]
     type = AutoInterface
-    enabled = Yes
+    enabled = {lan_autodiscovery_enabled}
 {rnode_block}{backbone_block}{extra_block}"""
 
 _RNODE_TEMPLATE = """
@@ -145,6 +145,14 @@ def _extra_interface_blocks(entries) -> str:
 
 _DEFAULTS = {
     "reticulum_config_dir": "data/reticulum/rns_config",
+    # Off by default: AutoInterface peers with any other RNS instance on the
+    # same LAN segment with zero config, which also means it transparently
+    # inherits whatever that peer itself is connected to -- on a LAN with
+    # another always-on node bridged to the public Reticulum network, this
+    # silently floods the local Activity feed with global traffic having
+    # nothing to do with this box's own RNode radio or TCP backbone, and
+    # makes announces from those two much harder to spot (confirmed live).
+    "lan_autodiscovery_enabled": False,
     "rnode_enabled": True,
     "rnode_serial_port": "",
     "rnode_frequency_hz": 869_463_000,
@@ -209,6 +217,7 @@ def main() -> int:
             print(f"reticulum: wrote {n} extra interface(s) from plugins.reticulum.extra_interfaces.")
 
     content = _TEMPLATE.format(
+        lan_autodiscovery_enabled="Yes" if rc["lan_autodiscovery_enabled"] else "No",
         rnode_block=rnode_block,
         backbone_block=backbone_block,
         extra_block=extra_block,
