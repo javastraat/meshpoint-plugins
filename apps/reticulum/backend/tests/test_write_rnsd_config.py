@@ -89,8 +89,8 @@ class TestExtraInterfaceBlocks(unittest.TestCase):
 
 class TestInterfaceModes(unittest.TestCase):
     def test_defaults_keep_backbone_announces_off_rf(self) -> None:
-        self.assertEqual(w._DEFAULTS["rnode_interface_mode"], "access_point")
-        self.assertEqual(w._DEFAULTS["backbone_interface_mode"], "full")
+        self.assertEqual(w._DEFAULTS["rnode_interface_mode"], "full")
+        self.assertEqual(w._DEFAULTS["backbone_interface_mode"], "internal")
 
     def test_templates_render_mode(self) -> None:
         rnode = w._RNODE_TEMPLATE.format(
@@ -99,14 +99,16 @@ class TestInterfaceModes(unittest.TestCase):
             rnode_interface_mode="roaming",
         )
         self.assertIn("mode = roaming", rnode)
+        # the half that keeps internal-mode (backbone) announces off RF
+        self.assertIn("announces_from_internal = No", rnode)
         backbone = w._BACKBONE_TEMPLATE.format(
-            backbone_host="h", backbone_port=4242, backbone_interface_mode="boundary",
+            backbone_host="h", backbone_port=4242, backbone_interface_mode="internal",
         )
-        self.assertIn("mode = boundary", backbone)
+        self.assertIn("mode = internal", backbone)
 
     def test_invalid_mode_falls_back_to_default(self) -> None:
         rc = dict(w._DEFAULTS, rnode_interface_mode="bogus", backbone_interface_mode="FULL")
-        self.assertEqual(w._interface_mode(rc, "rnode_interface_mode"), "access_point")
+        self.assertEqual(w._interface_mode(rc, "rnode_interface_mode"), "full")
         self.assertEqual(w._interface_mode(rc, "backbone_interface_mode"), "full")
 
     def test_extra_interface_mode(self) -> None:

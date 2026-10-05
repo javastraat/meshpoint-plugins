@@ -20,16 +20,17 @@ const RT_BANDWIDTHS_HZ = [
     7800, 10400, 15600, 20800, 31250, 41700, 62500, 125000, 250000, 500000,
 ];
 
-// RNS interface modes (write_rnsd_config.py's _INTERFACE_MODES). No
-// forwarded announce is ever rebroadcast onto an access-point interface --
-// so RNode=access_point keeps internet announce traffic off the LoRa
-// channel, while RF announces still go out on a full-mode backbone.
+// RNS interface modes (write_rnsd_config.py's _INTERFACE_MODES). The RNode
+// is always written with announces_from_internal = No, so a backbone in
+// Internal mode keeps internet announce traffic off the LoRa channel, while
+// RF announces still reach the backbone and our own still go out over RF.
 const RT_IFACE_MODES = [
     ['full', 'Full (rebroadcast everything)'],
     ['gateway', 'Gateway'],
     ['access_point', 'Access point (no forwarded announces)'],
     ['roaming', 'Roaming (RF / mobile)'],
     ['boundary', 'Boundary (internet / large network)'],
+    ['internal', 'Internal (announces kept off the RNode)'],
 ];
 
 function rtIfaceModeOptions(selected) {
@@ -153,16 +154,14 @@ class ReticulumSettingsTab {
                             <label class="cfg-field">
                                 <span class="cfg-field__label">Interface mode</span>
                                 <select class="cfg-field__input" data-rt-rnode-mode>
-                                    ${rtIfaceModeOptions('access_point')}
+                                    ${rtIfaceModeOptions('full')}
                                 </select>
                                 <span class="cfg-field__hint">
-                                    Default <em>Access point</em>: announces from the internet
-                                    (or any other interface) are not re-sent over LoRa, so the
-                                    radio isn't busy transmitting and can still hear local RF
-                                    (repeaters, nodes). Announces heard over RF still go to the
-                                    backbone. This node's own announces aren't sent over LoRa
-                                    either; local clients still find it when they look it up.
-                                    <em>Full</em> forwards everything onto LoRa.
+                                    Default <em>Full</em>. The radio never re-sends announces
+                                    from an <em>Internal</em> interface (the backbone's default
+                                    below), so it isn't busy transmitting internet traffic and
+                                    can still hear local RF (repeaters, nodes). This node's own
+                                    announces still go out over LoRa.
                                 </span>
                             </label>
                         </fieldset>
@@ -192,12 +191,14 @@ class ReticulumSettingsTab {
                             <label class="cfg-field">
                                 <span class="cfg-field__label">Interface mode</span>
                                 <select class="cfg-field__input" data-rt-backbone-mode>
-                                    ${rtIfaceModeOptions('full')}
+                                    ${rtIfaceModeOptions('internal')}
                                 </select>
                                 <span class="cfg-field__hint">
-                                    Default <em>Full</em>, so announces heard over RF are passed
-                                    on to the backbone. Keeping internet traffic off LoRa is the
-                                    RNode's mode above.
+                                    Default <em>Internal</em>: announces from the internet are not
+                                    re-sent over LoRa, while announces heard over RF still go to
+                                    the backbone. <em>Full</em> forwards internet announces onto
+                                    LoRa too. Give a second backbone under Extra interfaces
+                                    <em>Internal</em> as well.
                                 </span>
                             </label>
                         </fieldset>
@@ -750,8 +751,8 @@ class ReticulumSettingsTab {
         if (this._txPower) this._txPower.value = rt.rnode_tx_power ?? 20;
         if (this._sf) this._sf.value = rt.rnode_spreading_factor ?? 8;
         if (this._cr) this._cr.value = rt.rnode_coding_rate ?? 5;
-        if (this._rnodeMode) this._rnodeMode.value = rt.rnode_interface_mode || 'access_point';
-        if (this._backboneMode) this._backboneMode.value = rt.backbone_interface_mode || 'full';
+        if (this._rnodeMode) this._rnodeMode.value = rt.rnode_interface_mode || 'full';
+        if (this._backboneMode) this._backboneMode.value = rt.backbone_interface_mode || 'internal';
         if (this._backboneEnabled) this._backboneEnabled.checked = rt.backbone_enabled !== false;
         if (this._backboneHost) this._backboneHost.value = rt.backbone_host || 'node.reticulumnet.nl';
         if (this._backbonePort) this._backbonePort.value = rt.backbone_port ?? 4242;
@@ -1030,11 +1031,11 @@ class ReticulumSettingsTab {
             rnode_tx_power: Number(this._txPower.value),
             rnode_spreading_factor: Number(this._sf.value),
             rnode_coding_rate: Number(this._cr.value),
-            rnode_interface_mode: this._rnodeMode?.value || 'access_point',
+            rnode_interface_mode: this._rnodeMode?.value || 'full',
             backbone_enabled: backboneEnabled,
             backbone_host: this._backboneHost.value.trim() || 'node.reticulumnet.nl',
             backbone_port: Number(this._backbonePort.value),
-            backbone_interface_mode: this._backboneMode?.value || 'full',
+            backbone_interface_mode: this._backboneMode?.value || 'internal',
             lan_autodiscovery_enabled: !!this._lanAutodiscoveryEnabled?.checked,
             extra_interfaces: this._extraIfaces.map((i) => ({ ...i })),
         };

@@ -72,15 +72,16 @@ runs as its own opt-in systemd unit (`scripts/rnsd.service`,
 `meshpoint.service`. `reticulum_config_dir` must be the same directory
 `rnsd` uses — the shared-instance RPC channel authenticates per-configdir.
 
-Interface modes (Settings tab → **Interface mode**): the RNode defaults to
-`access_point` and the TCP backbone to `full`. RNS never rebroadcasts a
-forwarded announce onto an access-point interface, so internet announce
-traffic stays off the half-duplex LoRa channel and the radio stays free to
-hear local RF (repeaters, nodes). Announces heard over RF still go out on
-the backbone. Trade-offs: this node's own announces aren't sent over LoRa
-either (local clients find it by path request), and paths learned over RF
-expire after a day instead of a week. Set the RNode to `full` to forward
-everything onto LoRa.
+Interface modes (Settings tab → **Interface mode**): the TCP backbone
+defaults to `internal` and the RNode to `full`, and the RNode is always
+written with `announces_from_internal = No`. RNS then never rebroadcasts an
+announce from the internal-mode backbone onto the RNode, so internet
+announce traffic stays off the half-duplex LoRa channel and the radio stays
+free to hear local RF (repeaters, nodes). Announces heard over RF still go
+out on the backbone, and this node's own announces (LXMF, NomadNet node,
+the Announce button) still go out over LoRa. Set the backbone to `full` to
+forward internet announces onto LoRa too; give a second backbone under
+Extra interfaces `internal` as well.
 
 The **RNode firmware flasher** and the **Heltec-V4 Reticulum-node firmware
 card** stay in core (Configuration → Firmware) — they're hardware

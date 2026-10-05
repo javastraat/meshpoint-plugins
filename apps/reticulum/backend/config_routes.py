@@ -86,7 +86,7 @@ def _clean_dest_hash(value: str) -> str | None:
 
 # RNS interface modes the Settings tab offers -- mirrors
 # write_rnsd_config.py's _INTERFACE_MODES.
-InterfaceMode = Literal["full", "gateway", "access_point", "roaming", "boundary"]
+InterfaceMode = Literal["full", "gateway", "access_point", "roaming", "boundary", "internal"]
 
 _RESERVED_IFACE_NAMES = {"default interface", "rnode lora", "reticulumnet internet"}
 
@@ -176,11 +176,11 @@ class ReticulumUpdate(BaseModel):
     rnode_tx_power: int = Field(20, ge=0, le=22)
     rnode_spreading_factor: int = Field(8, ge=5, le=12)
     rnode_coding_rate: int = Field(5, ge=5, le=8)
-    rnode_interface_mode: InterfaceMode = "access_point"
+    rnode_interface_mode: InterfaceMode = "full"
     backbone_enabled: bool = True
     backbone_host: str = "node.reticulumnet.nl"
     backbone_port: int = Field(4242, ge=1, le=65535)
-    backbone_interface_mode: InterfaceMode = "full"
+    backbone_interface_mode: InterfaceMode = "internal"
     extra_interfaces: list[ExtraInterface] = Field(default_factory=list, max_length=20)
 
     @field_validator("rnode_bandwidth_hz")

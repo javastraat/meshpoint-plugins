@@ -95,12 +95,12 @@ class TestExtraInterfaces(unittest.TestCase):
 class TestInterfaceModes(unittest.TestCase):
     def test_defaults(self) -> None:
         m = ReticulumUpdate(**_REQUIRED)
-        self.assertEqual(m.rnode_interface_mode, "access_point")
-        self.assertEqual(m.backbone_interface_mode, "full")
+        self.assertEqual(m.rnode_interface_mode, "full")
+        self.assertEqual(m.backbone_interface_mode, "internal")
 
     def test_unknown_mode_rejected(self) -> None:
         with self.assertRaises(ValidationError):
-            ReticulumUpdate(**_REQUIRED, backbone_interface_mode="internal")
+            ReticulumUpdate(**_REQUIRED, backbone_interface_mode="pointtopoint")
 
     def test_extra_interface_mode_stored_only_when_not_full(self) -> None:
         iface = {"name": "X", "type": "TCPClientInterface",

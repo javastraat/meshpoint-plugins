@@ -72,6 +72,7 @@ _RNODE_TEMPLATE = """
     enabled = Yes
     port = {rnode_serial_port}
     mode = {rnode_interface_mode}
+    announces_from_internal = No
 
     frequency = {rnode_frequency_hz}
     bandwidth = {rnode_bandwidth_hz}
@@ -89,19 +90,21 @@ _BACKBONE_TEMPLATE = """
     mode = {backbone_interface_mode}
 """
 
-# RNS interface modes the Settings tab offers (ptp/internal are left out --
-# not useful for anything this generator writes). Default RNode =
-# access_point: RNS never rebroadcasts any forwarded announce onto an AP
-# interface (RNS/Transport.py's announce broadcast rules), so the busy
-# internet backbone's announce stream stays off the half-duplex LoRa
-# channel, which otherwise spends its airtime transmitting it and can't
-# hear local RF (confirmed live: the local RT repeater went unheard until
-# TCP was turned off). Announces heard over RF still go out on the
-# backbone (full). The only stock-mode pair that is one-way like this --
-# roaming/boundary blocks BOTH directions. Cost: this node's own
-# announces aren't sent over RF either (RF clients find it by path
-# request), and RF paths expire after a day instead of a week.
-_INTERFACE_MODES = ("full", "gateway", "access_point", "roaming", "boundary")
+# RNS interface modes the Settings tab offers (ptp is left out -- not
+# useful for anything this generator writes). Defaults: backbone =
+# internal, RNode = full + ``announces_from_internal = No`` (always
+# written above). RNS then never rebroadcasts an announce that arrived on
+# an internal-mode interface onto the RNode (RNS/Transport.py's announce
+# broadcast rules, same in 1.3.7 and 1.4.2), so the busy internet
+# backbone's announce stream stays off the half-duplex LoRa channel,
+# which otherwise spends its airtime transmitting it and can't hear local
+# RF (confirmed live: the local RT repeater went unheard until TCP was
+# turned off). Announces heard over RF still go out on the backbone, and
+# this node's own announces still go out over RF. Rejected alternatives:
+# roaming/boundary blocks both directions; access_point on the RNode also
+# blocks this node's own announces. A backbone of "full" forwards
+# everything onto RF again; an extra TCP interface wants "internal" too.
+_INTERFACE_MODES = ("full", "gateway", "access_point", "roaming", "boundary", "internal")
 
 # Operator-added extra interfaces (Settings tab -> "Extra interfaces").
 # Only these three types are emitted; the fields listed are the ones each
@@ -182,11 +185,11 @@ _DEFAULTS = {
     "rnode_tx_power": 20,
     "rnode_spreading_factor": 8,
     "rnode_coding_rate": 5,
-    "rnode_interface_mode": "access_point",
+    "rnode_interface_mode": "full",
     "backbone_enabled": True,
     "backbone_host": "node.reticulumnet.nl",
     "backbone_port": 4242,
-    "backbone_interface_mode": "full",
+    "backbone_interface_mode": "internal",
 }
 
 
