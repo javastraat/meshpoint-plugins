@@ -1,5 +1,5 @@
 name = "bluetooth-scanner"
-version = "0.2.1"
+version = "0.2.2"
 meshpoint_api = 1
 provides = ["listener", "routes", "sidebar"]
 
@@ -16,7 +16,7 @@ styles = ["frontend/bluetooth_scanner.css"]
 route = "bluetooth-scanner"
 label = "Bluetooth Scanner"
 category = "networks"
-icon = "antenna"
+icon = "bluetooth"
 
 [meta]
 description = "Generic nearby-BLE-device radar: Start/Stop scan, live sortable table of every advertising Bluetooth LE device in range (address, name, vendor, RSSI, last seen), with manufacturer, services and address type per device from an offline vendor database."

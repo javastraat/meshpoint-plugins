@@ -1,5 +1,5 @@
 name = "oled-display"
-version = "0.1.1"
+version = "0.1.2"
 meshpoint_api = 1
 provides = ["service", "routes", "sidebar"]
 
@@ -15,7 +15,7 @@ styles = ["frontend/oled_display_panel.css"]
 route = "oled-display"
 label = "OLED Display"
 category = "configuration"
-icon = "gear"
+icon = "monitor"
 
 [meta]
 description = "Drives a small I2C status OLED (SSD1306-family) with a boot logo then live device status -- IP address, which capture sources are actually running, uptime. Auto-blanks after a configurable timeout to avoid burn-in. Settings page shows a live preview of exactly what's on the physical screen."
