@@ -345,7 +345,7 @@ class DisplayService:
             timed_out = bool(blank_after_s) and elapsed >= blank_after_s
             tick_s = refresh_s
 
-            if (self._manual_sleep or timed_out) and self._cfg.get("idle_animation", "off") != "off":
+            if (self._manual_sleep or timed_out) and self._current_idle_animation() != "off":
                 if self._idle_anim_task is None or self._idle_anim_task.done():
                     self._idle_anim_task = asyncio.ensure_future(self._idle_animation_loop())
             elif self._manual_sleep or timed_out:
@@ -518,6 +518,26 @@ class DisplayService:
 
     # -- idle_animation (matrix/pet) ------------------------------------
 
+    def _current_idle_animation(self) -> str:
+        """Reads ``plugins.oled-display.idle_animation`` LIVE from
+        ``state`` rather than ``self._cfg`` (the one-time snapshot every
+        other setting here reads from, which is why every other change
+        needs a restart to apply). Deliberately scoped to just this one
+        key: i2c_address/driver/width/height genuinely can't apply live
+        -- the physical device object is only ever opened once, in
+        start() -- but idle_animation has no such hardware dependency,
+        it's pure software re-checked every tick/frame anyway, so
+        there's no reason to make someone restart the service just to
+        preview a screensaver choice. Falls back to the startup snapshot
+        on any import/lookup failure, same as every other best-effort
+        read in this file."""
+        try:
+            from . import state
+
+            return state.to_dict().get("idle_animation", "off")
+        except Exception:  # noqa: BLE001
+            return self._cfg.get("idle_animation", "off")
+
     def _on_packet(self, packet) -> None:
         """Registered with core's PipelineCoordinator.on_packet() in
         start() -- fires once per decoded packet, synchronously, off the
@@ -577,7 +597,7 @@ class DisplayService:
                 rf = self._rf_activity_count_and_reset()
                 rt = await self._reticulum_activity_delta()
                 self._activity_level = self._activity_level // 2 + rf + rt
-                mode = self._cfg.get("idle_animation", "off")
+                mode = self._current_idle_animation()
                 if mode == "blink":
                     self._draw_blink_frame(self._activity_level, self._anim_frame)
                 elif mode == "smile":
@@ -1137,7 +1157,7 @@ class DisplayService:
         if self._device is None:
             return False
         self._manual_sleep = True
-        if self._cfg.get("idle_animation", "off") != "off":
+        if self._current_idle_animation() != "off":
             if self._idle_anim_task is None or self._idle_anim_task.done():
                 self._idle_anim_task = asyncio.ensure_future(self._idle_animation_loop())
         else:

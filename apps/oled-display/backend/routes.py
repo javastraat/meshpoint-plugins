@@ -123,10 +123,20 @@ class SettingsUpdate(BaseModel):
     idle_animation: Optional[str] = Field(None, pattern=r"^(off|blink|matrix|smile|pet)$")
 
 
+# Settings DisplayService re-reads live every tick (see its own
+# _current_idle_animation()) instead of from the one-time startup
+# snapshot every other key here still uses -- the only one today, since
+# it has no hardware-reopen dependency unlike i2c_address/driver/width/
+# height, and (unlike blank_after_minutes/refresh_seconds/rotate_*) has
+# no cost to checking fresh on every frame anyway.
+_LIVE_APPLY_KEYS = frozenset({"idle_animation"})
+
+
 @router.put("/settings")
 async def update_settings(
     body: SettingsUpdate, _claims: SessionClaims = Depends(require_admin),
 ):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     state.set_config(updates)
-    return {"saved": True, "settings": state.to_dict(), "restart_required": True}
+    restart_required = bool(set(updates) - _LIVE_APPLY_KEYS)
+    return {"saved": True, "settings": state.to_dict(), "restart_required": restart_required}

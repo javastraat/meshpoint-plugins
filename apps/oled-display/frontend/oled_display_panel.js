@@ -117,22 +117,41 @@ class OledDisplayPage {
                                 <input class="cfg-field__input" type="number" min="1" max="60" step="0.5" data-oled-rotate-seconds>
                             </label>
                         </div>
-                        <div class="cfg-row">
-                            <label class="cfg-field cfg-field--narrow">
-                                <span class="cfg-field__label">When idle (instead of a blank screen)</span>
-                                <select class="cfg-field__input" data-oled-idle-animation>
-                                    <option value="off">Blank (default)</option>
-                                    <option value="blink">Pet: blink</option>
-                                    <option value="matrix">Matrix-style scroll</option>
-                                    <option value="smile">Pet: smile/frown</option>
-                                    <option value="pet">Pet: dinosaur</option>
-                                </select>
-                            </label>
-                        </div>
                         <div class="cfg-card__actions">
                             <button class="terminal-button terminal-button--primary" type="submit">Save</button>
                         </div>
                         <p class="cfg-status" data-oled-save-status aria-live="polite"></p>
+                    </article>
+                </form>
+
+                <!-- Separate form/card, own PUT call sending ONLY
+                     idle_animation -- the combined form above always
+                     resubmits every field together, so idle_animation
+                     riding along in that same request would always look
+                     like "something else changed too" and claim a
+                     restart is needed even when it isn't. DisplayService
+                     re-reads this one live every tick (see its own
+                     _current_idle_animation()), so this card's save is
+                     genuinely immediate, unlike every other setting here. -->
+                <form class="oled-settings-form" data-oled-idle-form>
+                    <article class="cfg-card">
+                        <header class="cfg-card__head">
+                            <h3 class="cfg-card__title">Screensaver</h3>
+                        </header>
+                        <label class="cfg-field cfg-field--narrow">
+                            <span class="cfg-field__label">When idle (instead of a blank screen)</span>
+                            <select class="cfg-field__input" data-oled-idle-animation>
+                                <option value="off">Blank (default)</option>
+                                <option value="blink">Pet: blink</option>
+                                <option value="matrix">Matrix-style scroll</option>
+                                <option value="smile">Pet: smile/frown</option>
+                                <option value="pet">Pet: dinosaur</option>
+                            </select>
+                        </label>
+                        <div class="cfg-card__actions">
+                            <button class="terminal-button terminal-button--primary" type="submit">Save</button>
+                        </div>
+                        <p class="cfg-status" data-oled-idle-save-status aria-live="polite"></p>
                     </article>
                 </form>
             </div>
@@ -149,10 +168,16 @@ class OledDisplayPage {
         this._currentPageLabel = this._q('[data-oled-current-page]');
         this._form = this._q('[data-oled-form]');
         this._saveStatus = this._q('[data-oled-save-status]');
+        this._idleForm = this._q('[data-oled-idle-form]');
+        this._idleSaveStatus = this._q('[data-oled-idle-save-status]');
 
         this._form.addEventListener('submit', (e) => {
             e.preventDefault();
             this._save();
+        });
+        this._idleForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this._saveIdleAnimation();
         });
         this._wakeButton.addEventListener('click', () => this._wake());
         this._sleepButton.addEventListener('click', () => this._sleep());
@@ -259,7 +284,6 @@ class OledDisplayPage {
             boot_logo_seconds: parseFloat(this._q('[data-oled-boot-logo]').value),
             rotate_screens: this._q('[data-oled-rotate]').checked,
             rotate_seconds: parseFloat(this._q('[data-oled-rotate-seconds]').value),
-            idle_animation: this._q('[data-oled-idle-animation]').value,
         };
         this._saveStatus.dataset.kind = 'pending';
         this._saveStatus.textContent = 'Saving…';
@@ -281,6 +305,39 @@ class OledDisplayPage {
         } catch (e) {
             this._saveStatus.dataset.kind = 'error';
             this._saveStatus.textContent = `Network error: ${e.message}`;
+        }
+    }
+
+    async _saveIdleAnimation() {
+        // Its own PUT, sending ONLY idle_animation -- separate from
+        // _save() above so it never rides along with a field that
+        // actually needs a restart (see the form's own comment in the
+        // mount() template). DisplayService picks this up live within a
+        // few seconds either way (its own _current_idle_animation()
+        // reads straight from state, not a startup snapshot).
+        const body = { idle_animation: this._q('[data-oled-idle-animation]').value };
+        this._idleSaveStatus.dataset.kind = 'pending';
+        this._idleSaveStatus.textContent = 'Saving…';
+        try {
+            const r = await fetch('/api/oled-display/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                this._idleSaveStatus.dataset.kind = 'error';
+                this._idleSaveStatus.textContent = data.detail || `Failed (HTTP ${r.status})`;
+                return;
+            }
+            this._idleSaveStatus.dataset.kind = 'success';
+            this._idleSaveStatus.textContent = data.restart_required
+                ? 'Saved -- restart the service to apply.'
+                : 'Saved -- applied immediately, no restart needed.';
+        } catch (e) {
+            this._idleSaveStatus.dataset.kind = 'error';
+            this._idleSaveStatus.textContent = `Network error: ${e.message}`;
         }
     }
 }
