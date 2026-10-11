@@ -754,12 +754,21 @@ class DisplayService:
         self._capture_frame(cv.image, is_status=False)
 
     _MATRIX_COLS = 16
-    _MATRIX_CHARS = "01"
+    _MATRIX_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%&*"
+    # How many rows of a column are lit at once -- the "falling streak."
+    # Monochrome can't fade brightness the way a real terminal-green
+    # Matrix effect does, so a short trailing run of characters (instead
+    # of filling the whole column solid, which is what the first version
+    # of this did and looked like flashing noise, not rain) is the usual
+    # substitute for a fade.
+    _MATRIX_TRAIL = 5
 
     def _draw_matrix_frame(self, frame: int) -> None:
-        """Classic falling-character scroll -- columns advance at their
-        own offset (seeded off the column index) rather than all ticking
-        in lockstep."""
+        """Classic "digital rain" -- a short streak per column falls
+        from the top and wraps back around, each column at its own
+        speed and phase (seeded off the column index) so they don't all
+        advance in lockstep, which is what made the first version of
+        this read as flashing rather than falling."""
         from luma.core.render import canvas
         from PIL import ImageFont
 
@@ -768,16 +777,19 @@ class DisplayService:
         col_w = max(6, width // self._MATRIX_COLS)
         row_h = 10
         rows = height // row_h + 1
+        cycle = rows + self._MATRIX_TRAIL
 
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
             for col in range(width // col_w):
-                head = (frame + col * 7) % (rows * 2)
+                speed = 1 + col % 3  # 1x/2x/3x -- columns drift out of sync
+                head = (frame // speed + col * 5) % cycle
                 for row in range(rows):
-                    if row > head:
+                    dist = head - row
+                    if not (0 <= dist < self._MATRIX_TRAIL):
                         continue
-                    ch = self._MATRIX_CHARS[(row + col + frame) % len(self._MATRIX_CHARS)]
+                    ch = self._MATRIX_CHARS[(row * 7 + col * 3 + frame) % len(self._MATRIX_CHARS)]
                     draw.text((col * col_w, row * row_h), ch, font=font, fill="white")
         self._capture_frame(cv.image, is_status=False)
 
