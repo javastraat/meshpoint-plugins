@@ -122,8 +122,10 @@ class OledDisplayPage {
                                 <span class="cfg-field__label">When idle (instead of a blank screen)</span>
                                 <select class="cfg-field__input" data-oled-idle-animation>
                                     <option value="off">Blank (default)</option>
+                                    <option value="blink">Pet: blink</option>
                                     <option value="matrix">Matrix-style scroll</option>
-                                    <option value="pet">Little pixel pet</option>
+                                    <option value="smile">Pet: smile/frown</option>
+                                    <option value="pet">Pet: dinosaur</option>
                                 </select>
                             </label>
                         </div>

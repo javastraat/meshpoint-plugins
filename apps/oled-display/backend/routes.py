@@ -120,7 +120,7 @@ class SettingsUpdate(BaseModel):
     boot_logo_seconds: Optional[float] = Field(None, ge=0, le=30)
     rotate_screens: Optional[bool] = None
     rotate_seconds: Optional[float] = Field(None, ge=1, le=60)
-    idle_animation: Optional[str] = Field(None, pattern=r"^(off|matrix|pet)$")
+    idle_animation: Optional[str] = Field(None, pattern=r"^(off|blink|matrix|smile|pet)$")
 
 
 @router.put("/settings")

@@ -92,6 +92,11 @@ class DisplayService:
         self._activity_level = 0
         self._last_seen_announce_ts: str | None = None
         self._anim_frame = 0
+        # "pet" (dinosaur) walk state -- persists across frames so it
+        # actually paces back and forth rather than teleporting; reset
+        # each time the idle animation (re)starts, see _idle_animation_loop().
+        self._dino_x = 0
+        self._dino_dir = 1
 
     # -- lifecycle ---------------------------------------------------
 
@@ -340,17 +345,10 @@ class DisplayService:
             timed_out = bool(blank_after_s) and elapsed >= blank_after_s
             tick_s = refresh_s
 
-            if self._manual_sleep:
-                # Explicit Sleep means "go properly dark" -- it must not
-                # have idle_animation turn itself back on over what the
-                # user just asked for, unlike an auto-timeout below.
-                await self._stop_idle_anim()
-                if not self._blanked:
-                    self._blank()
-            elif timed_out and self._cfg.get("idle_animation", "off") != "off":
+            if (self._manual_sleep or timed_out) and self._cfg.get("idle_animation", "off") != "off":
                 if self._idle_anim_task is None or self._idle_anim_task.done():
                     self._idle_anim_task = asyncio.ensure_future(self._idle_animation_loop())
-            elif timed_out:
+            elif self._manual_sleep or timed_out:
                 await self._stop_idle_anim()
                 if not self._blanked:
                     self._blank()
@@ -572,14 +570,20 @@ class DisplayService:
         nothing in the log to explain why."""
         frame_interval = 1.0 / self._IDLE_ANIM_FPS
         self._last_seen_announce_ts = None  # re-seed fresh each (re)start
+        self._dino_x = 2  # walk from the left edge each time "pet" (re)starts
+        self._dino_dir = 1
         while not self._stop_event.is_set():
             try:
                 rf = self._rf_activity_count_and_reset()
                 rt = await self._reticulum_activity_delta()
                 self._activity_level = self._activity_level // 2 + rf + rt
                 mode = self._cfg.get("idle_animation", "off")
-                if mode == "pet":
-                    self._draw_pet_frame(self._activity_level, self._anim_frame)
+                if mode == "blink":
+                    self._draw_blink_frame(self._activity_level, self._anim_frame)
+                elif mode == "smile":
+                    self._draw_smile_frame(self._activity_level, self._anim_frame)
+                elif mode == "pet":
+                    self._draw_dino_frame(self._activity_level, self._anim_frame)
                 elif mode == "matrix":
                     self._draw_matrix_frame(self._anim_frame)
                 else:
@@ -593,13 +597,13 @@ class DisplayService:
             except asyncio.TimeoutError:
                 pass
 
-    def _draw_pet_frame(self, level: int, frame: int) -> None:
-        """A small drawn "pet" whose pose depends on recent mesh
-        activity (level) -- no sprite assets, just Pillow primitives,
-        same canvas/draw pattern every other frame in this file uses.
-        Purely decorative: idle_animation has zero practical value by
-        design, a fun thing to glance at instead of a dead blank
-        screen."""
+    def _draw_blink_frame(self, level: int, frame: int) -> None:
+        """The simplest idle face: a bouncing blob with wide/droopy eyes
+        and a wiggling antenna when excited, a flat "bored" mouth when
+        quiet -- no sprite assets, just Pillow primitives, same canvas/
+        draw pattern every other frame in this file uses. Purely
+        decorative: idle_animation has zero practical value by design, a
+        fun thing to glance at instead of a dead blank screen."""
         from luma.core.render import canvas
 
         width, height = self._cfg["width"], self._cfg["height"]
@@ -627,6 +631,106 @@ class DisplayService:
                 draw.line((cx, cy - body_r, cx + tip_dx, cy - body_r - 8), fill="white")
             else:
                 draw.line((cx - 4, cy + body_r - 2, cx + 4, cy + body_r - 2), fill="white")
+        self._capture_frame(cv.image, is_status=False)
+
+    def _draw_smile_frame(self, level: int, frame: int) -> None:
+        """A sadder/happier face than "blink": a real frown when quiet,
+        eyes raised and looking up with the antenna held straight up
+        (plus a little blip climbing it, like it's picking something up)
+        and a proper smile when excited. Same canvas/draw pattern as
+        every other frame in this file."""
+        from luma.core.render import canvas
+
+        width, height = self._cfg["width"], self._cfg["height"]
+        cx, cy = width // 2, height // 2
+        excited = level > 0
+        bounce = 2 if (excited and frame % 6 < 3) else 0
+        body_r = 14
+        body_top = cy - body_r + bounce
+
+        cv = canvas(self._device)
+        with cv as draw:
+            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            draw.ellipse(
+                (cx - body_r, body_top, cx + body_r, cy + body_r + bounce),
+                outline="white",
+            )
+            if excited:
+                eye_dy = -8 + bounce
+                for dx in (-6, 6):
+                    draw.ellipse(
+                        (cx + dx - 2, cy + eye_dy - 2, cx + dx + 2, cy + eye_dy + 2),
+                        fill="white",
+                    )
+                antenna_top = body_top - 9
+                draw.line((cx, body_top, cx, antenna_top), fill="white")
+                blip_y = body_top - (frame % 4) * 2 - 1
+                draw.ellipse((cx - 1, blip_y - 1, cx + 1, blip_y + 1), fill="white")
+                my = cy + 4 + bounce
+                draw.arc((cx - 6, my - 4, cx + 6, my + 4), start=0, end=180, fill="white")  # smile
+            else:
+                eye_dy = 2
+                for dx in (-6, 6):
+                    draw.ellipse(
+                        (cx + dx - 2, cy + eye_dy - 1, cx + dx + 2, cy + eye_dy + 1),
+                        fill="white",
+                    )
+                my = cy + body_r - 6
+                draw.arc((cx - 6, my - 4, cx + 6, my + 4), start=180, end=360, fill="white")  # frown
+        self._capture_frame(cv.image, is_status=False)
+
+    _DINO_W = 20
+    _DINO_H = 14
+    _DINO_SPEED = 2
+
+    def _draw_dino_frame(self, level: int, frame: int) -> None:
+        """A little dinosaur that paces back and forth across the panel
+        while idle (self._dino_x/_dino_dir persist across frames so it
+        actually walks rather than teleporting, reset each time
+        idle-animation restarts), legs alternating each frame for a
+        walking gait. A short "!" pops up over its head on any frame
+        with recent activity (level > 0) -- "it noticed something" --
+        rather than changing the walk cycle itself, so the constant
+        back-and-forth pacing reads the same whether the mesh is busy
+        or not and the activity cue stays a clean, separate signal."""
+        from luma.core.render import canvas
+
+        width, height = self._cfg["width"], self._cfg["height"]
+        min_x, max_x = 2, max(2, width - self._DINO_W - 2)
+        self._dino_x += self._dino_dir * self._DINO_SPEED
+        if self._dino_x >= max_x:
+            self._dino_x, self._dino_dir = max_x, -1
+        elif self._dino_x <= min_x:
+            self._dino_x, self._dino_dir = min_x, 1
+        x = self._dino_x
+        facing_right = self._dino_dir > 0
+        ground_y = height - 6
+        body_top = ground_y - self._DINO_H
+        bx0, bx1 = x, x + int(self._DINO_W * 0.7)
+
+        cv = canvas(self._device)
+        with cv as draw:
+            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            draw.line((0, ground_y, width, ground_y), fill="white")  # the ground
+            draw.ellipse((bx0, body_top, bx1, body_top + self._DINO_H), outline="white")
+            # Head: a small blob at whichever end it's facing.
+            head_dx = 6 if facing_right else -6
+            head_x0, head_x1 = sorted(((bx1 - 3) if facing_right else (bx0 - 3),
+                                        (bx1 - 3 + head_dx) if facing_right else (bx0 - 3 + head_dx)))
+            draw.ellipse((head_x0, body_top - 2, head_x1, body_top + 7), outline="white")
+            # Tail stub at the back.
+            tail_x = bx0 if facing_right else bx1
+            tail_dx = -6 if facing_right else 6
+            draw.line((tail_x, body_top + self._DINO_H - 3, tail_x + tail_dx, body_top + self._DINO_H + 2), fill="white")
+            # Alternating legs -- a simple 2-frame walk cycle.
+            leg_phase = frame % 2
+            for i, lx in enumerate((bx0 + 3, bx1 - 5)):
+                lean = 2 if i == leg_phase else -2
+                draw.line((lx, body_top + self._DINO_H - 1, lx + lean, ground_y), fill="white")
+            if level > 0:
+                bang_x = (head_x0 + head_x1) // 2
+                draw.line((bang_x, body_top - 10, bang_x, body_top - 5), fill="white")
+                draw.point((bang_x, body_top - 3), fill="white")
         self._capture_frame(cv.image, is_status=False)
 
     _MATRIX_COLS = 16
@@ -1012,25 +1116,33 @@ class DisplayService:
         return True
 
     async def sleep(self) -> bool:
-        """Force the physical panel blank right now -- backs the
-        settings page's Sleep button, the manual counterpart to Wake.
-        A plain one-shot `_blank()` call wouldn't stick: `_loop()`
-        would just re-evaluate its own elapsed-time check on the next
-        tick and redraw status again since the configured timeout
-        hasn't actually elapsed (and never will, when blank_after is
-        set to "never"). `_manual_sleep` overrides that check in
-        `_loop()` directly, so the panel stays blank until `wake()`
-        clears it. Now async (was sync): an idle animation could be
-        running when Sleep is clicked, and _stop_idle_anim() awaits the
-        cancelled task the same way stop() does elsewhere in this file
-        -- leaving it to the next _loop() tick to notice and tear down
-        would blank the burn-in-protection request late. Returns False
-        if the display was never opened."""
+        """Force the physical panel into its idle state right now --
+        backs the settings page's Sleep button, the manual counterpart
+        to Wake. Same idle state an auto-timeout would reach: the
+        configured `idle_animation` if one is set, otherwise a plain
+        blank. A one-shot `_blank()`/animation-start call wouldn't stick
+        on its own: `_loop()` would just re-evaluate its own
+        elapsed-time check on the next tick and redraw status again
+        since the configured timeout hasn't actually elapsed (and never
+        will, when blank_after is "never"). `_manual_sleep` overrides
+        that check in `_loop()` directly -- combined with `timed_out`
+        there, so Sleep and an auto-timeout land on exactly the same
+        idle state -- and stays set until `wake()` clears it. Async: an
+        idle animation could already be running when Sleep is clicked
+        (switching from rotate/static mode straight into it), and
+        starting/stopping either one here mirrors `_loop()`'s own
+        handling exactly rather than waiting up to refresh_seconds for
+        the next tick to notice. Returns False if the display was never
+        opened."""
         if self._device is None:
             return False
-        await self._stop_idle_anim()
         self._manual_sleep = True
-        self._blank()
+        if self._cfg.get("idle_animation", "off") != "off":
+            if self._idle_anim_task is None or self._idle_anim_task.done():
+                self._idle_anim_task = asyncio.ensure_future(self._idle_animation_loop())
+        else:
+            await self._stop_idle_anim()
+            self._blank()
         return True
 
     # -- exposed to routes.py -----------------------------------------
