@@ -66,6 +66,10 @@ class OledDisplayPage {
                         <header class="cfg-card__head">
                             <h3 class="cfg-card__title">Hardware</h3>
                         </header>
+                        <label class="cfg-field cfg-field--toggle">
+                            <input type="checkbox" data-oled-enabled>
+                            <span class="cfg-field__label">Display enabled</span>
+                        </label>
                         <div class="cfg-row">
                             <label class="cfg-field cfg-field--narrow">
                                 <span class="cfg-field__label">I2C address</span>
@@ -89,10 +93,6 @@ class OledDisplayPage {
                         <header class="cfg-card__head">
                             <h3 class="cfg-card__title">Settings</h3>
                         </header>
-                        <label class="cfg-field cfg-field--toggle">
-                            <input type="checkbox" data-oled-enabled>
-                            <span class="cfg-field__label">Display enabled</span>
-                        </label>
                         <div class="cfg-row">
                             <label class="cfg-field cfg-field--narrow">
                                 <span class="cfg-field__label">Blank after (minutes, 0 = never)</span>
