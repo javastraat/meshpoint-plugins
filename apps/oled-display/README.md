@@ -87,6 +87,10 @@ shows up, set it under `plugins.oled-display.i2c_address` in
 | `width` / `height` | `128` / `64` | Most small OLEDs are 128×64 or 128×32. |
 | `blank_after_minutes` | `30` | `0` disables auto-blank entirely. |
 | `refresh_seconds` | `5` | How often the status screen redraws. |
+| `boot_logo_seconds` | `3` | How long the MESHPOINT boot logo shows. `0` skips it. |
+| `rotate_screens` | `false` | Cycle Overview + one page per active protocol instead of the static view. |
+| `rotate_seconds` | `4` | Dwell time per page when `rotate_screens` is on. |
+| `idle_animation` | `off` | `off` \| `matrix` \| `pet` -- shown instead of a blank screen once `blank_after_minutes` elapses (an explicit Sleep still goes dark, not animated). Reacts to recent RF packets and Reticulum announces, so it stays "alive" even on a Reticulum-only box with no RF capture busy. Purely decorative. |
 
 Settings changes apply on the next service restart -- this is a
 lifespan-managed background service (same seam as the Reticulum plugin's

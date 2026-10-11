@@ -117,6 +117,16 @@ class OledDisplayPage {
                                 <input class="cfg-field__input" type="number" min="1" max="60" step="0.5" data-oled-rotate-seconds>
                             </label>
                         </div>
+                        <div class="cfg-row">
+                            <label class="cfg-field cfg-field--narrow">
+                                <span class="cfg-field__label">When idle (instead of a blank screen)</span>
+                                <select class="cfg-field__input" data-oled-idle-animation>
+                                    <option value="off">Blank (default)</option>
+                                    <option value="matrix">Matrix-style scroll</option>
+                                    <option value="pet">Little pixel pet</option>
+                                </select>
+                            </label>
+                        </div>
                         <div class="cfg-card__actions">
                             <button class="terminal-button terminal-button--primary" type="submit">Save</button>
                         </div>
@@ -172,6 +182,7 @@ class OledDisplayPage {
             this._q('[data-oled-boot-logo]').value = s.boot_logo_seconds ?? 3;
             this._q('[data-oled-rotate]').checked = !!s.rotate_screens;
             this._q('[data-oled-rotate-seconds]').value = s.rotate_seconds ?? 4;
+            this._q('[data-oled-idle-animation]').value = s.idle_animation || 'off';
             this._pageControls.hidden = !s.rotate_screens;
         } catch (_) {}
     }
@@ -246,6 +257,7 @@ class OledDisplayPage {
             boot_logo_seconds: parseFloat(this._q('[data-oled-boot-logo]').value),
             rotate_screens: this._q('[data-oled-rotate]').checked,
             rotate_seconds: parseFloat(this._q('[data-oled-rotate-seconds]').value),
+            idle_animation: this._q('[data-oled-idle-animation]').value,
         };
         this._saveStatus.dataset.kind = 'pending';
         this._saveStatus.textContent = 'Saving…';

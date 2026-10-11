@@ -79,6 +79,19 @@ class DisplayService:
         self._prev_sigint = None
         self._shutdown_message_shown = False
         self._shutdown_install_task: asyncio.Task | None = None
+        # idle_animation ("matrix"/"pet") state -- see _idle_animation_loop().
+        # _rf_activity_count is bumped by _on_packet (core's on_packet hook,
+        # registered in start()) and drained each animation tick. RT
+        # activity is read from the live LxmfService's own announce_log()
+        # instead (see _reticulum_activity_delta() -- compared by
+        # timestamp, not by length, since that log is a capped ring
+        # buffer). _activity_level is the smoothed "mood" value both draw
+        # methods read.
+        self._idle_anim_task: asyncio.Task | None = None
+        self._rf_activity_count = 0
+        self._activity_level = 0
+        self._last_seen_announce_ts: str | None = None
+        self._anim_frame = 0
 
     # -- lifecycle ---------------------------------------------------
 
@@ -97,6 +110,17 @@ class DisplayService:
         self._stop_event.clear()
         self._task = asyncio.ensure_future(self._loop())
         self._shutdown_install_task = asyncio.ensure_future(self._install_shutdown_handlers_delayed())
+        # Registered unconditionally (negligible per-packet cost even when
+        # idle_animation is "off") -- there's no off_packet()/unregister in
+        # core, so this stays registered for the pipeline's lifetime; the
+        # callback itself no-ops once self._device is gone (see
+        # _on_packet). core's _notify_callbacks() already wraps every
+        # callback in its own try/except, so a bug here can't take down
+        # the real packet pipeline.
+        try:
+            self._context.pipeline.on_packet(self._on_packet)
+        except Exception:  # noqa: BLE001
+            logger.warning("oled-display: could not register on_packet hook", exc_info=True)
         logger.info(
             "oled-display started (%s @ %s, %sx%s)",
             self._cfg["driver"], self._cfg["i2c_address"],
@@ -105,6 +129,7 @@ class DisplayService:
 
     async def stop(self) -> None:
         self._stop_event.set()
+        await self._stop_idle_anim()
         if self._shutdown_install_task is not None:
             self._shutdown_install_task.cancel()
             try:
@@ -315,10 +340,22 @@ class DisplayService:
             timed_out = bool(blank_after_s) and elapsed >= blank_after_s
             tick_s = refresh_s
 
-            if self._manual_sleep or timed_out:
+            if self._manual_sleep:
+                # Explicit Sleep means "go properly dark" -- it must not
+                # have idle_animation turn itself back on over what the
+                # user just asked for, unlike an auto-timeout below.
+                await self._stop_idle_anim()
+                if not self._blanked:
+                    self._blank()
+            elif timed_out and self._cfg.get("idle_animation", "off") != "off":
+                if self._idle_anim_task is None or self._idle_anim_task.done():
+                    self._idle_anim_task = asyncio.ensure_future(self._idle_animation_loop())
+            elif timed_out:
+                await self._stop_idle_anim()
                 if not self._blanked:
                     self._blank()
             elif self._cfg.get("rotate_screens", False):
+                await self._stop_idle_anim()
                 # rotate_seconds can legitimately be shorter than
                 # refresh_seconds (show each page briefly, but only
                 # bother re-querying peer counts every refresh_seconds)
@@ -330,6 +367,7 @@ class DisplayService:
                 await self._render_pages(advance=1 if due else 0)
                 tick_s = min(refresh_s, rotate_s)
             else:
+                await self._stop_idle_anim()
                 await self._draw_status()
 
             try:
@@ -455,6 +493,7 @@ class DisplayService:
         now. Returns False if the display was never opened."""
         if self._device is None:
             return False
+        await self._stop_idle_anim()
         self._manual_sleep = False
         self._start_time = time.monotonic()
         await self._render_pages(advance=1)
@@ -464,6 +503,7 @@ class DisplayService:
         """The Next button's mirror image -- see `next_page()`."""
         if self._device is None:
             return False
+        await self._stop_idle_anim()
         self._manual_sleep = False
         self._start_time = time.monotonic()
         await self._render_pages(advance=-1)
@@ -477,6 +517,145 @@ class DisplayService:
             pass  # leave black -- burn-in protection
         self._capture_frame(cv.image, is_status=False)
         self._blanked = True
+
+    # -- idle_animation (matrix/pet) ------------------------------------
+
+    def _on_packet(self, packet) -> None:
+        """Registered with core's PipelineCoordinator.on_packet() in
+        start() -- fires once per decoded packet, synchronously, off the
+        same event loop this plugin's own tasks run on (no locking
+        needed for a plain counter increment). There's no
+        off_packet()/unregister in core, so this stays registered for
+        the pipeline's whole lifetime even after this service's own
+        stop() -- the self._device check makes it a harmless no-op once
+        this plugin itself has stopped."""
+        if self._device is None:
+            return
+        self._rf_activity_count += 1
+
+    def _rf_activity_count_and_reset(self) -> int:
+        count = self._rf_activity_count
+        self._rf_activity_count = 0
+        return count
+
+    async def _stop_idle_anim(self) -> None:
+        """Cancel the idle-animation task if one is running (a no-op
+        otherwise) -- called from every path that leaves idle-animation
+        mode (waking, manual page nav, a real draw mode, service
+        shutdown) so the animation never keeps racing a real draw for
+        control of self._device. Cancels THEN awaits, same pattern
+        stop() already uses for self._task/self._shutdown_install_task
+        -- a bare .cancel() only schedules the CancelledError, it
+        doesn't guarantee the task has actually stopped drawing yet."""
+        task = self._idle_anim_task
+        if task is None:
+            return
+        self._idle_anim_task = None
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+
+    _IDLE_ANIM_FPS = 3
+
+    async def _idle_animation_loop(self) -> None:
+        """Runs only while idle (the blank timeout has elapsed and
+        idle_animation isn't "off"), independent of refresh_seconds --
+        its own faster ~3fps ticker, deliberately conservative: nothing
+        in this plugin (or this repo) has ever measured this board's
+        actual I2C throughput at animation rates, and the Pi is already
+        busy with SDR capture/decode/the dashboard itself. Each frame is
+        wrapped in its own try/except (log + skip) so one bad draw can't
+        silently freeze the whole idle-anim task on its last frame with
+        nothing in the log to explain why."""
+        frame_interval = 1.0 / self._IDLE_ANIM_FPS
+        self._last_seen_announce_ts = None  # re-seed fresh each (re)start
+        while not self._stop_event.is_set():
+            try:
+                rf = self._rf_activity_count_and_reset()
+                rt = await self._reticulum_activity_delta()
+                self._activity_level = self._activity_level // 2 + rf + rt
+                mode = self._cfg.get("idle_animation", "off")
+                if mode == "pet":
+                    self._draw_pet_frame(self._activity_level, self._anim_frame)
+                elif mode == "matrix":
+                    self._draw_matrix_frame(self._anim_frame)
+                else:
+                    return  # config can only change on restart today, but be safe
+                self._anim_frame += 1
+            except Exception:  # noqa: BLE001
+                logger.warning("oled-display: idle animation frame failed", exc_info=True)
+
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=frame_interval)
+            except asyncio.TimeoutError:
+                pass
+
+    def _draw_pet_frame(self, level: int, frame: int) -> None:
+        """A small drawn "pet" whose pose depends on recent mesh
+        activity (level) -- no sprite assets, just Pillow primitives,
+        same canvas/draw pattern every other frame in this file uses.
+        Purely decorative: idle_animation has zero practical value by
+        design, a fun thing to glance at instead of a dead blank
+        screen."""
+        from luma.core.render import canvas
+
+        width, height = self._cfg["width"], self._cfg["height"]
+        cx, cy = width // 2, height // 2
+        excited = level > 0
+        bounce = 2 if (excited and frame % 6 < 3) else 0
+
+        cv = canvas(self._device)
+        with cv as draw:
+            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            body_r = 14
+            draw.ellipse(
+                (cx - body_r, cy - body_r + bounce, cx + body_r, cy + body_r + bounce),
+                outline="white",
+            )
+            # Wide-open eyes when excited, droopy/half-closed when quiet.
+            eye_dy = -4 if excited else 2
+            for dx in (-6, 6):
+                draw.ellipse(
+                    (cx + dx - 2, cy + eye_dy - 2, cx + dx + 2, cy + eye_dy + 2),
+                    fill="white",
+                )
+            if excited:
+                tip_dx = 4 if frame % 2 else -4  # antenna wiggle
+                draw.line((cx, cy - body_r, cx + tip_dx, cy - body_r - 8), fill="white")
+            else:
+                draw.line((cx - 4, cy + body_r - 2, cx + 4, cy + body_r - 2), fill="white")
+        self._capture_frame(cv.image, is_status=False)
+
+    _MATRIX_COLS = 16
+    _MATRIX_CHARS = "01"
+
+    def _draw_matrix_frame(self, frame: int) -> None:
+        """Classic falling-character scroll -- columns advance at their
+        own offset (seeded off the column index) rather than all ticking
+        in lockstep."""
+        from luma.core.render import canvas
+        from PIL import ImageFont
+
+        font = ImageFont.load_default()
+        width, height = self._cfg["width"], self._cfg["height"]
+        col_w = max(6, width // self._MATRIX_COLS)
+        row_h = 10
+        rows = height // row_h + 1
+
+        cv = canvas(self._device)
+        with cv as draw:
+            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            for col in range(width // col_w):
+                head = (frame + col * 7) % (rows * 2)
+                for row in range(rows):
+                    if row > head:
+                        continue
+                    ch = self._MATRIX_CHARS[(row + col + frame) % len(self._MATRIX_CHARS)]
+                    draw.text((col * col_w, row * row_h), ch, font=font, fill="white")
+        self._capture_frame(cv.image, is_status=False)
 
     def _active_protocol_labels(self) -> list[str]:
         """LW/MT/MC labels for capture sources actually registered right
@@ -735,6 +914,51 @@ class DisplayService:
         except Exception:  # noqa: BLE001
             return None
 
+    async def _reticulum_activity_delta(self) -> int:
+        """Reticulum "activity since last tick" for idle_animation's
+        mood signal -- same in-process service_registry.live() lookup
+        _reticulum_status()/_reticulum_page_lines() already use, but
+        counting entries NEWER than a remembered timestamp rather than
+        diffing announce_log()'s length. That log is a capped ring
+        buffer (LxmfService's own _ANNOUNCE_LOG_MAX) -- len() rises to
+        the cap then freezes there forever, so a length-delta would
+        silently go to zero permanently on any mesh busy enough to fill
+        it. Each entry carries its own "ts"; comparing those costs the
+        same (the list is already built internally either way) and
+        stays correct under the cap.
+
+        Seeds self._last_seen_announce_ts on the first tick the service
+        is actually FOUND, not on this method's first call -- Reticulum
+        can start after this plugin notices it's missing, or its log
+        could already be near-full by the time it's first seen, and
+        seeding against a stale/None value either way would produce one
+        bogus giant spike the moment it's finally visible.
+
+        Best-effort, same as every other Reticulum lookup in this file:
+        not installed/enabled, or a shape this plugin doesn't recognise,
+        both just mean 0 -- never break the idle-anim loop over it."""
+        try:
+            from src.api.service_registry import live
+
+            service = next((svc for name, svc in live() if name == "reticulum"), None)
+            if service is None:
+                return 0
+            entries = service.announce_log()
+            if self._last_seen_announce_ts is None:
+                self._last_seen_announce_ts = entries[0]["ts"] if entries else ""
+                return 0
+            new_count = 0
+            for entry in entries:  # newest-first
+                ts = entry.get("ts", "")
+                if ts <= self._last_seen_announce_ts:
+                    break  # reached an already-seen entry -- nothing newer remains
+                new_count += 1
+            if entries:
+                self._last_seen_announce_ts = entries[0]["ts"]
+            return new_count
+        except Exception:  # noqa: BLE001
+            return 0
+
     def _capture_frame(self, image, *, is_status: bool) -> None:
         """Mirror whatever was just drawn into a PNG. The rendered image
         lives on the `canvas` instance itself (`cv.image`, set in its
@@ -781,12 +1005,13 @@ class DisplayService:
         can tell the frontend there's nothing to wake."""
         if self._device is None:
             return False
+        await self._stop_idle_anim()
         self._manual_sleep = False
         self._start_time = time.monotonic()
         await self._draw_status()
         return True
 
-    def sleep(self) -> bool:
+    async def sleep(self) -> bool:
         """Force the physical panel blank right now -- backs the
         settings page's Sleep button, the manual counterpart to Wake.
         A plain one-shot `_blank()` call wouldn't stick: `_loop()`
@@ -795,12 +1020,15 @@ class DisplayService:
         hasn't actually elapsed (and never will, when blank_after is
         set to "never"). `_manual_sleep` overrides that check in
         `_loop()` directly, so the panel stays blank until `wake()`
-        clears it. Sync (not async) -- unlike `wake()` it never needs
-        to draw a status frame, just blank ones, and `_blank()` itself
-        is synchronous. Returns False if the display was never
-        opened."""
+        clears it. Now async (was sync): an idle animation could be
+        running when Sleep is clicked, and _stop_idle_anim() awaits the
+        cancelled task the same way stop() does elsewhere in this file
+        -- leaving it to the next _loop() tick to notice and tear down
+        would blank the burn-in-protection request late. Returns False
+        if the display was never opened."""
         if self._device is None:
             return False
+        await self._stop_idle_anim()
         self._manual_sleep = True
         self._blank()
         return True
