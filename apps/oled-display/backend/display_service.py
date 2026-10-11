@@ -605,7 +605,7 @@ class DisplayService:
                 elif mode == "pet":
                     self._draw_dino_frame(self._activity_level, self._anim_frame)
                 elif mode == "matrix":
-                    self._draw_matrix_frame(self._anim_frame)
+                    self._draw_matrix_frame(self._activity_level, self._anim_frame)
                 else:
                     return  # config can only change on restart today, but be safe
                 self._anim_frame += 1
@@ -763,12 +763,20 @@ class DisplayService:
     # substitute for a fade.
     _MATRIX_TRAIL = 5
 
-    def _draw_matrix_frame(self, frame: int) -> None:
+    def _draw_matrix_frame(self, level: int, frame: int) -> None:
         """Classic "digital rain" -- a short streak per column falls
         from the top and wraps back around, each column at its own
         speed and phase (seeded off the column index) so they don't all
         advance in lockstep, which is what made the first version of
-        this read as flashing rather than falling."""
+        this read as flashing rather than falling.
+
+        Reacts to recent activity (level) the same way the three pet
+        styles already do, just as speed/density instead of a pose: rain
+        falls faster and the streaks run a bit longer as level rises,
+        easing back to the calm baseline on its own as
+        self._activity_level decays each tick -- no separate "is it
+        busy" flag needed. Capped so a big burst speeds things up
+        noticeably without turning the rain into an unreadable blur."""
         from luma.core.render import canvas
         from PIL import ImageFont
 
@@ -777,17 +785,20 @@ class DisplayService:
         col_w = max(6, width // self._MATRIX_COLS)
         row_h = 10
         rows = height // row_h + 1
-        cycle = rows + self._MATRIX_TRAIL
+        boost = max(0, min(level, 12))
+        speed_mult = 1 + boost // 2  # up to 7x frame-rate at full boost
+        trail = min(self._MATRIX_TRAIL + boost // 4, rows)
+        cycle = rows + trail
 
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
             for col in range(width // col_w):
                 speed = 1 + col % 3  # 1x/2x/3x -- columns drift out of sync
-                head = (frame // speed + col * 5) % cycle
+                head = ((frame * speed_mult) // speed + col * 5) % cycle
                 for row in range(rows):
                     dist = head - row
-                    if not (0 <= dist < self._MATRIX_TRAIL):
+                    if not (0 <= dist < trail):
                         continue
                     ch = self._MATRIX_CHARS[(row * 7 + col * 3 + frame) % len(self._MATRIX_CHARS)]
                     draw.text((col * col_w, row * row_h), ch, font=font, fill="white")
