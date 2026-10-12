@@ -121,6 +121,18 @@ class DisplayService:
         # (confirmed live: "poor dino" nonstop jumping). Set on every
         # clear/scrap, counted down once per tick regardless of level.
         self._cactus_cooldown = 0
+        # "Special" cactus state -- a rare, solid-filled variant that
+        # the dino runs straight into instead of jumping (no real
+        # game-over, just a brief "crashed" beat that drains Level).
+        # _cactus_special marks whichever cactus is CURRENTLY planted
+        # as the special one (only meaningful while self._cactus_x is
+        # set); _cactus_crash_tick counts down the crash beat itself
+        # once contact happens (0 = not currently crashing);
+        # _crash_drain_pct is the random 50-90% rolled for the current
+        # crash, shown in its "-NN%" text and applied once the beat ends.
+        self._cactus_special = False
+        self._cactus_crash_tick = 0
+        self._crash_drain_pct = 0.0
         # Which ground-texture variant is currently showing -- picked at
         # random on (re)start and again every _DINO_GROUND_ROTATE_TICKS
         # ticks (see _draw_dino_frame), not just once per session, so
@@ -705,6 +717,9 @@ class DisplayService:
         self._cactus_x = None
         self._cactus_sprite = None
         self._cactus_cooldown = 0
+        self._cactus_special = False
+        self._cactus_crash_tick = 0
+        self._crash_drain_pct = 0.0
         self._ground_choice = None  # re-pick a random ground texture this (re)start
         self._ground_rotate_tick = 0
         self._dino_jumps = 0
@@ -862,7 +877,21 @@ class DisplayService:
         "run1": "trex-up-1s.png",
         "run2": "trex-up-2s.png",
         "run3": "trex-up-3s.png",
+        "dead": "trex-dead-1s.png",
     }
+    # The "special" cactus -- same art as the ordinary small-cluster
+    # cactus, but loaded solid (alpha-thresholded, no shadow-tier detail)
+    # instead of the usual two-tone style, so it reads as visually
+    # distinct ("the dangerous one"). Reusing an existing file rather
+    # than vendoring new art -- the solid-vs-outlined rendering alone is
+    # enough of a visual difference.
+    _DINO_SPECIAL_CACTUS_ASSET_NAME = "cacti-small-small-small.png"
+    # Only eligible to spawn once Level is already fairly high -- it's a
+    # pressure-release valve for a runaway number, not a random hazard
+    # that makes sense at low activity.
+    _DINO_SPECIAL_CACTUS_LEVEL_THRESHOLD = 15
+    _DINO_SPECIAL_CACTUS_CHANCE = 0.3  # 30% of eligible spawns are the special one
+    _DINO_CRASH_DURATION_TICKS = 8  # ~1s at the current _IDLE_ANIM_FPS
     # Every cactus asset in the source repo is already a pre-bundled
     # cluster (no standalone single-cactus sprite exists upstream, same
     # as the real Chrome Dino game) -- one gets picked at random each
@@ -984,6 +1013,7 @@ class DisplayService:
             s for s in (load(f, use_alpha_threshold=True) for f in self._DINO_GROUND_ASSET_NAMES)
             if s is not None
         ]
+        cache["special_cactus"] = load(self._DINO_SPECIAL_CACTUS_ASSET_NAME, use_alpha_threshold=True)
         self._dino_sprite_cache = cache
         return cache
 
@@ -1031,6 +1061,24 @@ class DisplayService:
         from luma.core.render import canvas
 
         sprites = self._dino_sprites()
+
+        if self._cactus_crash_tick > 0:
+            # Mid-"crash" beat -- frozen in place, showing the dead-pose
+            # sprite + burst + drain %, for _DINO_CRASH_DURATION_TICKS
+            # ticks total. Nothing else in this method runs those ticks
+            # (walking, spawning, ground rotation all just pause) --
+            # the beat is short (~1s) so that's not noticeable.
+            self._draw_crash_frame(sprites)
+            self._cactus_crash_tick -= 1
+            if self._cactus_crash_tick == 0:
+                drain = int(round(self._activity_level * self._crash_drain_pct))
+                self._activity_level = max(0, self._activity_level - drain)
+                self._cactus_x = None
+                self._cactus_sprite = None
+                self._cactus_special = False
+                self._cactus_cooldown = self._DINO_CACTUS_COOLDOWN_TICKS
+            return
+
         run = sprites.get(f"run{(frame % 3) + 1}")
         if run is None:
             return  # art failed to load -- nothing sane to draw this frame
@@ -1086,12 +1134,20 @@ class DisplayService:
         # -- cactus lifecycle: spawn / clear / scrap ----------------
         if self._cactus_x is None:
             if level > 0 and cacti and self._cactus_cooldown <= 0:
-                # Pick a random CANDIDATE cluster variant for this
-                # potential spawn -- only committed to self._cactus_sprite
-                # below if it actually fits on-screen this tick (same
-                # "try again next tick otherwise" reasoning as the
-                # position check itself).
-                candidate = random.choice(cacti)
+                # Decide special-or-not BEFORE picking the actual sprite,
+                # so the fit-check below always sizes against whichever
+                # sprite will really be used (the special cactus reuses
+                # an existing file but could differ in width from
+                # whatever a plain random.choice(cacti) would have
+                # picked -- deciding first avoids ever fitting one width
+                # and then swapping in a different one).
+                special_sprite = sprites.get("special_cactus")
+                want_special = (
+                    level >= self._DINO_SPECIAL_CACTUS_LEVEL_THRESHOLD
+                    and special_sprite is not None
+                    and random.random() < self._DINO_SPECIAL_CACTUS_CHANCE
+                )
+                candidate = special_sprite if want_special else random.choice(cacti)
                 cand_w = candidate[0].size[0]
                 spawn_x = (
                     x + sprite_w + self._DINO_CACTUS_SPAWN_GAP if facing_right
@@ -1113,9 +1169,11 @@ class DisplayService:
                     self._cactus_x = spawn_x
                     self._cactus_spawn_dir = self._dino_dir
                     self._cactus_sprite = candidate
+                    self._cactus_special = want_special
         elif self._dino_dir != self._cactus_spawn_dir:
             self._cactus_x = None  # bounced before reaching it -- scrap it, no score
             self._cactus_sprite = None
+            self._cactus_special = False
             self._cactus_cooldown = self._DINO_CACTUS_COOLDOWN_TICKS
         else:
             # "Cleared" = the dino's leading edge has reached the
@@ -1138,7 +1196,16 @@ class DisplayService:
                 (facing_right and x + sprite_w >= self._cactus_x)
                 or (not facing_right and x <= self._cactus_x + planted_w)
             )
-            if cleared:
+            if cleared and self._cactus_special:
+                # Contact with the special cactus -- not a jump, a
+                # crash. Don't clear cactus_x/sprite yet (the crash
+                # beat at the top of this method still needs them to
+                # draw the "wreckage"); don't touch _dino_jumps/speed
+                # either, since this isn't a clean jump. The drain
+                # itself is rolled and applied once the beat ends.
+                self._cactus_crash_tick = self._DINO_CRASH_DURATION_TICKS
+                self._crash_drain_pct = random.uniform(0.5, 0.9)
+            elif cleared:
                 self._dino_jumps += 1
                 self._cactus_x = None
                 self._cactus_sprite = None
@@ -1147,9 +1214,14 @@ class DisplayService:
 
         # -- auto-jump once close enough to whatever's still planted --
         # (self._cactus_sprite is guaranteed set whenever self._cactus_x
-        # is, so c_w below is always meaningful here.)
+        # is, so c_w below is always meaningful here.) Never triggers
+        # for the special cactus -- that one's meant to be run into, not
+        # jumped, so it's deliberately excluded here regardless of gap.
         c_w = self._cactus_sprite[0].size[0] if self._cactus_sprite is not None else 0
-        if self._cactus_x is not None and self._dino_vy == 0 and self._dino_jump_dy == 0:
+        if (
+            self._cactus_x is not None and not self._cactus_special
+            and self._dino_vy == 0 and self._dino_jump_dy == 0
+        ):
             gap = (
                 self._cactus_x - (x + sprite_w) if facing_right
                 else x - (self._cactus_x + c_w)
@@ -1215,6 +1287,68 @@ class DisplayService:
             sl2, st2, sr2, sb2 = draw.textbbox((0, 0), score_text, font=hud_font)
             draw.text((10 - ll, 2 - lt), level_text, font=hud_font, fill="white")
             draw.text((width - 10 - sr2, 2 - st2), score_text, font=hud_font, fill="white")
+        self._capture_frame(cv.image, is_status=False)
+
+    # 8 roughly-evenly-spaced unit directions (N/S/E/W + diagonals,
+    # diagonals shortened ~0.7x so the burst reads as a rough circle
+    # rather than a plus-shaped star) for the crash-frame impact burst.
+    # Hardcoded rather than computed via `math.sin`/`cos` -- it's 8
+    # fixed points, not worth a new top-level import for.
+    _CRASH_BURST_DIRECTIONS = [
+        (0, -10), (0, 10), (10, 0), (-10, 0),
+        (7, -7), (7, 7), (-7, -7), (-7, 7),
+    ]
+
+    def _draw_crash_frame(self, sprites: dict) -> None:
+        """One frame of the "crashed into the special cactus" beat --
+        static (no walking, no leg animation) for the whole
+        _DINO_CRASH_DURATION_TICKS: the dead-pose sprite at the dino's
+        current position, the still-planted special cactus it hit, a
+        small radiating burst around the impact point, and the rolled
+        "-NN%" drain percentage. Degrades gracefully (skips the dino
+        sprite/burst/text entirely) if the dead-pose art failed to
+        load -- the drain itself still applies regardless, since that's
+        tracked by the caller, not by anything drawn here."""
+        from luma.core.render import canvas
+
+        width, height = self._cfg["width"], self._cfg["height"]
+        ground = self._ground_choice
+        ground_h = ground[0].size[1] if ground else 4
+        ground_y = height - ground_h
+
+        cv = canvas(self._device)
+        with cv as draw:
+            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            if ground is not None:
+                ground_img, _, ground_alpha, _ = ground
+                for gx in range(0, width, ground_img.size[0]):
+                    cv.image.paste(ground_img, (gx, ground_y), ground_alpha)
+            if self._cactus_x is not None and self._cactus_sprite is not None:
+                c_upright, _, c_alpha, _ = self._cactus_sprite
+                cy = ground_y - c_upright.size[1] + 2
+                cv.image.paste(c_upright, (self._cactus_x, cy), c_alpha)
+
+            dead = sprites.get("dead")
+            x = int(round(self._dino_x))
+            if dead is not None:
+                upright, mirrored, alpha, mirrored_alpha = dead
+                facing_right = self._dino_dir > 0
+                sprite = upright if facing_right else mirrored
+                sprite_alpha = alpha if facing_right else mirrored_alpha
+                sprite_w, sprite_h = sprite.size
+                dino_y = ground_y - sprite_h + 2
+                cv.image.paste(sprite, (x, dino_y), sprite_alpha)
+
+                bx, by = x + sprite_w // 2, dino_y + sprite_h // 2
+                for dx, dy in self._CRASH_BURST_DIRECTIONS:
+                    draw.line((bx, by, bx + dx, by + dy), fill="white")
+
+                text = f"-{int(round(self._crash_drain_pct * 100))}%"
+                tl, tt, tr, tb = draw.textbbox((0, 0), text, font=self._boot_font())
+                draw.text(
+                    ((width - (tr - tl)) // 2 - tl, 2 - tt), text,
+                    font=self._boot_font(), fill="white",
+                )
         self._capture_frame(cv.image, is_status=False)
 
     _MATRIX_COLS = 16

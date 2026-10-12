@@ -1,11 +1,14 @@
 # Sprite credits
 
 `trex-up-1s.png` / `trex-up-2s.png` / `trex-up-3s.png` (running T-rex),
+`trex-dead-1s.png` (the "crashed" pose, shown briefly when the dino runs
+into a special solid-filled cactus instead of jumping it), 
 `cacti-small-small-small.png` / `cacti-big-small.png` /
 `cacti-small-big.png` / `cacti-big-big.png` (one is picked at random
-each time an obstacle spawns), and `ground-1.png` through `ground-5.png`
-(one is picked at random each time the screensaver starts, for a bit of
-texture variety) are all from
+each time an obstacle spawns; `cacti-small-small-small.png` is also
+reused, rendered solid instead of two-tone, as that special cactus),
+and `ground-1.png` through `ground-5.png` (one is picked at random each
+time the screensaver starts, for a bit of texture variety) are all from
 [AlexIII/t-rex-duino](https://github.com/AlexIII/t-rex-duino) (MIT
 License, Copyright (c) 2020 github.com/AlexIII) — a Chrome Dino Game
 port for Arduino + OLED. Used here as the `pet: dinosaur` screensaver's
