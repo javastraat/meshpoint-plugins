@@ -1029,7 +1029,16 @@ class DisplayService:
         ground_y = height - ground_h
 
         if level > 0:
-            self._dino_speed = min(self._DINO_SPEED_MAX, self._dino_speed + self._DINO_SPEED_RAMP_STEP)
+            # Scaled by `level` itself, not a flat per-tick step -- a
+            # bigger burst (higher level) now ramps speed up faster, not
+            # just "some activity happened, yes/no". Still safe
+            # regardless of how big the scaled step gets: _DINO_SPEED_MAX
+            # is an unconditional ceiling either way, the same one
+            # already verified (by simulation) to leave enough margin
+            # under _DINO_JUMP_TRIGGER_GAP.
+            self._dino_speed = min(
+                self._DINO_SPEED_MAX, self._dino_speed + self._DINO_SPEED_RAMP_STEP * level,
+            )
         else:
             self._dino_speed = max(self._DINO_SPEED, self._dino_speed - self._DINO_SPEED_PASSIVE_DECAY_STEP)
 
