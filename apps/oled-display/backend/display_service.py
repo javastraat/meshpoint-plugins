@@ -313,19 +313,25 @@ class DisplayService:
 
     def _fit_title_font(self, draw, text: str, width: int, height: int):
         """Largest boot-logo title size that still fits `text` within
-        `width` (4px total margin) -- "MESHPOINT" at the height-driven
+        `width` (8px total margin) -- "MESHPOINT" at the height-driven
         ceiling alone overflowed a 128px-wide panel (162px wide at
-        size=28), so width has to shrink it back down, not just height.
-        Ceiling is still height-driven (`height // 2`, capped at 28) so
-        a short/wide panel doesn't end up with a title taller than the
-        panel; floor is 8 so a tiny panel still gets something bigger
-        than the "starting..." subtitle rather than giving up."""
+        size=28), so width has to shrink it back down, not just height --
+        on a 128px panel it's always WIDTH that ends up binding, not
+        height, regardless of how generous the height ceiling is. The
+        8px margin (not 4) deliberately keeps the result one size step
+        smaller than the old margin would (20 instead of 21) -- asked
+        for explicitly once "as big as it can get on one line" turned
+        out to still be smaller than hoped. Ceiling is still height-
+        driven (`height // 2`, capped at 28) so a short/wide panel
+        doesn't end up with a title taller than the panel; floor is 8
+        so a tiny panel still gets something bigger than the
+        "starting..." subtitle rather than giving up."""
         max_size = max(10, min(28, height // 2))
         min_size = 8
         for size in range(max_size, min_size - 1, -1):
             font = self._boot_font(size=size)
             l, t, r, b = draw.textbbox((0, 0), text, font=font)
-            if r - l <= width - 4:
+            if r - l <= width - 8:
                 return font
         return self._boot_font(size=min_size)
 
@@ -348,7 +354,7 @@ class DisplayService:
 
         path = Path(__file__).resolve().parent / "assets" / "boot" / "hardware-icon.png"
         try:
-            rgba = Image.open(path).convert("RGBA").resize((16, 16), Image.LANCZOS)
+            rgba = Image.open(path).convert("RGBA").resize((28, 28), Image.LANCZOS)
             alpha = rgba.split()[-1]
             icon = alpha.point(lambda p: 255 if p > 128 else 0).convert("1")
             self._boot_icon_cache = (icon, alpha)
@@ -376,13 +382,17 @@ class DisplayService:
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
-            # Fit the title against the height left over ABOVE the icon's
-            # row, not the panel's full height -- otherwise a max-size
-            # title plus the icon stacked on top could overflow a 64px
-            # panel. _fit_title_font's own ceiling is height-driven
-            # (height // 2), so handing it a smaller height here is
-            # enough to make it pick a correspondingly smaller size.
-            title_font = self._fit_title_font(draw, title, width, height - icon_h)
+            # Pass the full panel height here, NOT height - icon_h --
+            # width is always what actually binds "MESHPOINT"'s size on
+            # a 128px panel (confirmed by measurement: the height-driven
+            # ceiling alone would allow size 28+, but that's already
+            # 162px wide, over panel width by a lot), so reducing the
+            # height budget for the icon never actually changed anything
+            # except shrinking the title for no reason. The real
+            # headroom math (icon + title + gaps + subtitle all fitting
+            # in 64px) is verified below instead, once every piece's
+            # real size is known.
+            title_font = self._fit_title_font(draw, title, width, height)
 
             tl, tt, tr, tb = draw.textbbox((0, 0), title, font=title_font)
             tw, th = tr - tl, tb - tt
