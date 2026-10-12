@@ -348,7 +348,7 @@ class DisplayService:
             sl, st, sr, sb = draw.textbbox((0, 0), subtitle, font=sub_font)
             sw, sh = sr - sl, sb - st
 
-            gap = 3
+            gap = 8  # was 3 -- nudges the subtitle 5px further down from the title
             top = max(0, (height - (th + gap + sh)) // 2)
             draw.text(((width - tw) // 2 - tl, top - tt), title, font=title_font, fill="white")
             draw.text(((width - sw) // 2 - sl, top + th + gap - st), subtitle, font=sub_font, fill="white")
