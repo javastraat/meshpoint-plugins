@@ -381,7 +381,7 @@ class DisplayService:
 
         path = Path(__file__).resolve().parent / "assets" / "boot" / "hardware-icon.png"
         try:
-            rgba = Image.open(path).convert("RGBA").resize((28, 28), Image.LANCZOS)
+            rgba = Image.open(path).convert("RGBA").resize((24, 24), Image.LANCZOS)
             alpha = rgba.split()[-1]
             icon = alpha.point(lambda p: 255 if p > 128 else 0).convert("1")
             self._boot_icon_cache = (icon, alpha)
@@ -408,7 +408,12 @@ class DisplayService:
 
         cv = canvas(self._device)
         with cv as draw:
-            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            # No outline on this screen specifically (unlike the status/
+            # idle-animation screens, which all draw a white border) --
+            # asked for explicitly once the enlarged icon left barely
+            # any margin, making the border's bottom edge read as a
+            # stray line sitting right under the subtitle text.
+            draw.rectangle(self._device.bounding_box, fill="black")
             # Pass the full panel height here, NOT height - icon_h --
             # width is always what actually binds "MESHPOINT"'s size on
             # a 128px panel (confirmed by measurement: the height-driven
@@ -426,9 +431,22 @@ class DisplayService:
             sl, st, sr, sb = draw.textbbox((0, 0), subtitle, font=sub_font)
             sw, sh = sr - sl, sb - st
 
-            gap = 8  # was 3 -- nudges the subtitle 5px further down from the title
+            gap = 6  # was 3 originally -- trimmed back from 8 to free up the
+            # couple of px needed for a real top/bottom border margin
+            # (see `margin` below), while still sitting lower than the
+            # original 3
             block_h = icon_h + th + gap + sh
-            top = max(0, (height - block_h) // 2)
+            # A plain centered block could butt right up against the
+            # panel's own border rectangle on either side with zero
+            # breathing room -- confirmed live: with no margin, the
+            # subtitle's lowest pixel landed 1px above the bottom
+            # border line, reading as "a line under starting/
+            # restarting" rather than the screen's own edge. Reserving
+            # a few px top and bottom keeps both borders visibly
+            # separate from the content, same as the panel's existing
+            # left/right margins on the title already do horizontally.
+            margin = 3
+            top = margin + max(0, (height - 2 * margin - block_h) // 2)
             if icon is not None:
                 icon_img, icon_alpha = icon
                 cv.image.paste(icon_img, ((width - icon_img.size[0]) // 2, top), icon_alpha)
@@ -789,7 +807,12 @@ class DisplayService:
 
         cv = canvas(self._device)
         with cv as draw:
-            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            # No border on idle-animation screens -- asked for
+            # explicitly once an enlarged boot-screen element made the
+            # same border read as a stray line; applies consistently
+            # to every screensaver style, not just the one it was first
+            # noticed on.
+            draw.rectangle(self._device.bounding_box, fill="black")
             body_r = 14
             draw.ellipse(
                 (cx - body_r, cy - body_r + bounce, cx + body_r, cy + body_r + bounce),
@@ -826,7 +849,7 @@ class DisplayService:
 
         cv = canvas(self._device)
         with cv as draw:
-            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            draw.rectangle(self._device.bounding_box, fill="black")  # no border -- see _draw_blink_frame
             draw.ellipse(
                 (cx - body_r, body_top, cx + body_r, cy + body_r + bounce),
                 outline="white",
@@ -1267,7 +1290,7 @@ class DisplayService:
 
         cv = canvas(self._device)
         with cv as draw:
-            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            draw.rectangle(self._device.bounding_box, fill="black")  # no border -- see _draw_blink_frame
             # Re-read rather than reusing the `ground` local above -- the
             # rotation check just now may have updated self._ground_choice
             # this very tick, and the new texture should show immediately,
@@ -1328,7 +1351,7 @@ class DisplayService:
 
         cv = canvas(self._device)
         with cv as draw:
-            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            draw.rectangle(self._device.bounding_box, fill="black")  # no border -- see _draw_blink_frame
             if ground is not None:
                 ground_img, _, ground_alpha, _ = ground
                 for gx in range(0, width, ground_img.size[0]):
@@ -1426,7 +1449,7 @@ class DisplayService:
 
         cv = canvas(self._device)
         with cv as draw:
-            draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            draw.rectangle(self._device.bounding_box, fill="black")  # no border -- see _draw_blink_frame
             for drop in self._matrix_drops:
                 col = drop["col"]
                 head = int(drop["head"])
