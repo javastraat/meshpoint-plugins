@@ -135,7 +135,7 @@
       "id": "oled-display",
       "kind": "app",
       "path": "apps/oled-display",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "meshpoint_api": 1,
       "provides": [
         "service",

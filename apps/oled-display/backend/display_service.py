@@ -1868,6 +1868,13 @@ class DisplayService:
         return self._blanked
 
     @property
+    def is_idle_animating(self) -> bool:
+        """True while a screensaver (idle_animation != "off") is what's
+        actually on the panel -- lets the preview mirror the live
+        animation instead of the frozen last status page."""
+        return self._idle_anim_task is not None and not self._idle_anim_task.done()
+
+    @property
     def current_page_title(self) -> str | None:
         """Title of whatever rotate_screens page is currently showing
         (e.g. "Overview", "Meshtastic") -- None in static mode, or
