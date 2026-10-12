@@ -97,6 +97,7 @@ class DisplayService:
         # each time the idle animation (re)starts, see _idle_animation_loop().
         self._dino_x = 0
         self._dino_dir = 1
+        self._dino_speed = float(self._DINO_SPEED)
         self._dino_sprite_cache: dict | None = None
         # Cactus-as-landmark + jump state. _cactus_x is None when no
         # cactus is currently planted; once spawned it stays at a fixed
@@ -603,6 +604,7 @@ class DisplayService:
         self._last_seen_announce_ts = None  # re-seed fresh each (re)start
         self._dino_x = 0  # walk from the left edge each time "pet" (re)starts
         self._dino_dir = 1
+        self._dino_speed = float(self._DINO_SPEED)
         self._cactus_x = None
         self._dino_jumps = 0
         self._dino_vy = 0
@@ -715,7 +717,25 @@ class DisplayService:
                 draw.arc((cx - 6, my - 4, cx + 6, my + 4), start=180, end=360, fill="white")  # frown
         self._capture_frame(cv.image, is_status=False)
 
-    _DINO_SPEED = 2
+    _DINO_SPEED = 2  # base/floor speed, px/tick
+    # Activity-reactive speed: ramps up while RF/Reticulum activity keeps
+    # `level` above 0, decays back down each time a cactus is actually
+    # cleared (so it takes a few successful jumps to calm back to the
+    # floor, not just time passing). Capped well under
+    # _DINO_JUMP_TRIGGER_GAP so a single tick's movement can never jump
+    # clean over the trigger window and faceplant into a cactus with no
+    # jump ever firing (the same failure shape as the edge-spawn overlap
+    # bug, from a different cause).
+    _DINO_SPEED_MAX = 5
+    _DINO_SPEED_RAMP_STEP = 0.4  # added per tick while level > 0
+    _DINO_SPEED_DECAY_STEP = 0.5  # extra kick subtracted per cactus cleared
+    # Passive per-tick decay while level is 0, floored at _DINO_SPEED --
+    # a safety net so speed always eventually returns to the floor even
+    # if activity stops with no cactus left in flight to clear (the only
+    # other decay trigger). Without this, a burst that ramped speed up
+    # and then went quiet with nothing left to jump would leave the dino
+    # stuck at its ramped-up speed forever.
+    _DINO_SPEED_PASSIVE_DECAY_STEP = 0.15
     _DINO_JUMP_MOMENTUM = 8  # same constant t-rex-duino's own TrexPlayer uses
     _DINO_JUMP_TRIGGER_GAP = 12  # px of clearance ahead of a cactus that triggers a jump
     _DINO_CACTUS_SPAWN_GAP = 45  # px ahead of the dino a new cactus is planted
@@ -849,7 +869,20 @@ class DisplayService:
         physics) -- there's no user input here, so "jumped it" and
         "cleared it" are the same event in practice. `self._dino_jumps`
         (shown via `_draw_digits`) just counts cleared cacti -- the only
-        thing resembling a "score" this purely decorative feature has."""
+        thing resembling a "score" this purely decorative feature has.
+
+        Walking speed (`self._dino_speed`) is also activity-reactive: it
+        ramps up a little each tick `level > 0`, capped at
+        `_DINO_SPEED_MAX`, and gets an extra kick down each time a
+        cactus is actually cleared -- so a burst of packets speeds the
+        dino up, and clearing a few cacti afterwards visibly speeds the
+        slow-down back to normal. It also decays a little every quiet
+        tick regardless (`_DINO_SPEED_PASSIVE_DECAY_STEP`), as a safety
+        net so it always eventually settles back at the floor speed
+        (`_DINO_SPEED`) even if activity stops with nothing left in
+        flight to jump. The cap is deliberately kept well under
+        `_DINO_JUMP_TRIGGER_GAP` so a single tick's movement can never
+        skip clean over the jump-trigger window."""
         from luma.core.render import canvas
 
         sprites = self._dino_sprites()
@@ -864,13 +897,21 @@ class DisplayService:
         ground_h = ground[0].size[1] if ground else 4
         ground_y = height - ground_h
 
+        if level > 0:
+            self._dino_speed = min(self._DINO_SPEED_MAX, self._dino_speed + self._DINO_SPEED_RAMP_STEP)
+        else:
+            self._dino_speed = max(self._DINO_SPEED, self._dino_speed - self._DINO_SPEED_PASSIVE_DECAY_STEP)
+
         min_x, max_x = 0, max(0, width - sprite_w)
-        self._dino_x += self._dino_dir * self._DINO_SPEED
+        self._dino_x += self._dino_dir * self._dino_speed
         if self._dino_x >= max_x:
             self._dino_x, self._dino_dir = max_x, -1
         elif self._dino_x <= min_x:
             self._dino_x, self._dino_dir = min_x, 1
-        x = self._dino_x
+        # self._dino_x stays a float so fractional speeds accumulate
+        # smoothly frame to frame; drawing/collision math below all wants
+        # whole pixels, so round only for local use.
+        x = int(round(self._dino_x))
         facing_right = self._dino_dir > 0
         sprite = upright if facing_right else mirrored
         sprite_alpha = alpha if facing_right else mirrored_alpha
@@ -925,6 +966,7 @@ class DisplayService:
             if cleared:
                 self._dino_jumps += 1
                 self._cactus_x = None
+                self._dino_speed = max(self._DINO_SPEED, self._dino_speed - self._DINO_SPEED_DECAY_STEP)
 
         # -- auto-jump once close enough to whatever's still planted --
         if self._cactus_x is not None and self._dino_vy == 0 and self._dino_jump_dy == 0:
