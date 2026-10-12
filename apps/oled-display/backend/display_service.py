@@ -128,7 +128,7 @@ class DisplayService:
         # as the special one (only meaningful while self._cactus_x is
         # set); _cactus_crash_tick counts down the crash beat itself
         # once contact happens (0 = not currently crashing);
-        # _crash_drain_pct is the random 50-90% rolled for the current
+        # _crash_drain_pct is the random 50-100% rolled for the current
         # crash, shown in its "-NN%" text and applied once the beat ends.
         self._cactus_special = False
         self._cactus_crash_tick = 0
@@ -1204,7 +1204,7 @@ class DisplayService:
                 # either, since this isn't a clean jump. The drain
                 # itself is rolled and applied once the beat ends.
                 self._cactus_crash_tick = self._DINO_CRASH_DURATION_TICKS
-                self._crash_drain_pct = random.uniform(0.5, 0.9)
+                self._crash_drain_pct = random.uniform(0.5, 1.0)
             elif cleared:
                 self._dino_jumps += 1
                 self._cactus_x = None
