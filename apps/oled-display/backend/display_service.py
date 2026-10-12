@@ -72,6 +72,7 @@ class DisplayService:
         self._last_status_png: bytes | None = None
         self._last_status_rendered_at: datetime | None = None
         self._blanked = False
+        self._boot_icon_cache = None
         self._manual_sleep = False
         self._page_index = 0
         self._page_started = time.monotonic()
@@ -324,6 +325,34 @@ class DisplayService:
                 return font
         return self._boot_font(size=min_size)
 
+    def _boot_icon(self):
+        """Lazily loads + caches the small "hardware" icon shown in the
+        boot/restart screen's top-left corner -- a rasterized copy of
+        the same router/hardware pictogram meshpoint's own dashboard
+        sidebar uses (see assets/boot/CREDITS.md for provenance). Mode
+        "1" + its own alpha mask, same pattern as the dino sprites;
+        this source PNG is already pure white/transparent (no gray
+        tones), so a plain alpha threshold is correct here without the
+        two-tone caveat the dino/cactus art needed. Returns `None` on
+        any load failure -- purely decorative, must never break the
+        boot screen over missing/corrupt art."""
+        if self._boot_icon_cache is not None:
+            return self._boot_icon_cache
+        from pathlib import Path
+
+        from PIL import Image
+
+        path = Path(__file__).resolve().parent / "assets" / "boot" / "hardware-icon.png"
+        try:
+            rgba = Image.open(path).convert("RGBA").resize((16, 16), Image.LANCZOS)
+            alpha = rgba.split()[-1]
+            icon = alpha.point(lambda p: 255 if p > 128 else 0).convert("1")
+            self._boot_icon_cache = (icon, alpha)
+        except Exception:  # noqa: BLE001 -- missing/corrupt art must not break the boot screen
+            logger.warning("oled-display: could not load boot icon", exc_info=True)
+            self._boot_icon_cache = None
+        return self._boot_icon_cache
+
     def _draw_wordmark_page(self, subtitle: str) -> None:
         """Big centered MESHPOINT title + a small subtitle underneath --
         shared by the boot logo ("starting...") and the shutdown
@@ -337,11 +366,19 @@ class DisplayService:
         width, height = self._cfg["width"], self._cfg["height"]
         title = "MESHPOINT"
         sub_font = self._boot_font()
+        icon = self._boot_icon()
+        icon_h = icon[0].size[1] + 2 if icon is not None else 0  # +2: gap before the title
 
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
-            title_font = self._fit_title_font(draw, title, width, height)
+            # Fit the title against the height left over ABOVE the icon's
+            # row, not the panel's full height -- otherwise a max-size
+            # title plus the icon stacked on top could overflow a 64px
+            # panel. _fit_title_font's own ceiling is height-driven
+            # (height // 2), so handing it a smaller height here is
+            # enough to make it pick a correspondingly smaller size.
+            title_font = self._fit_title_font(draw, title, width, height - icon_h)
 
             tl, tt, tr, tb = draw.textbbox((0, 0), title, font=title_font)
             tw, th = tr - tl, tb - tt
@@ -349,9 +386,13 @@ class DisplayService:
             sw, sh = sr - sl, sb - st
 
             gap = 8  # was 3 -- nudges the subtitle 5px further down from the title
-            top = max(0, (height - (th + gap + sh)) // 2)
-            draw.text(((width - tw) // 2 - tl, top - tt), title, font=title_font, fill="white")
-            draw.text(((width - sw) // 2 - sl, top + th + gap - st), subtitle, font=sub_font, fill="white")
+            block_h = icon_h + th + gap + sh
+            top = max(0, (height - block_h) // 2)
+            if icon is not None:
+                icon_img, icon_alpha = icon
+                cv.image.paste(icon_img, ((width - icon_img.size[0]) // 2, top), icon_alpha)
+            draw.text(((width - tw) // 2 - tl, top + icon_h - tt), title, font=title_font, fill="white")
+            draw.text(((width - sw) // 2 - sl, top + icon_h + th + gap - st), subtitle, font=sub_font, fill="white")
         self._capture_frame(cv.image, is_status=False)
 
     async def _show_boot_logo(self) -> None:
@@ -792,40 +833,6 @@ class DisplayService:
     ]
     _DINO_GROUND_ROTATE_TICKS = 160  # ~20s at the current _IDLE_ANIM_FPS
 
-    # 5x8 "vertical byte" digit font -- same one t-rex-duino (MIT) uses for
-    # its own score display, ported as plain data rather than an asset
-    # file since it's just 10 short byte tuples. Each digit is 5 columns;
-    # each byte is one column, bit 0 = top pixel, bit 7 = bottom -- the
-    # classic Adafruit_GFX glyph encoding. A tiny retro font reads as much
-    # more "Chrome Dino" than Pillow's own default font would for a score.
-    _DIGIT_FONT = {
-        "0": (0x3E, 0x51, 0x49, 0x45, 0x3E),
-        "1": (0x00, 0x42, 0x7F, 0x40, 0x00),
-        "2": (0x42, 0x61, 0x51, 0x49, 0x46),
-        "3": (0x21, 0x41, 0x45, 0x4B, 0x31),
-        "4": (0x18, 0x14, 0x12, 0x7F, 0x10),
-        "5": (0x27, 0x45, 0x45, 0x45, 0x39),
-        "6": (0x3C, 0x4A, 0x49, 0x49, 0x30),
-        "7": (0x01, 0x71, 0x09, 0x05, 0x03),
-        "8": (0x36, 0x49, 0x49, 0x49, 0x36),
-        "9": (0x06, 0x49, 0x49, 0x29, 0x1E),
-    }
-
-    def _draw_digits(self, draw, x: int, y: int, text: str) -> None:
-        """Draws `text` (digits only) with `_DIGIT_FONT`. See that
-        dict's own docstring comment for the byte encoding."""
-        cx = x
-        for ch in text:
-            glyph = self._DIGIT_FONT.get(ch)
-            if glyph is None:
-                cx += 6
-                continue
-            for col, byte in enumerate(glyph):
-                for row in range(8):
-                    if byte & (1 << row):
-                        draw.point((cx + col, y + row), fill="white")
-            cx += 6  # 5px glyph + 1px gap
-
     def _dino_jump_step(self) -> int:
         """One tick of TrexPlayer.motionStep() from AlexIII/t-rex-duino
         (MIT), ported as-is rather than inventing new jump physics for
@@ -951,8 +958,13 @@ class DisplayService:
         enough auto-triggers a jump (`_dino_jump_step()`, ported jump
         physics) -- there's no user input here, so "jumped it" and
         "cleared it" are the same event in practice. `self._dino_jumps`
-        (shown via `_draw_digits`) just counts cleared cacti -- the only
-        thing resembling a "score" this purely decorative feature has.
+        (shown as "Score: N" in the HUD) just counts cleared cacti --
+        the only thing resembling a "score" this purely decorative
+        feature has. "Level: N" alongside it is the same `level`
+        argument this method receives each tick (the smoothed activity
+        signal driving speed/spawns) -- not a game "level" in the sense
+        of increasing difficulty tiers, just a visible readout of the
+        same mood value.
 
         Walking speed (`self._dino_speed`) is also activity-reactive: it
         ramps up a little each tick `level > 0`, capped at
@@ -1125,13 +1137,21 @@ class DisplayService:
                 cy = ground_y - c_upright.size[1] + 2
                 cv.image.paste(c_upright, (self._cactus_x, cy), c_alpha)
             cv.image.paste(sprite, (x, dino_y), sprite_alpha)
-            if self._dino_jumps:
-                text = str(self._dino_jumps)
-                # -8 (not -2) puts the rightmost lit pixel exactly 10px
-                # from the panel edge regardless of digit count -- the
-                # old 4px margin was getting clipped by some panels'
-                # physical bezel.
-                self._draw_digits(draw, width - 6 * len(text) - 8, 2, text)
+
+            # HUD: "Level" (the same smoothed RF/Reticulum activity
+            # value driving speed/spawns, see _idle_animation_loop) on
+            # the left, "Score" (cacti cleared) on the right -- both
+            # always shown, even at 0, now that they're labeled (a bare
+            # unlabeled number was ambiguous enough on its own that it
+            # used to just hide at 0 instead). 10px margin on both
+            # sides to match the panel-edge clipping fix elsewhere.
+            hud_font = self._boot_font()
+            level_text = f"Level: {level}"
+            score_text = f"Score: {self._dino_jumps}"
+            ll, lt, lr, lb = draw.textbbox((0, 0), level_text, font=hud_font)
+            sl2, st2, sr2, sb2 = draw.textbbox((0, 0), score_text, font=hud_font)
+            draw.text((10 - ll, 2 - lt), level_text, font=hud_font, fill="white")
+            draw.text((width - 10 - sr2, 2 - st2), score_text, font=hud_font, fill="white")
         self._capture_frame(cv.image, is_status=False)
 
     _MATRIX_COLS = 16
