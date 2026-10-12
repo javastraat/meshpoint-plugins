@@ -97,6 +97,7 @@ class DisplayService:
         # each time the idle animation (re)starts, see _idle_animation_loop().
         self._dino_x = 0
         self._dino_dir = 1
+        self._dino_sprite_cache: dict | None = None
 
     # -- lifecycle ---------------------------------------------------
 
@@ -590,7 +591,7 @@ class DisplayService:
         nothing in the log to explain why."""
         frame_interval = 1.0 / self._IDLE_ANIM_FPS
         self._last_seen_announce_ts = None  # re-seed fresh each (re)start
-        self._dino_x = 2  # walk from the left edge each time "pet" (re)starts
+        self._dino_x = 0  # walk from the left edge each time "pet" (re)starts
         self._dino_dir = 1
         while not self._stop_event.is_set():
             try:
@@ -699,24 +700,77 @@ class DisplayService:
                 draw.arc((cx - 6, my - 4, cx + 6, my + 4), start=180, end=360, fill="white")  # frown
         self._capture_frame(cv.image, is_status=False)
 
-    _DINO_W = 20
-    _DINO_H = 14
     _DINO_SPEED = 2
+    _DINO_ASSET_NAMES = {
+        "run1": "trex-up-1s.png",
+        "run2": "trex-up-2s.png",
+        "run3": "trex-up-3s.png",
+        "cactus": "cacti-small-small-small.png",
+        "ground": "ground-1.png",
+    }
+
+    def _dino_sprites(self) -> dict:
+        """Lazily loads + caches the real Chrome-Dino sprite art (MIT,
+        github.com/AlexIII/t-rex-duino -- see assets/dino/CREDITS.md)
+        used by `_draw_dino_frame`. Each entry is `(upright, mirrored,
+        alpha)`: `upright`/`mirrored` are the sprite pre-thresholded to
+        pure black/white (mode "1", matching the monochrome panel) in
+        both facing directions, computed once instead of per-frame;
+        `alpha` is the PNG's own alpha channel, reused as the paste mask
+        so transparent pixels never touch the canvas's black background.
+        Cached on the instance (not the class) so a test harness
+        creating multiple DisplayServices never shares state, and a
+        missing/corrupt asset degrades to `None` (caught at the call
+        site) rather than crashing the whole idle-anim loop over art
+        that isn't essential to the rest of the plugin."""
+        if self._dino_sprite_cache is not None:
+            return self._dino_sprite_cache
+        from pathlib import Path
+
+        from PIL import Image, ImageOps
+
+        assets_dir = Path(__file__).resolve().parent / "assets" / "dino"
+        cache: dict = {}
+        for key, filename in self._DINO_ASSET_NAMES.items():
+            try:
+                rgba = Image.open(assets_dir / filename).convert("RGBA")
+                alpha = rgba.split()[-1]
+                upright = rgba.convert("L").point(lambda p: 255 if p > 128 else 0).convert("1")
+                mirrored = ImageOps.mirror(upright)
+                mirrored_alpha = ImageOps.mirror(alpha)
+                cache[key] = (upright, mirrored, alpha, mirrored_alpha)
+            except Exception:  # noqa: BLE001 -- missing/corrupt art must not break the loop
+                logger.warning("oled-display: could not load dino sprite %s", filename, exc_info=True)
+                cache[key] = None
+        self._dino_sprite_cache = cache
+        return cache
 
     def _draw_dino_frame(self, level: int, frame: int) -> None:
-        """A little dinosaur that paces back and forth across the panel
-        while idle (self._dino_x/_dino_dir persist across frames so it
-        actually walks rather than teleporting, reset each time
-        idle-animation restarts), legs alternating each frame for a
-        walking gait. A short "!" pops up over its head on any frame
-        with recent activity (level > 0) -- "it noticed something" --
-        rather than changing the walk cycle itself, so the constant
-        back-and-forth pacing reads the same whether the mesh is busy
-        or not and the activity cue stays a clean, separate signal."""
+        """A little dinosaur -- real running sprites, not drawn shapes
+        -- that paces back and forth across the panel while idle
+        (self._dino_x/_dino_dir persist across frames so it actually
+        walks rather than teleporting, reset each time idle-animation
+        restarts), 3-frame leg animation cycling as it goes. A cactus
+        appears on any frame with recent activity (level > 0) -- "it
+        noticed something" -- rather than changing the walk cycle
+        itself, so the constant back-and-forth pacing reads the same
+        whether the mesh is busy or not and the activity cue stays a
+        clean, separate signal."""
         from luma.core.render import canvas
 
+        sprites = self._dino_sprites()
+        run = sprites.get(f"run{(frame % 3) + 1}")
+        if run is None:
+            return  # art failed to load -- nothing sane to draw this frame
+        upright, mirrored, alpha, mirrored_alpha = run
+        sprite_w, sprite_h = upright.size
+
         width, height = self._cfg["width"], self._cfg["height"]
-        min_x, max_x = 2, max(2, width - self._DINO_W - 2)
+        ground = sprites.get("ground")
+        ground_h = ground[0].size[1] if ground else 4
+        ground_y = height - ground_h
+
+        min_x, max_x = 0, max(0, width - sprite_w)
         self._dino_x += self._dino_dir * self._DINO_SPEED
         if self._dino_x >= max_x:
             self._dino_x, self._dino_dir = max_x, -1
@@ -724,33 +778,36 @@ class DisplayService:
             self._dino_x, self._dino_dir = min_x, 1
         x = self._dino_x
         facing_right = self._dino_dir > 0
-        ground_y = height - 6
-        body_top = ground_y - self._DINO_H
-        bx0, bx1 = x, x + int(self._DINO_W * 0.7)
+        sprite = upright if facing_right else mirrored
+        sprite_alpha = alpha if facing_right else mirrored_alpha
+        dino_y = ground_y - sprite_h + 2  # +2: sprites carry a couple px of empty footing
 
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
-            draw.line((0, ground_y, width, ground_y), fill="white")  # the ground
-            draw.ellipse((bx0, body_top, bx1, body_top + self._DINO_H), outline="white")
-            # Head: a small blob at whichever end it's facing.
-            head_dx = 6 if facing_right else -6
-            head_x0, head_x1 = sorted(((bx1 - 3) if facing_right else (bx0 - 3),
-                                        (bx1 - 3 + head_dx) if facing_right else (bx0 - 3 + head_dx)))
-            draw.ellipse((head_x0, body_top - 2, head_x1, body_top + 7), outline="white")
-            # Tail stub at the back.
-            tail_x = bx0 if facing_right else bx1
-            tail_dx = -6 if facing_right else 6
-            draw.line((tail_x, body_top + self._DINO_H - 3, tail_x + tail_dx, body_top + self._DINO_H + 2), fill="white")
-            # Alternating legs -- a simple 2-frame walk cycle.
-            leg_phase = frame % 2
-            for i, lx in enumerate((bx0 + 3, bx1 - 5)):
-                lean = 2 if i == leg_phase else -2
-                draw.line((lx, body_top + self._DINO_H - 1, lx + lean, ground_y), fill="white")
+            if ground is not None:
+                ground_img, _, ground_alpha, _ = ground
+                for gx in range(0, width, ground_img.size[0]):
+                    cv.image.paste(ground_img, (gx, ground_y), ground_alpha)
+            cv.image.paste(sprite, (x, dino_y), sprite_alpha)
             if level > 0:
-                bang_x = (head_x0 + head_x1) // 2
-                draw.line((bang_x, body_top - 10, bang_x, body_top - 5), fill="white")
-                draw.point((bang_x, body_top - 3), fill="white")
+                cactus = sprites.get("cactus")
+                if cactus is not None:
+                    # Positioned a fixed gap AHEAD of the dino's current
+                    # travel direction, not a fixed screen position --
+                    # the dino paces the full width continuously, so a
+                    # fixed spot (e.g. screen center) gets walked
+                    # straight through and overlapped regularly. Still
+                    # clamped to stay on-screen near the edges, where
+                    # the gap can't always be honored (acceptable --
+                    # the dino also turns around at the same edges).
+                    c_upright, _, c_alpha, _ = cactus
+                    c_w = c_upright.size[0]
+                    gap = 15
+                    cx = x + sprite_w + gap if facing_right else x - c_w - gap
+                    cx = max(0, min(cx, width - c_w))
+                    cy = ground_y - c_upright.size[1] + 2
+                    cv.image.paste(c_upright, (cx, cy), c_alpha)
         self._capture_frame(cv.image, is_status=False)
 
     _MATRIX_COLS = 16
