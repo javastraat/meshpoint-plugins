@@ -98,6 +98,15 @@ class DisplayService:
         self._level_decay_tick = 0
         self._last_seen_announce_ts: str | None = None
         self._anim_frame = 0
+        # "matrix" falling-streak state -- a list of independent drop
+        # dicts ({"col", "head" (float, accumulated), "speed"}), see
+        # _draw_matrix_frame. Persists across frames for the same reason
+        # the dino's position does: an accumulated float position is
+        # what lets each drop's speed vary safely, unlike the original
+        # per-column `frame // speed` formula this replaced (changing
+        # speed there would snap the streak to a different position
+        # instead of smoothly accelerating).
+        self._matrix_drops: list = []
         # "pet" (dinosaur) walk state -- persists across frames so it
         # actually paces back and forth rather than teleporting; reset
         # each time the idle animation (re)starts, see _idle_animation_loop().
@@ -711,6 +720,7 @@ class DisplayService:
         nothing in the log to explain why."""
         frame_interval = 1.0 / self._IDLE_ANIM_FPS
         self._last_seen_announce_ts = None  # re-seed fresh each (re)start
+        self._matrix_drops = []
         self._dino_x = 0  # walk from the left edge each time "pet" (re)starts
         self._dino_dir = 1
         self._dino_speed = float(self._DINO_SPEED)
@@ -1360,24 +1370,36 @@ class DisplayService:
     # of this did and looked like flashing noise, not rain) is the usual
     # substitute for a fade.
     _MATRIX_TRAIL = 5
+    # Independent-drop population, inspired by luma.examples' own
+    # matrix.py (github.com/rm-hull/luma.examples) -- each drop is its
+    # own object with an accumulated position + a random speed, rather
+    # than one fixed streak per column. The reference targets color
+    # LED matrices (a 16-step RGB fade trail, much higher pixel density)
+    # neither of which apply to a small monochrome OLED, so only the
+    # drop-population STRUCTURE is borrowed, not its rendering.
+    _MATRIX_MAX_DROPS = 24  # cap -- keeps a 128x64 panel legible, not cluttered
+    _MATRIX_SPAWN_CHANCE = 0.25  # per tick, while under the cap
+    _MATRIX_SPEED_RANGE = (0.3, 1.2)  # rows/tick, picked per drop at spawn
 
     def _draw_matrix_frame(self, frame: int) -> None:
-        """Classic "digital rain" -- a short streak per column falls
-        from the top and wraps back around, each column at its own
-        speed and phase (seeded off the column index) so they don't all
-        advance in lockstep, which is what made the first version of
-        this read as flashing rather than falling.
+        """Classic "digital rain" -- multiple independent streaks
+        ("drops"), each its own column/position/speed, fall from the
+        top and get removed once fully past the bottom (replacing the
+        earlier single-streak-per-column design, which also wrapped
+        forever instead of actually despawning).
 
-        Deliberately NOT reactive to activity level, unlike the three
-        pet styles -- tried scaling the fall speed by level and reverted
-        it the same day: recomputing `head` from `frame * speed_mult`
-        each tick means any change in speed_mult snaps the streak to a
-        different position instantly instead of smoothly accelerating,
-        which read as the rain randomly jumping to a different screen
-        rather than speeding up. Making this reactive properly would
-        need an accumulated position (add a variable increment per
-        frame, not multiply a monotonic frame counter by a value that
-        itself changes), not attempted here."""
+        Each drop's position (`head`) is a genuine accumulator
+        (`head += speed` every tick) rather than derived from the frame
+        counter -- this is what makes activity-reactive speed safe to
+        add later, unlike the original `frame // speed_mult` formula:
+        tried scaling THAT by activity level once and reverted the same
+        day, since recomputing `head` from frame * a value that itself
+        changes snaps the streak to a different position the instant
+        speed changes, instead of smoothly accelerating (read as the
+        rain randomly jumping to a different screen). An accumulator
+        has no such discontinuity -- changing `speed` only changes
+        future increments, never the current position -- so that door
+        is open again if ever wanted, just not done here."""
         from luma.core.render import canvas
         from PIL import ImageFont
 
@@ -1386,14 +1408,28 @@ class DisplayService:
         col_w = max(6, width // self._MATRIX_COLS)
         row_h = 10
         rows = height // row_h + 1
-        cycle = rows + self._MATRIX_TRAIL
+        num_cols = width // col_w
+
+        if len(self._matrix_drops) < self._MATRIX_MAX_DROPS and random.random() < self._MATRIX_SPAWN_CHANCE:
+            self._matrix_drops.append({
+                "col": random.randrange(num_cols),
+                "head": 0.0,
+                "speed": random.uniform(*self._MATRIX_SPEED_RANGE),
+            })
+
+        alive = []
+        for drop in self._matrix_drops:
+            drop["head"] += drop["speed"]
+            if drop["head"] - self._MATRIX_TRAIL <= rows:
+                alive.append(drop)
+        self._matrix_drops = alive
 
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
-            for col in range(width // col_w):
-                speed = 1 + col % 3  # 1x/2x/3x -- columns drift out of sync
-                head = (frame // speed + col * 5) % cycle
+            for drop in self._matrix_drops:
+                col = drop["col"]
+                head = int(drop["head"])
                 for row in range(rows):
                     dist = head - row
                     if not (0 <= dist < self._MATRIX_TRAIL):
