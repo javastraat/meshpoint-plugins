@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import random
 import signal
 import socket
 import time
@@ -105,6 +106,14 @@ class DisplayService:
         # _draw_dino_frame's own docstring for the full lifecycle.
         self._cactus_x: int | None = None
         self._cactus_spawn_dir = 1
+        # Which cluster variant is currently planted (one of
+        # _DINO_CACTUS_ASSET_NAMES, picked at random on spawn) -- only
+        # meaningful while self._cactus_x is not None.
+        self._cactus_sprite = None
+        # Which ground-texture variant this idle session is using,
+        # picked at random once per (re)start (see
+        # _idle_animation_loop's reset block) rather than every frame.
+        self._ground_choice = None
         self._dino_jumps = 0
         self._dino_vy = 0
         self._dino_jump_dy = 0
@@ -618,6 +627,8 @@ class DisplayService:
         self._dino_dir = 1
         self._dino_speed = float(self._DINO_SPEED)
         self._cactus_x = None
+        self._cactus_sprite = None
+        self._ground_choice = None  # re-pick a random ground texture this (re)start
         self._dino_jumps = 0
         self._dino_vy = 0
         self._dino_jump_dy = 0
@@ -755,9 +766,24 @@ class DisplayService:
         "run1": "trex-up-1s.png",
         "run2": "trex-up-2s.png",
         "run3": "trex-up-3s.png",
-        "cactus": "cacti-small-small-small.png",
-        "ground": "ground-1.png",
     }
+    # Every cactus asset in the source repo is already a pre-bundled
+    # cluster (no standalone single-cactus sprite exists upstream, same
+    # as the real Chrome Dino game) -- one gets picked at random each
+    # time a new obstacle spawns, instead of always the same cluster.
+    _DINO_CACTUS_ASSET_NAMES = [
+        "cacti-small-small-small.png",
+        "cacti-big-small.png",
+        "cacti-small-big.png",
+        "cacti-big-big.png",
+    ]
+    # 5 ground-texture variants (differ only in the pebble-dash pattern
+    # below the main line) -- one is picked at random each time the idle
+    # animation (re)starts, for a bit of visual variety session to
+    # session rather than the exact same texture every time.
+    _DINO_GROUND_ASSET_NAMES = [
+        "ground-1.png", "ground-2.png", "ground-3.png", "ground-4.png", "ground-5.png",
+    ]
 
     # 5x8 "vertical byte" digit font -- same one t-rex-duino (MIT) uses for
     # its own score display, ported as plain data rather than an asset
@@ -844,18 +870,41 @@ class DisplayService:
         from PIL import Image, ImageOps
 
         assets_dir = Path(__file__).resolve().parent / "assets" / "dino"
-        cache: dict = {}
-        for key, filename in self._DINO_ASSET_NAMES.items():
+
+        def load(filename: str):
             try:
                 rgba = Image.open(assets_dir / filename).convert("RGBA")
                 alpha = rgba.split()[-1]
-                upright = rgba.convert("L").point(lambda p: 255 if p > 128 else 0).convert("1")
+                # Threshold the ALPHA channel, not the RGB luminosity --
+                # alpha already fully describes the shape (opaque =
+                # foreground, transparent = background) and is the same
+                # mask used below for the actual paste, so deriving the
+                # "1"-mode silhouette from it is both correct and
+                # independent of whatever RGB color the source art
+                # happens to use for its foreground pixels. Thresholding
+                # on luminosity instead silently broke ground-1.png,
+                # whose line art is a mid-gray (83,83,83) rather than
+                # white like the other sprites -- under 128 luminosity,
+                # so it thresholded to black and pasted invisibly onto
+                # the black OLED background ("dino walks on nothing").
+                upright = alpha.point(lambda p: 255 if p > 128 else 0).convert("1")
                 mirrored = ImageOps.mirror(upright)
                 mirrored_alpha = ImageOps.mirror(alpha)
-                cache[key] = (upright, mirrored, alpha, mirrored_alpha)
+                return (upright, mirrored, alpha, mirrored_alpha)
             except Exception:  # noqa: BLE001 -- missing/corrupt art must not break the loop
                 logger.warning("oled-display: could not load dino sprite %s", filename, exc_info=True)
-                cache[key] = None
+                return None
+
+        cache: dict = {}
+        for key, filename in self._DINO_ASSET_NAMES.items():
+            cache[key] = load(filename)
+        # Lists, not single entries -- one of each is picked at random
+        # (see _draw_dino_frame) instead of always using the same single
+        # cluster/texture. `None` entries (a missing/corrupt file) are
+        # dropped here rather than at the call site, so picking "any"
+        # from the list can never land on a dead one.
+        cache["cacti"] = [s for s in (load(f) for f in self._DINO_CACTUS_ASSET_NAMES) if s is not None]
+        cache["grounds"] = [s for s in (load(f) for f in self._DINO_GROUND_ASSET_NAMES) if s is not None]
         self._dino_sprite_cache = cache
         return cache
 
@@ -905,7 +954,11 @@ class DisplayService:
         sprite_w, sprite_h = upright.size
 
         width, height = self._cfg["width"], self._cfg["height"]
-        ground = sprites.get("ground")
+        if self._ground_choice is None:
+            grounds = sprites.get("grounds") or []
+            if grounds:
+                self._ground_choice = random.choice(grounds)
+        ground = self._ground_choice
         ground_h = ground[0].size[1] if ground else 4
         ground_y = height - ground_h
 
@@ -928,15 +981,21 @@ class DisplayService:
         sprite = upright if facing_right else mirrored
         sprite_alpha = alpha if facing_right else mirrored_alpha
 
-        cactus = sprites.get("cactus")
-        c_w = cactus[0].size[0] if cactus is not None else 0
+        cacti = sprites.get("cacti") or []
 
         # -- cactus lifecycle: spawn / clear / scrap ----------------
         if self._cactus_x is None:
-            if level > 0 and cactus is not None:
+            if level > 0 and cacti:
+                # Pick a random CANDIDATE cluster variant for this
+                # potential spawn -- only committed to self._cactus_sprite
+                # below if it actually fits on-screen this tick (same
+                # "try again next tick otherwise" reasoning as the
+                # position check itself).
+                candidate = random.choice(cacti)
+                cand_w = candidate[0].size[0]
                 spawn_x = (
                     x + sprite_w + self._DINO_CACTUS_SPAWN_GAP if facing_right
-                    else x - self._DINO_CACTUS_SPAWN_GAP - c_w
+                    else x - self._DINO_CACTUS_SPAWN_GAP - cand_w
                 )
                 # Deliberately NOT clamped into place when it wouldn't
                 # fit on-screen (e.g. the dino is already near a wall)
@@ -950,11 +1009,13 @@ class DisplayService:
                 # just tries again next tick, by which point the dino
                 # has either moved on or bounced off the wall with the
                 # full width ahead of it again.
-                if 0 <= spawn_x <= width - c_w:
+                if 0 <= spawn_x <= width - cand_w:
                     self._cactus_x = spawn_x
                     self._cactus_spawn_dir = self._dino_dir
+                    self._cactus_sprite = candidate
         elif self._dino_dir != self._cactus_spawn_dir:
             self._cactus_x = None  # bounced before reaching it -- scrap it, no score
+            self._cactus_sprite = None
         else:
             # "Cleared" = the dino's leading edge has reached the
             # cactus's near edge -- the same reference point the jump
@@ -971,16 +1032,21 @@ class DisplayService:
             # dino is still well up in the air (jump triggers up to
             # _DINO_JUMP_TRIGGER_GAP before reaching it), which reads as
             # "jumped it" with no overlap ever rendered.
+            planted_w = self._cactus_sprite[0].size[0]
             cleared = (
                 (facing_right and x + sprite_w >= self._cactus_x)
-                or (not facing_right and x <= self._cactus_x + c_w)
+                or (not facing_right and x <= self._cactus_x + planted_w)
             )
             if cleared:
                 self._dino_jumps += 1
                 self._cactus_x = None
+                self._cactus_sprite = None
                 self._dino_speed = max(self._DINO_SPEED, self._dino_speed - self._DINO_SPEED_DECAY_STEP)
 
         # -- auto-jump once close enough to whatever's still planted --
+        # (self._cactus_sprite is guaranteed set whenever self._cactus_x
+        # is, so c_w below is always meaningful here.)
+        c_w = self._cactus_sprite[0].size[0] if self._cactus_sprite is not None else 0
         if self._cactus_x is not None and self._dino_vy == 0 and self._dino_jump_dy == 0:
             gap = (
                 self._cactus_x - (x + sprite_w) if facing_right
@@ -999,8 +1065,8 @@ class DisplayService:
                 ground_img, _, ground_alpha, _ = ground
                 for gx in range(0, width, ground_img.size[0]):
                     cv.image.paste(ground_img, (gx, ground_y), ground_alpha)
-            if self._cactus_x is not None and cactus is not None:
-                c_upright, _, c_alpha, _ = cactus
+            if self._cactus_x is not None and self._cactus_sprite is not None:
+                c_upright, _, c_alpha, _ = self._cactus_sprite
                 cy = ground_y - c_upright.size[1] + 2
                 cv.image.paste(c_upright, (self._cactus_x, cy), c_alpha)
             cv.image.paste(sprite, (x, dino_y), sprite_alpha)
