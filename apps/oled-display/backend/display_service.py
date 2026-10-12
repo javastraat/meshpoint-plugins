@@ -588,15 +588,27 @@ class DisplayService:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
 
-    _IDLE_ANIM_FPS = 3
+    # Started at 3fps (deliberately conservative -- no measurement of this
+    # board's real I2C throughput at animation rates existed yet). Bumped
+    # to 8fps after live feedback that 3fps looked choppy/stepped rather
+    # than smooth walking motion -- a small monochrome OLED push (128x64
+    # 1bpp = 1024 bytes) is comfortably fast enough over I2C even at
+    # standard 100kHz, let alone the 400kHz "fast mode" most of these
+    # boards run at, so there's plenty of headroom left above 8fps too if
+    # it ever needs to go higher. Deliberately NOT paired with a speed
+    # rescale (_DINO_SPEED and friends are all still per-TICK px amounts,
+    # unchanged) -- the jump arc's horizontal clearance depends on
+    # (px-per-tick x ticks-in-the-arc), both of which are tick-counted,
+    # not wall-clock, so changing only the tick RATE here keeps the
+    # already-tuned cactus-clearing geometry exactly as it was, while
+    # making the walk itself both faster in real time and smoother to
+    # watch, as two sides of the same fix.
+    _IDLE_ANIM_FPS = 8
 
     async def _idle_animation_loop(self) -> None:
         """Runs only while idle (the blank timeout has elapsed and
         idle_animation isn't "off"), independent of refresh_seconds --
-        its own faster ~3fps ticker, deliberately conservative: nothing
-        in this plugin (or this repo) has ever measured this board's
-        actual I2C throughput at animation rates, and the Pi is already
-        busy with SDR capture/decode/the dashboard itself. Each frame is
+        its own faster ticker (see _IDLE_ANIM_FPS above). Each frame is
         wrapped in its own try/except (log + skip) so one bad draw can't
         silently freeze the whole idle-anim task on its last frame with
         nothing in the log to explain why."""
