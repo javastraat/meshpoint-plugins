@@ -885,8 +885,21 @@ class DisplayService:
                     x + sprite_w + self._DINO_CACTUS_SPAWN_GAP if facing_right
                     else x - self._DINO_CACTUS_SPAWN_GAP - c_w
                 )
-                self._cactus_x = max(0, min(spawn_x, width - c_w))
-                self._cactus_spawn_dir = self._dino_dir
+                # Deliberately NOT clamped into place when it wouldn't
+                # fit on-screen (e.g. the dino is already near a wall)
+                # -- clamping used to squeeze it in right next to, or
+                # even overlapping, the dino's current position, which
+                # skips the jump-trigger window entirely (the gap is
+                # already <= 0 the moment it appears) and "clears" on
+                # the very next frame with no jump ever firing -- an
+                # instant appear-then-vanish right on top of the dino,
+                # confirmed live. Skipping the spawn this tick instead
+                # just tries again next tick, by which point the dino
+                # has either moved on or bounced off the wall with the
+                # full width ahead of it again.
+                if 0 <= spawn_x <= width - c_w:
+                    self._cactus_x = spawn_x
+                    self._cactus_spawn_dir = self._dino_dir
         elif self._dino_dir != self._cactus_spawn_dir:
             self._cactus_x = None  # bounced before reaching it -- scrap it, no score
         else:
