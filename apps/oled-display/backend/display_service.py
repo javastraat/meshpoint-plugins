@@ -871,23 +871,35 @@ class DisplayService:
 
         assets_dir = Path(__file__).resolve().parent / "assets" / "dino"
 
-        def load(filename: str):
+        def load(filename: str, use_alpha_threshold: bool = False):
             try:
                 rgba = Image.open(assets_dir / filename).convert("RGBA")
                 alpha = rgba.split()[-1]
-                # Threshold the ALPHA channel, not the RGB luminosity --
-                # alpha already fully describes the shape (opaque =
-                # foreground, transparent = background) and is the same
-                # mask used below for the actual paste, so deriving the
-                # "1"-mode silhouette from it is both correct and
-                # independent of whatever RGB color the source art
-                # happens to use for its foreground pixels. Thresholding
-                # on luminosity instead silently broke ground-1.png,
-                # whose line art is a mid-gray (83,83,83) rather than
-                # white like the other sprites -- under 128 luminosity,
-                # so it thresholded to black and pasted invisibly onto
-                # the black OLED background ("dino walks on nothing").
-                upright = alpha.point(lambda p: 255 if p > 128 else 0).convert("1")
+                if use_alpha_threshold:
+                    # Ground only: its line art is a SINGLE uniform
+                    # mid-gray (83,83,83) tone with no lighter "highlight"
+                    # tier at all, so luminosity-thresholding it (below)
+                    # hides the whole thing -- confirmed by direct pixel
+                    # inspection, not guessing ("dino walks on nothing,
+                    # not even a line"). Alpha alone is the correct shape
+                    # mask here since there's no tonal detail to lose.
+                    upright = alpha.point(lambda p: 255 if p > 128 else 0).convert("1")
+                else:
+                    # Dino/cacti: this art is actually THREE-TONE, not
+                    # anti-aliased noise -- confirmed by a direct
+                    # histogram (trex-up-1s.png's opaque pixels are
+                    # exactly L=83 x180, L=247 x10, L=255 x93, nothing
+                    # in between). The L=83 "shadow" tier is deliberately
+                    # thresholded to black/hidden here, carving out the
+                    # leg gaps/eye/outline detail that gives the sprite
+                    # its line-art look; only the L=247/255 "highlight"
+                    # tier renders white. Alpha-thresholding this instead
+                    # (as ground needed) paints the shadow tier white
+                    # too, flattening the whole sprite into a solid blob
+                    # with no internal detail -- confirmed as a real
+                    # regression, not a misreading, via a direct
+                    # before/after pixel-count comparison once reported.
+                    upright = rgba.convert("L").point(lambda p: 255 if p > 128 else 0).convert("1")
                 mirrored = ImageOps.mirror(upright)
                 mirrored_alpha = ImageOps.mirror(alpha)
                 return (upright, mirrored, alpha, mirrored_alpha)
@@ -904,7 +916,10 @@ class DisplayService:
         # dropped here rather than at the call site, so picking "any"
         # from the list can never land on a dead one.
         cache["cacti"] = [s for s in (load(f) for f in self._DINO_CACTUS_ASSET_NAMES) if s is not None]
-        cache["grounds"] = [s for s in (load(f) for f in self._DINO_GROUND_ASSET_NAMES) if s is not None]
+        cache["grounds"] = [
+            s for s in (load(f, use_alpha_threshold=True) for f in self._DINO_GROUND_ASSET_NAMES)
+            if s is not None
+        ]
         self._dino_sprite_cache = cache
         return cache
 
