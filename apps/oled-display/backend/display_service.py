@@ -92,6 +92,10 @@ class DisplayService:
         self._idle_anim_task: asyncio.Task | None = None
         self._rf_activity_count = 0
         self._activity_level = 0
+        # Ticks since _activity_level last moved -- see the decay step
+        # in _idle_animation_loop for why this isn't a plain per-tick
+        # halving.
+        self._level_decay_tick = 0
         self._last_seen_announce_ts: str | None = None
         self._anim_frame = 0
         # "pet" (dinosaur) walk state -- persists across frames so it
@@ -659,6 +663,17 @@ class DisplayService:
     # watch, as two sides of the same fix.
     _IDLE_ANIM_FPS = 8
 
+    # How long (in ticks) an isolated activity blip stays visible before
+    # _activity_level starts fading -- ~2s at the current _IDLE_ANIM_FPS.
+    # A plain "halve every tick" decay (the original design) made a
+    # single packet's level=1 blip vanish on the very next tick -- too
+    # fast to ever register visually, and short enough that the walking-
+    # speed ramp it drives (_draw_dino_frame's `level > 0` check) barely
+    # got one tick's worth of ramp-up before decaying straight back down
+    # again. Confirmed via live feedback once the HUD made the raw
+    # number actually visible for the first time.
+    _LEVEL_DECAY_EVERY_N_TICKS = 16
+
     async def _idle_animation_loop(self) -> None:
         """Runs only while idle (the blank timeout has elapsed and
         idle_animation isn't "off"), independent of refresh_seconds --
@@ -679,11 +694,23 @@ class DisplayService:
         self._dino_vy = 0
         self._dino_jump_dy = 0
         self._dino_jump_skip = False
+        self._level_decay_tick = 0
         while not self._stop_event.is_set():
             try:
                 rf = self._rf_activity_count_and_reset()
                 rt = await self._reticulum_activity_delta()
-                self._activity_level = self._activity_level // 2 + rf + rt
+                if rf or rt:
+                    # Fresh activity -- bump the level and restart the
+                    # "how long until this starts fading" clock, so a
+                    # steady trickle of packets keeps it elevated
+                    # continuously instead of decaying between them.
+                    self._activity_level += rf + rt
+                    self._level_decay_tick = 0
+                else:
+                    self._level_decay_tick += 1
+                    if self._level_decay_tick >= self._LEVEL_DECAY_EVERY_N_TICKS:
+                        self._activity_level = max(0, self._activity_level - 1)
+                        self._level_decay_tick = 0
                 mode = self._current_idle_animation()
                 if mode == "blink":
                     self._draw_blink_frame(self._activity_level, self._anim_frame)
