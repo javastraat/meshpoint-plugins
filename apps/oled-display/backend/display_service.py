@@ -110,10 +110,14 @@ class DisplayService:
         # _DINO_CACTUS_ASSET_NAMES, picked at random on spawn) -- only
         # meaningful while self._cactus_x is not None.
         self._cactus_sprite = None
-        # Which ground-texture variant this idle session is using,
-        # picked at random once per (re)start (see
-        # _idle_animation_loop's reset block) rather than every frame.
+        # Which ground-texture variant is currently showing -- picked at
+        # random on (re)start and again every _DINO_GROUND_ROTATE_TICKS
+        # ticks (see _draw_dino_frame), not just once per session, so
+        # all 5 textures actually get seen on a long-running screensaver
+        # instead of whichever one got picked at the start sticking
+        # around forever.
         self._ground_choice = None
+        self._ground_rotate_tick = 0
         self._dino_jumps = 0
         self._dino_vy = 0
         self._dino_jump_dy = 0
@@ -629,6 +633,7 @@ class DisplayService:
         self._cactus_x = None
         self._cactus_sprite = None
         self._ground_choice = None  # re-pick a random ground texture this (re)start
+        self._ground_rotate_tick = 0
         self._dino_jumps = 0
         self._dino_vy = 0
         self._dino_jump_dy = 0
@@ -778,12 +783,14 @@ class DisplayService:
         "cacti-big-big.png",
     ]
     # 5 ground-texture variants (differ only in the pebble-dash pattern
-    # below the main line) -- one is picked at random each time the idle
-    # animation (re)starts, for a bit of visual variety session to
-    # session rather than the exact same texture every time.
+    # below the main line) -- one is picked at random on (re)start and
+    # then again every _DINO_GROUND_ROTATE_TICKS ticks, so a
+    # long-running screensaver actually cycles through more than
+    # whichever one happened to get picked first.
     _DINO_GROUND_ASSET_NAMES = [
         "ground-1.png", "ground-2.png", "ground-3.png", "ground-4.png", "ground-5.png",
     ]
+    _DINO_GROUND_ROTATE_TICKS = 160  # ~20s at the current _IDLE_ANIM_FPS
 
     # 5x8 "vertical byte" digit font -- same one t-rex-duino (MIT) uses for
     # its own score display, ported as plain data rather than an asset
@@ -969,10 +976,18 @@ class DisplayService:
         sprite_w, sprite_h = upright.size
 
         width, height = self._cfg["width"], self._cfg["height"]
-        if self._ground_choice is None:
-            grounds = sprites.get("grounds") or []
-            if grounds:
-                self._ground_choice = random.choice(grounds)
+        grounds = sprites.get("grounds") or []
+        if grounds and (
+            self._ground_choice is None
+            or self._ground_rotate_tick >= self._DINO_GROUND_ROTATE_TICKS
+        ):
+            # Exclude the current one so a rotation is always an actual
+            # visible change, not a 1-in-5 chance of picking the same
+            # texture again and looking like nothing happened.
+            choices = [g for g in grounds if g is not self._ground_choice] or grounds
+            self._ground_choice = random.choice(choices)
+            self._ground_rotate_tick = 0
+        self._ground_rotate_tick += 1
         ground = self._ground_choice
         ground_h = ground[0].size[1] if ground else 4
         ground_y = height - ground_h
