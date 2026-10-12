@@ -1127,7 +1127,11 @@ class DisplayService:
             cv.image.paste(sprite, (x, dino_y), sprite_alpha)
             if self._dino_jumps:
                 text = str(self._dino_jumps)
-                self._draw_digits(draw, width - 6 * len(text) - 2, 2, text)
+                # -8 (not -2) puts the rightmost lit pixel exactly 10px
+                # from the panel edge regardless of digit count -- the
+                # old 4px margin was getting clipped by some panels'
+                # physical bezel.
+                self._draw_digits(draw, width - 6 * len(text) - 8, 2, text)
         self._capture_frame(cv.image, is_status=False)
 
     _MATRIX_COLS = 16
