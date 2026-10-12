@@ -115,6 +115,12 @@ class DisplayService:
         # _DINO_CACTUS_ASSET_NAMES, picked at random on spawn) -- only
         # meaningful while self._cactus_x is not None.
         self._cactus_sprite = None
+        # Ticks remaining before a new cactus is allowed to spawn, even
+        # if level > 0 -- without this, sustained high activity means a
+        # new cactus appears the instant the last one clears, forever
+        # (confirmed live: "poor dino" nonstop jumping). Set on every
+        # clear/scrap, counted down once per tick regardless of level.
+        self._cactus_cooldown = 0
         # Which ground-texture variant is currently showing -- picked at
         # random on (re)start and again every _DINO_GROUND_ROTATE_TICKS
         # ticks (see _draw_dino_frame), not just once per session, so
@@ -377,7 +383,7 @@ class DisplayService:
         title = "MESHPOINT"
         sub_font = self._boot_font()
         icon = self._boot_icon()
-        icon_h = icon[0].size[1] + 2 if icon is not None else 0  # +2: gap before the title
+        icon_h = icon[0].size[1] + 5 if icon is not None else 0  # +5 (was +2): more breathing room before the title
 
         cv = canvas(self._device)
         with cv as draw:
@@ -698,6 +704,7 @@ class DisplayService:
         self._dino_speed = float(self._DINO_SPEED)
         self._cactus_x = None
         self._cactus_sprite = None
+        self._cactus_cooldown = 0
         self._ground_choice = None  # re-pick a random ground texture this (re)start
         self._ground_rotate_tick = 0
         self._dino_jumps = 0
@@ -845,6 +852,12 @@ class DisplayService:
     _DINO_JUMP_MOMENTUM = 8  # same constant t-rex-duino's own TrexPlayer uses
     _DINO_JUMP_TRIGGER_GAP = 12  # px of clearance ahead of a cactus that triggers a jump
     _DINO_CACTUS_SPAWN_GAP = 45  # px ahead of the dino a new cactus is planted
+    # Minimum rest between cacti, regardless of how high `level` stays --
+    # without this, sustained activity means a fresh cactus appears the
+    # instant the last one clears, forever ("poor dino" nonstop jumping,
+    # confirmed live). ~2s at the current 8fps -- same "couple of
+    # seconds" scale as the Level-decay timing.
+    _DINO_CACTUS_COOLDOWN_TICKS = 16
     _DINO_ASSET_NAMES = {
         "run1": "trex-up-1s.png",
         "run2": "trex-up-2s.png",
@@ -1067,10 +1080,12 @@ class DisplayService:
         sprite_alpha = alpha if facing_right else mirrored_alpha
 
         cacti = sprites.get("cacti") or []
+        if self._cactus_cooldown > 0:
+            self._cactus_cooldown -= 1
 
         # -- cactus lifecycle: spawn / clear / scrap ----------------
         if self._cactus_x is None:
-            if level > 0 and cacti:
+            if level > 0 and cacti and self._cactus_cooldown <= 0:
                 # Pick a random CANDIDATE cluster variant for this
                 # potential spawn -- only committed to self._cactus_sprite
                 # below if it actually fits on-screen this tick (same
@@ -1101,6 +1116,7 @@ class DisplayService:
         elif self._dino_dir != self._cactus_spawn_dir:
             self._cactus_x = None  # bounced before reaching it -- scrap it, no score
             self._cactus_sprite = None
+            self._cactus_cooldown = self._DINO_CACTUS_COOLDOWN_TICKS
         else:
             # "Cleared" = the dino's leading edge has reached the
             # cactus's near edge -- the same reference point the jump
@@ -1126,6 +1142,7 @@ class DisplayService:
                 self._dino_jumps += 1
                 self._cactus_x = None
                 self._cactus_sprite = None
+                self._cactus_cooldown = self._DINO_CACTUS_COOLDOWN_TICKS
                 self._dino_speed = max(self._DINO_SPEED, self._dino_speed - self._DINO_SPEED_DECAY_STEP)
 
         # -- auto-jump once close enough to whatever's still planted --
