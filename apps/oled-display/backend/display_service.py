@@ -977,17 +977,14 @@ class DisplayService:
 
         width, height = self._cfg["width"], self._cfg["height"]
         grounds = sprites.get("grounds") or []
-        if grounds and (
-            self._ground_choice is None
-            or self._ground_rotate_tick >= self._DINO_GROUND_ROTATE_TICKS
-        ):
-            # Exclude the current one so a rotation is always an actual
-            # visible change, not a 1-in-5 chance of picking the same
-            # texture again and looking like nothing happened.
-            choices = [g for g in grounds if g is not self._ground_choice] or grounds
-            self._ground_choice = random.choice(choices)
-            self._ground_rotate_tick = 0
-        self._ground_rotate_tick += 1
+        if self._ground_choice is None and grounds:
+            # First frame of this idle session -- needs SOMETHING to
+            # render immediately, can't wait for a "safe moment" (see
+            # the gated rotation below) before ever showing ground at
+            # all. All 5 variants share the same (64, 12) size, so
+            # picking one here doesn't affect ground_h/ground_y/dino_y
+            # below regardless of which one a later rotation swaps to.
+            self._ground_choice = random.choice(grounds)
         ground = self._ground_choice
         ground_h = ground[0].size[1] if ground else 4
         ground_y = height - ground_h
@@ -1088,9 +1085,37 @@ class DisplayService:
         jump_offset = self._dino_jump_step()
         dino_y = ground_y - sprite_h + 2 - jump_offset  # +2: sprites carry a couple px of empty footing
 
+        # Ground rotation only actually happens at a wall-bounce turnaround
+        # while the dino is on the ground (not mid-jump) -- swapping the
+        # texture out from under a dino that's mid-stride or airborne
+        # would be a visible "glitch", whereas the brief pause-at-the-wall
+        # moment is the one point in the cycle nothing else is moving.
+        # The interval still elapses on schedule (self._ground_rotate_tick
+        # keeps counting past the threshold) -- it just waits for the next
+        # qualifying moment instead of firing immediately, which is a
+        # matter of a tick or two on a panel this size either way.
+        self._ground_rotate_tick += 1
+        at_wall = x <= min_x or x >= max_x
+        not_jumping = self._dino_vy == 0 and self._dino_jump_dy == 0
+        if (
+            grounds and at_wall and not_jumping
+            and self._ground_rotate_tick >= self._DINO_GROUND_ROTATE_TICKS
+        ):
+            # Exclude the current one so a rotation is always an actual
+            # visible change, not a 1-in-5 chance of picking the same
+            # texture again and looking like nothing happened.
+            choices = [g for g in grounds if g is not self._ground_choice] or grounds
+            self._ground_choice = random.choice(choices)
+            self._ground_rotate_tick = 0
+
         cv = canvas(self._device)
         with cv as draw:
             draw.rectangle(self._device.bounding_box, outline="white", fill="black")
+            # Re-read rather than reusing the `ground` local above -- the
+            # rotation check just now may have updated self._ground_choice
+            # this very tick, and the new texture should show immediately,
+            # not one frame late.
+            ground = self._ground_choice
             if ground is not None:
                 ground_img, _, ground_alpha, _ = ground
                 for gx in range(0, width, ground_img.size[0]):
