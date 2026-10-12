@@ -98,6 +98,16 @@ class DisplayService:
         self._dino_x = 0
         self._dino_dir = 1
         self._dino_sprite_cache: dict | None = None
+        # Cactus-as-landmark + jump state. _cactus_x is None when no
+        # cactus is currently planted; once spawned it stays at a fixed
+        # position (doesn't track the dino) until cleared, see
+        # _draw_dino_frame's own docstring for the full lifecycle.
+        self._cactus_x: int | None = None
+        self._cactus_spawn_dir = 1
+        self._dino_jumps = 0
+        self._dino_vy = 0
+        self._dino_jump_dy = 0
+        self._dino_jump_skip = False
 
     # -- lifecycle ---------------------------------------------------
 
@@ -593,6 +603,11 @@ class DisplayService:
         self._last_seen_announce_ts = None  # re-seed fresh each (re)start
         self._dino_x = 0  # walk from the left edge each time "pet" (re)starts
         self._dino_dir = 1
+        self._cactus_x = None
+        self._dino_jumps = 0
+        self._dino_vy = 0
+        self._dino_jump_dy = 0
+        self._dino_jump_skip = False
         while not self._stop_event.is_set():
             try:
                 rf = self._rf_activity_count_and_reset()
@@ -701,6 +716,9 @@ class DisplayService:
         self._capture_frame(cv.image, is_status=False)
 
     _DINO_SPEED = 2
+    _DINO_JUMP_MOMENTUM = 8  # same constant t-rex-duino's own TrexPlayer uses
+    _DINO_JUMP_TRIGGER_GAP = 12  # px of clearance ahead of a cactus that triggers a jump
+    _DINO_CACTUS_SPAWN_GAP = 45  # px ahead of the dino a new cactus is planted
     _DINO_ASSET_NAMES = {
         "run1": "trex-up-1s.png",
         "run2": "trex-up-2s.png",
@@ -708,6 +726,70 @@ class DisplayService:
         "cactus": "cacti-small-small-small.png",
         "ground": "ground-1.png",
     }
+
+    # 5x8 "vertical byte" digit font -- same one t-rex-duino (MIT) uses for
+    # its own score display, ported as plain data rather than an asset
+    # file since it's just 10 short byte tuples. Each digit is 5 columns;
+    # each byte is one column, bit 0 = top pixel, bit 7 = bottom -- the
+    # classic Adafruit_GFX glyph encoding. A tiny retro font reads as much
+    # more "Chrome Dino" than Pillow's own default font would for a score.
+    _DIGIT_FONT = {
+        "0": (0x3E, 0x51, 0x49, 0x45, 0x3E),
+        "1": (0x00, 0x42, 0x7F, 0x40, 0x00),
+        "2": (0x42, 0x61, 0x51, 0x49, 0x46),
+        "3": (0x21, 0x41, 0x45, 0x4B, 0x31),
+        "4": (0x18, 0x14, 0x12, 0x7F, 0x10),
+        "5": (0x27, 0x45, 0x45, 0x45, 0x39),
+        "6": (0x3C, 0x4A, 0x49, 0x49, 0x30),
+        "7": (0x01, 0x71, 0x09, 0x05, 0x03),
+        "8": (0x36, 0x49, 0x49, 0x49, 0x36),
+        "9": (0x06, 0x49, 0x49, 0x29, 0x1E),
+    }
+
+    def _draw_digits(self, draw, x: int, y: int, text: str) -> None:
+        """Draws `text` (digits only) with `_DIGIT_FONT`. See that
+        dict's own docstring comment for the byte encoding."""
+        cx = x
+        for ch in text:
+            glyph = self._DIGIT_FONT.get(ch)
+            if glyph is None:
+                cx += 6
+                continue
+            for col, byte in enumerate(glyph):
+                for row in range(8):
+                    if byte & (1 << row):
+                        draw.point((cx + col, y + row), fill="white")
+            cx += 6  # 5px glyph + 1px gap
+
+    def _dino_jump_step(self) -> int:
+        """One tick of TrexPlayer.motionStep() from AlexIII/t-rex-duino
+        (MIT), ported as-is rather than inventing new jump physics for
+        something this decorative -- a classic integer-decay "gravity"
+        arc (symmetric rise/fall) that the original project already
+        tuned to feel right. `_dino_jump_skip` pauses the step exactly
+        once whenever |vy| <= 1 ("a dirty fix to prolong the jump" per
+        the original's own comment) -- without it the hang time at the
+        peak feels too abrupt. Returns the current height above the
+        ground (0 = standing/landed). A defensive clamp against
+        _dino_jump_dy ever going negative is NOT in the original -- added
+        here since this port hasn't been hand-verified tick-by-tick
+        against the source the way the rest of this plugin's logic has
+        been smoke-tested, and a glitchy one-frame dip below ground
+        would be visible on a screensaver nobody's meant to scrutinize
+        this closely anyway."""
+        if self._dino_vy == 0 and self._dino_jump_dy == 0:
+            return 0
+        if abs(self._dino_vy) <= 1 and not self._dino_jump_skip:
+            self._dino_jump_skip = True
+            return self._dino_jump_dy
+        self._dino_jump_skip = False
+        self._dino_jump_dy += self._dino_vy
+        if self._dino_jump_dy <= 0:
+            self._dino_jump_dy = 0
+            self._dino_vy = 0
+        else:
+            self._dino_vy -= 1
+        return self._dino_jump_dy
 
     def _dino_sprites(self) -> dict:
         """Lazily loads + caches the real Chrome-Dino sprite art (MIT,
@@ -750,12 +832,24 @@ class DisplayService:
         -- that paces back and forth across the panel while idle
         (self._dino_x/_dino_dir persist across frames so it actually
         walks rather than teleporting, reset each time idle-animation
-        restarts), 3-frame leg animation cycling as it goes. A cactus
-        appears on any frame with recent activity (level > 0) -- "it
-        noticed something" -- rather than changing the walk cycle
-        itself, so the constant back-and-forth pacing reads the same
-        whether the mesh is busy or not and the activity cue stays a
-        clean, separate signal."""
+        restarts), 3-frame leg animation cycling as it goes.
+
+        A cactus is a planted LANDMARK, not an accessory that tracks
+        the dino: it spawns a fixed gap ahead of the dino's current
+        position the moment activity (level > 0) is seen with none
+        already planted, then stays at that exact spot -- regardless of
+        `level` bouncing back to 0 in the meantime, which is what kept
+        an earlier dino-relative version flickering -- until the dino
+        either clears it (walks all the way past, in the direction it
+        was already heading when the cactus spawned -- scores a point)
+        or the dino bounces off a wall first (direction reverses before
+        reaching it -- the obstacle is scrapped, no score, a fresh one
+        can spawn next time). Approaching a planted cactus closely
+        enough auto-triggers a jump (`_dino_jump_step()`, ported jump
+        physics) -- there's no user input here, so "jumped it" and
+        "cleared it" are the same event in practice. `self._dino_jumps`
+        (shown via `_draw_digits`) just counts cleared cacti -- the only
+        thing resembling a "score" this purely decorative feature has."""
         from luma.core.render import canvas
 
         sprites = self._dino_sprites()
@@ -780,7 +874,56 @@ class DisplayService:
         facing_right = self._dino_dir > 0
         sprite = upright if facing_right else mirrored
         sprite_alpha = alpha if facing_right else mirrored_alpha
-        dino_y = ground_y - sprite_h + 2  # +2: sprites carry a couple px of empty footing
+
+        cactus = sprites.get("cactus")
+        c_w = cactus[0].size[0] if cactus is not None else 0
+
+        # -- cactus lifecycle: spawn / clear / scrap ----------------
+        if self._cactus_x is None:
+            if level > 0 and cactus is not None:
+                spawn_x = (
+                    x + sprite_w + self._DINO_CACTUS_SPAWN_GAP if facing_right
+                    else x - self._DINO_CACTUS_SPAWN_GAP - c_w
+                )
+                self._cactus_x = max(0, min(spawn_x, width - c_w))
+                self._cactus_spawn_dir = self._dino_dir
+        elif self._dino_dir != self._cactus_spawn_dir:
+            self._cactus_x = None  # bounced before reaching it -- scrap it, no score
+        else:
+            # "Cleared" = the dino's leading edge has reached the
+            # cactus's near edge -- the same reference point the jump
+            # trigger below uses -- not "fully past the far edge."
+            # Horizontal speed is fixed and unaffected by jumping, so
+            # the ~20-tick arc only covers a fixed ~40px regardless of
+            # jump height (and jumping higher to cover more ground would
+            # send the dino flying off the top of a 64px panel long
+            # before it covered enough). Requiring the full body past
+            # the far edge needs more ground-coverage than any sane jump
+            # height can give, and meant the dino visibly landed back
+            # down on top of the cactus before "clearing" it. Clearing
+            # at first contact instead removes the cactus while the
+            # dino is still well up in the air (jump triggers up to
+            # _DINO_JUMP_TRIGGER_GAP before reaching it), which reads as
+            # "jumped it" with no overlap ever rendered.
+            cleared = (
+                (facing_right and x + sprite_w >= self._cactus_x)
+                or (not facing_right and x <= self._cactus_x + c_w)
+            )
+            if cleared:
+                self._dino_jumps += 1
+                self._cactus_x = None
+
+        # -- auto-jump once close enough to whatever's still planted --
+        if self._cactus_x is not None and self._dino_vy == 0 and self._dino_jump_dy == 0:
+            gap = (
+                self._cactus_x - (x + sprite_w) if facing_right
+                else x - (self._cactus_x + c_w)
+            )
+            if 0 <= gap <= self._DINO_JUMP_TRIGGER_GAP:
+                self._dino_vy = self._DINO_JUMP_MOMENTUM
+
+        jump_offset = self._dino_jump_step()
+        dino_y = ground_y - sprite_h + 2 - jump_offset  # +2: sprites carry a couple px of empty footing
 
         cv = canvas(self._device)
         with cv as draw:
@@ -789,25 +932,14 @@ class DisplayService:
                 ground_img, _, ground_alpha, _ = ground
                 for gx in range(0, width, ground_img.size[0]):
                     cv.image.paste(ground_img, (gx, ground_y), ground_alpha)
+            if self._cactus_x is not None and cactus is not None:
+                c_upright, _, c_alpha, _ = cactus
+                cy = ground_y - c_upright.size[1] + 2
+                cv.image.paste(c_upright, (self._cactus_x, cy), c_alpha)
             cv.image.paste(sprite, (x, dino_y), sprite_alpha)
-            if level > 0:
-                cactus = sprites.get("cactus")
-                if cactus is not None:
-                    # Positioned a fixed gap AHEAD of the dino's current
-                    # travel direction, not a fixed screen position --
-                    # the dino paces the full width continuously, so a
-                    # fixed spot (e.g. screen center) gets walked
-                    # straight through and overlapped regularly. Still
-                    # clamped to stay on-screen near the edges, where
-                    # the gap can't always be honored (acceptable --
-                    # the dino also turns around at the same edges).
-                    c_upright, _, c_alpha, _ = cactus
-                    c_w = c_upright.size[0]
-                    gap = 15
-                    cx = x + sprite_w + gap if facing_right else x - c_w - gap
-                    cx = max(0, min(cx, width - c_w))
-                    cy = ground_y - c_upright.size[1] + 2
-                    cv.image.paste(c_upright, (cx, cy), c_alpha)
+            if self._dino_jumps:
+                text = str(self._dino_jumps)
+                self._draw_digits(draw, width - 6 * len(text) - 2, 2, text)
         self._capture_frame(cv.image, is_status=False)
 
     _MATRIX_COLS = 16
