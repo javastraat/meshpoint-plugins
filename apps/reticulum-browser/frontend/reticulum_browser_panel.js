@@ -41,6 +41,11 @@ function _rbIsFavourite(hash) {
     return _rbFavourites().some((f) => f.hash === hash);
 }
 
+// Lenient Micron alignment (see MicronParser's lenientAlign), per browser.
+const _RB_LENIENT_KEY = 'meshpoint.rbLenientMicron';
+function _rbLenient() { try { return localStorage.getItem(_RB_LENIENT_KEY) === '1'; } catch (_) { return false; } }
+function _rbSetLenient(on) { try { localStorage.setItem(_RB_LENIENT_KEY, on ? '1' : '0'); } catch (_) {} }
+
 function _rbToggleFavourite(hash, name) {
     const list = _rbFavourites();
     const idx = list.findIndex((f) => f.hash === hash);
@@ -98,6 +103,8 @@ class ReticulumBrowserPanel {
                             title="This node also runs Meshpoint — click to view its info.mu" hidden>&#9432;</button>
                     <button class="terminal-button" type="button" data-rb-raw
                             title="Toggle raw/rendered view">{ }</button>
+                    <button class="terminal-button" type="button" data-rb-lenient
+                            title="Lenient centring (MeshChatX-compatible): a \`c at the start of a line always centres that line. Off = standard NomadNet Micron, where \`c toggles">\`c</button>
                     <button class="terminal-button" type="button" data-rb-fingerprint
                             title="Identify yourself to this node — your LXMF address will be included in its next form submission"
                             disabled>ID</button>
@@ -124,6 +131,8 @@ class ReticulumBrowserPanel {
         this._fwdBtn = this._q('[data-rb-forward]');
         this._reloadBtn = this._q('[data-rb-reload]');
         this._rawBtn = this._q('[data-rb-raw]');
+        this._lenientBtn = this._q('[data-rb-lenient]');
+        this._lenientBtn.classList.toggle('is-active', _rbLenient());
         this._fingerprintBtn = this._q('[data-rb-fingerprint]');
         this._meshpointBtn = this._q('[data-rb-meshpoint]');
         this._tabstripEl = this._q('[data-rb-tabstrip]');
@@ -162,6 +171,13 @@ class ReticulumBrowserPanel {
         this._fwdBtn.addEventListener('click', () => this._historyGo(1));
         this._reloadBtn.addEventListener('click', () => this._reload());
         this._rawBtn.addEventListener('click', () => this._toggleRaw());
+        this._lenientBtn.addEventListener('click', () => {
+            const on = !_rbLenient();
+            _rbSetLenient(on);
+            this._lenientBtn.classList.toggle('is-active', on);
+            const tab = this._activeTab();
+            if (tab) this._renderPage(tab);
+        });
         this._fingerprintBtn.addEventListener('click', () => this._sendFingerprint());
         this._pageEl.addEventListener('click', (e) => {
             const a = e.target.closest('a[data-nomad-url]');
@@ -277,7 +293,7 @@ class ReticulumBrowserPanel {
         }
         this._pageEl.textContent = '';
         if (window.MicronParser) {
-            this._pageEl.appendChild(new window.MicronParser(true).parseToHtml(tab.content));
+            this._pageEl.appendChild(new window.MicronParser(true, { lenientAlign: _rbLenient() }).parseToHtml(tab.content));
         } else {
             this._pageEl.textContent = tab.content;
         }

@@ -16,8 +16,14 @@
  */
 class MicronParser {
 
-    constructor(darkTheme = true) {
+    // options.lenientAlign: an alignment tag (`c / `l / `r) at the very start
+    // of a line *sets* that alignment instead of toggling it. Standard Micron
+    // (NomadNet, original MeshChat) toggles and carries the alignment over to
+    // later lines, so a page that repeats `c on every line comes out every
+    // other line centred; MeshChatX shows those pages centred. Off by default.
+    constructor(darkTheme = true, options = {}) {
         this.darkTheme = darkTheme;
+        this.lenientAlign = !!(options && options.lenientAlign);
         this.DEFAULT_FG_DARK = "ddd";
         this.DEFAULT_FG_LIGHT = "222";
         this.DEFAULT_BG = "default";
@@ -319,9 +325,12 @@ class MicronParser {
                         state.bg_color = this.DEFAULT_BG;
                         state.align = state.default_align;
                         break;
-                    case "c": state.align = (state.align === "center") ? state.default_align : "center"; break;
-                    case "l": state.align = (state.align === "left") ? state.default_align : "left"; break;
-                    case "r": state.align = (state.align === "right") ? state.default_align : "right"; break;
+                    case "c": case "l": case "r": {
+                        const want = c === "c" ? "center" : c === "l" ? "left" : "right";
+                        if (this.lenientAlign && i === 1) state.align = want;   // tag opens the line
+                        else state.align = (state.align === want) ? state.default_align : want;
+                        break;
+                    }
                     case "a": state.align = state.default_align; break;
                     case "<": {
                         if (part.length > 0) { output.push([this.stateToStyle(state), part]); part = ""; }
