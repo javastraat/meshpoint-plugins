@@ -55,7 +55,8 @@
     font-size: 13px;
 }
 .rb-bar-row .terminal-button { flex: 0 0 auto; }
-.rb-bar-row [data-rb-raw].is-active {
+.rb-bar-row [data-rb-raw].is-active,
+.rb-bar-row [data-rb-lenient].is-active {
     color: var(--accent-cyan, #06b6d4);
     border-color: currentColor;
 }

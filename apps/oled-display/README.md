@@ -32,7 +32,9 @@ with a compatible I2C OLED at a known address should work.
   incompatible init sequence), blank timeout, refresh interval, and a
   **live preview** of exactly what's currently on the physical screen
   (`GET /api/oled-display/preview.png`, the same PNG the service last
-  pushed to the panel).
+  pushed to the panel). While a screensaver is running the preview
+  mirrors it live (polling every 0.5 s instead of 5 s); after a plain
+  blank it keeps showing the last status screen instead of going black.
 
 ## What's not here (yet)
 

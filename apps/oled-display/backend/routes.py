@@ -42,6 +42,7 @@ async def status():
         **state.to_dict(),
         "display_open": _service.is_open if _service else False,
         "blanked": _service.is_blanked if _service else False,
+        "idle_animating": _service.is_idle_animating if _service else False,
         "current_page": _service.current_page_title if _service else None,
         "last_rendered_at": (
             _service.last_status_rendered_at.isoformat()
@@ -52,19 +53,28 @@ async def status():
 
 @router.get("/preview.png")
 async def preview():
-    """The last real status frame drawn -- not necessarily what's on
-    the hardware at this exact instant. Deliberately serves
-    `last_status_png` rather than `last_frame_png`: once the physical
-    panel auto-blanks for burn-in, mirroring it exactly would make the
-    settings-page preview go black too, which defeats its purpose
-    ("what did it last say") right when auto-blank kicks in. `status`
-    above reports `blanked` separately so the frontend can still say
-    the physical screen is currently off. 503 (not a blank image) when
-    nothing's been rendered yet, so the frontend can tell "not
-    started" apart from "genuinely blank"."""
-    if _service is None or _service.last_status_png is None:
+    """What the settings page's preview shows. While a screensaver
+    (idle_animation) is running, that's the live frame
+    (`last_frame_png`) -- an exact mirror of the panel, so the preview
+    animates along with it. Otherwise it's `last_status_png`, the last
+    real status frame: once the physical panel plain-blanks for
+    burn-in, mirroring it exactly would make the preview go black too,
+    which defeats its purpose ("what did it last say") right when
+    auto-blank kicks in. `status` above reports `blanked` and
+    `idle_animating` separately so the frontend can label which one
+    it's showing. 503 (not a blank image) when nothing's been rendered
+    yet, so the frontend can tell "not started" apart from "genuinely
+    blank"."""
+    if _service is None:
         raise HTTPException(503, "No frame rendered yet")
-    return Response(content=_service.last_status_png, media_type="image/png")
+    png = (
+        _service.last_frame_png
+        if _service.is_idle_animating
+        else _service.last_status_png
+    )
+    if png is None:
+        raise HTTPException(503, "No frame rendered yet")
+    return Response(content=png, media_type="image/png")
 
 
 @router.post("/wake")

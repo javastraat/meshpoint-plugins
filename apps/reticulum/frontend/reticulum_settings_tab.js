@@ -138,7 +138,8 @@ class ReticulumSettingsTab {
                                 <label class="cfg-field cfg-field--narrow">
                                     <span class="cfg-field__label">TX power (dBm)</span>
                                     <input class="cfg-field__input" type="number"
-                                           min="0" max="22" step="1" data-rt-tx-power>
+                                           min="0" max="28" step="1" data-rt-tx-power>
+                                    <span class="cfg-field__hint">Up to 22 on plain SX1262 boards, 28 with a PA (Heltec V4). EU 869.4&ndash;869.65 MHz: max 27 dBm ERP <em>including</em> antenna gain.</span>
                                 </label>
                                 <label class="cfg-field cfg-field--narrow">
                                     <span class="cfg-field__label">Spreading factor</span>

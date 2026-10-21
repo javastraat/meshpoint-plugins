@@ -6,7 +6,9 @@
  * /api/oled-display/preview.png. Deliberately doesn't go black when the
  * physical panel auto-blanks for burn-in; a separate note (driven by
  * /status's `blanked` flag) says so instead, and the Wake button forces
- * the physical panel back on and restarts its blank timer.
+ * the physical panel back on and restarts its blank timer. While a
+ * screensaver is running the preview mirrors it live instead, polling
+ * faster (FAST_POLL_MS) so the animation is actually visible.
  *
  * `route` below MUST match plugin.toml's [sidebar].route.
  */
@@ -16,6 +18,9 @@ window.registerSidebarPage({
 });
 
 class OledDisplayPage {
+    static SLOW_POLL_MS = 5000;
+    static FAST_POLL_MS = 500;
+
     constructor() {
         this.root = null;
         this._pollTimer = null;
@@ -40,9 +45,7 @@ class OledDisplayPage {
                     <div class="oled-preview">
                         <img data-oled-preview alt="Current OLED contents" hidden>
                     </div>
-                    <p class="oled-blanked-note" data-oled-blanked-note hidden>
-                        Physical screen is off (idle timeout, or put to sleep) -- showing its last contents.
-                    </p>
+                    <p class="oled-blanked-note" data-oled-blanked-note hidden></p>
                     <div class="oled-preview-actions">
                         <button class="terminal-button" type="button" data-oled-wake>Wake display</button>
                         <button class="terminal-button" type="button" data-oled-sleep>Sleep display</button>
@@ -185,13 +188,25 @@ class OledDisplayPage {
         this._nextPageButton.addEventListener('click', () => this._nextPage());
 
         this._loadSettings();
-        this._refreshPreview();
-        this._pollTimer = setInterval(() => this._refreshPreview(), 5000);
+        this._idleAnimating = false;
+        this._mounted = true;
+        this._pollLoop();
     }
 
     unmount() {
-        if (this._pollTimer) clearInterval(this._pollTimer);
+        this._mounted = false;
+        if (this._pollTimer) clearTimeout(this._pollTimer);
         this._pollTimer = null;
+    }
+
+    // setTimeout chain rather than setInterval: the delay depends on the
+    // last /status (fast while a screensaver is animating), and a slow
+    // Pi response can never stack overlapping fetches.
+    async _pollLoop() {
+        await this._refreshPreview();
+        if (!this._mounted) return;
+        const delay = this._idleAnimating ? OledDisplayPage.FAST_POLL_MS : OledDisplayPage.SLOW_POLL_MS;
+        this._pollTimer = setTimeout(() => this._pollLoop(), delay);
     }
 
     _q(sel) { return this.root.querySelector(sel); }
@@ -236,14 +251,21 @@ class OledDisplayPage {
             return;
         }
 
-        // Separate call: preview.png always serves the last real status
-        // frame now (never a blank one), so whether the physical panel
-        // is actually blanked right now -- and which rotate_screens page
-        // is currently up -- has to come from /status instead.
+        // Separate call: preview.png serves the live frame while a
+        // screensaver runs and the last real status frame otherwise
+        // (never a plain blank one), so which of those it is -- and
+        // which rotate_screens page is currently up -- has to come from
+        // /status instead.
         try {
             const r = await fetch('/api/oled-display/status', { credentials: 'same-origin' });
             const s = r.ok ? await r.json() : {};
-            this._blankedNote.hidden = !s.blanked;
+            this._idleAnimating = !!s.idle_animating;
+            if (s.idle_animating) {
+                this._blankedNote.textContent = 'Screensaver running -- showing it live. Wake the display to return to status.';
+            } else if (s.blanked) {
+                this._blankedNote.textContent = 'Physical screen is off (idle timeout, or put to sleep) -- showing its last contents.';
+            }
+            this._blankedNote.hidden = !(s.idle_animating || s.blanked);
             this._pageControls.hidden = !s.rotate_screens;
             this._currentPageLabel.textContent = s.current_page ? `Showing: ${s.current_page}` : '';
         } catch (_) {}

@@ -173,7 +173,7 @@ class ReticulumUpdate(BaseModel):
     rnode_serial_port: str = ""
     rnode_frequency_hz: int = Field(..., ge=100_000_000, le=1_000_000_000)
     rnode_bandwidth_hz: int = 125_000
-    rnode_tx_power: int = Field(20, ge=0, le=22)
+    rnode_tx_power: int = Field(20, ge=0, le=28)   # 28: boards with a PA (Heltec V4); plain SX1262 tops out at 22
     rnode_spreading_factor: int = Field(8, ge=5, le=12)
     rnode_coding_rate: int = Field(5, ge=5, le=8)
     rnode_interface_mode: InterfaceMode = "full"
