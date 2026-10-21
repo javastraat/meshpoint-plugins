@@ -229,6 +229,13 @@ class NomadNode:
         d = self._destination
         pages = self._pages_dir
 
+        # auto_compress=False on every handler below: RNS bz2-compresses
+        # responses by default when it shrinks the payload, which text-heavy
+        # Micron pages almost always trigger -- but at least one real client
+        # (ratspeak-handheld's D1L Nomad Browser) deliberately implements
+        # only a "lite" Resource subset and rejects compressed resources
+        # outright (ErrUnsupported). Serving uncompressed keeps pages
+        # loadable there at the cost of a few more bytes on the air.
         op_index = pages / "index.mu"
         d.register_request_handler(
             "/page/index.mu",
@@ -237,28 +244,33 @@ class NomadNode:
                 else self._serve_index
             ),
             allow=RNS.Destination.ALLOW_ALL,
+            auto_compress=False,
         )
         d.register_request_handler(
             "/page/info.mu",
             response_generator=self._serve_info,
             allow=RNS.Destination.ALLOW_ALL,
+            auto_compress=False,
         )
         d.register_request_handler(
             "/page/nodes.mu",
             response_generator=self._serve_nodes,
             allow=RNS.Destination.ALLOW_ALL,
+            auto_compress=False,
         )
         if self._spaceapi_url:
             d.register_request_handler(
                 "/page/spacestate.mu",
                 response_generator=self._serve_spacestate,
                 allow=RNS.Destination.ALLOW_ALL,
+                auto_compress=False,
             )
         if self._events_ical_url:
             d.register_request_handler(
                 "/page/events.mu",
                 response_generator=self._serve_events,
                 allow=RNS.Destination.ALLOW_ALL,
+                auto_compress=False,
             )
 
         if pages.is_dir():
@@ -269,6 +281,7 @@ class NomadNode:
                     f"/page/{p.name}",
                     response_generator=self._make_file_server(p),
                     allow=RNS.Destination.ALLOW_ALL,
+                    auto_compress=False,
                 )
             files_dir = pages / "files"
             if files_dir.is_dir():
@@ -279,6 +292,7 @@ class NomadNode:
                             f"/file/{rel}",
                             response_generator=self._make_file_server(p, is_file=True),
                             allow=RNS.Destination.ALLOW_ALL,
+                            auto_compress=False,
                         )
 
     def reload_pages(self) -> None:
