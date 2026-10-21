@@ -65,6 +65,15 @@ _SPACESTATE_TOKEN = b"{spacestate}"
 # names is ignored (never registered, not counted as a page).
 _GENERATED_PAGES = frozenset({"index.mu", "info.mu", "nodes.mu", "spacestate.mu", "events.mu"})
 
+# /page/nodes.mu pagination: some clients (e.g. ratspeak-handheld's D1L Nomad
+# Browser) implement only a size-bounded "lite" Resource transfer (~3.7KB,
+# 8 parts x 464B) and reject anything bigger outright, regardless of
+# compression. A Meshpoint that's heard 100+ nomadnetwork.node peers --
+# real-world names run heavy on multi-byte emoji/fancy-unicode -- blows well
+# past that in one unpaginated page. 20 rows/page keeps a page comfortably
+# under the ceiling even with long multi-byte names on every row.
+_NODES_PAGE_SIZE = 20
+
 # figlet "standard" MESHPOINT, 53 cols, no backticks. Emitted raw (never
 # through _esc -- Micron renders "\" literally, and _esc would double it).
 # LEFT-ALIGNED on purpose: Micron's `c centres each line independently, so
@@ -654,16 +663,46 @@ class NomadNode:
     def _serve_nodes(self, request_path, data, request_id, link_id, remote_identity, requested_at):
         self._requests_served += 1
         nodes = self._stats.get("recent_nodes") or []
+        total = len(nodes)
+
+        # `data` is the msgpack-decoded submitted-fields dict, or None for a
+        # plain link click with nothing submitted (our own "More" link below
+        # bakes a literal `s=<offset>` field; see the sample index.mu's
+        # pagination example for the same convention). Field values always
+        # arrive as text, never as a native int -- parse defensively and
+        # fall back to the start on anything malformed rather than erroring.
+        offset = 0
+        if isinstance(data, dict):
+            try:
+                offset = max(0, int(data.get("s", 0)))
+            except (TypeError, ValueError):
+                offset = 0
+        offset = min(offset, total)
+
         lines = [
             "`c`F0a0`!NomadNet nodes " + _esc(self._name) + " has heard`!`f`a",
             "-",
         ]
         if not nodes:
             lines.append("(none yet -- this Meshpoint hasn't heard a nomadnetwork.node announce)")
-        for n in nodes[:100]:
+        page = nodes[offset:offset + _NODES_PAGE_SIZE]
+        for n in page:
             label = _esc(n.get("display_name") or n.get("destination_hash", ""))
             dh = n.get("destination_hash", "")
             lines.append(f"`[{label}`{dh}:/page/index.mu]")
+
+        if total > _NODES_PAGE_SIZE:
+            shown_end = offset + len(page)
+            lines += ["", f"`F888Showing {offset + 1}-{shown_end} of {total}`f"]
+            nav = []
+            if offset > 0:
+                back = max(0, offset - _NODES_PAGE_SIZE)
+                nav.append(f"`[<< Back`:/page/nodes.mu`s={back}]")
+            if shown_end < total:
+                nav.append(f"`[More >>`:/page/nodes.mu`s={shown_end}]")
+            if nav:
+                lines.append("     ".join(nav))
+
         # info.mu already links here; close the loop back the other way.
         # Both always generated/registered unconditionally, so no config
         # gate needed (unlike the spacestate/events cross-links above).

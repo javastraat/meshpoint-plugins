@@ -315,6 +315,56 @@ class TestNomadNode(unittest.TestCase):
         self.assertIn(":/page/info.mu", text)
         self.assertIn(":/page/index.mu", text)
 
+    def _many_nodes(self, count: int) -> list:
+        return [
+            {"display_name": f"node{i}", "destination_hash": f"hash{i}"}
+            for i in range(count)
+        ]
+
+    def test_serve_nodes_paginates_past_page_size(self) -> None:
+        n = self._node()
+        n._stats = {"recent_nodes": self._many_nodes(45)}
+        first = n._serve_nodes("/page/nodes.mu", None, 1, 1, None, 0).decode()
+        self.assertIn("node0", first)
+        self.assertIn("node19", first)
+        self.assertNotIn("node20", first)
+        self.assertIn("Showing 1-20 of 45", first)
+        self.assertIn(":/page/nodes.mu`s=20]", first)
+        self.assertNotIn("<< Back", first)  # first page has nothing before it
+
+    def test_serve_nodes_second_page_from_submitted_offset(self) -> None:
+        n = self._node()
+        n._stats = {"recent_nodes": self._many_nodes(45)}
+        second = n._serve_nodes("/page/nodes.mu", {"s": "20"}, 1, 1, None, 0).decode()
+        self.assertIn("node20", second)
+        self.assertIn("node39", second)
+        self.assertNotIn("node40", second)
+        self.assertIn("Showing 21-40 of 45", second)
+        self.assertIn(":/page/nodes.mu`s=40]", second)  # More ->
+        self.assertIn(":/page/nodes.mu`s=0]", second)  # << Back
+
+    def test_serve_nodes_last_page_has_no_more_link(self) -> None:
+        n = self._node()
+        n._stats = {"recent_nodes": self._many_nodes(45)}
+        last = n._serve_nodes("/page/nodes.mu", {"s": "40"}, 1, 1, None, 0).decode()
+        self.assertIn("node44", last)
+        self.assertIn("Showing 41-45 of 45", last)
+        self.assertNotIn("More >>", last)
+        self.assertIn("<< Back", last)
+
+    def test_serve_nodes_ignores_malformed_offset(self) -> None:
+        n = self._node()
+        n._stats = {"recent_nodes": self._many_nodes(45)}
+        text = n._serve_nodes("/page/nodes.mu", {"s": "not-a-number"}, 1, 1, None, 0).decode()
+        self.assertIn("Showing 1-20 of 45", text)  # falls back to the start
+
+    def test_serve_nodes_small_list_has_no_pagination_controls(self) -> None:
+        n = self._node()
+        n._stats = {"recent_nodes": self._many_nodes(5)}
+        text = n._serve_nodes("/page/nodes.mu", None, 1, 1, None, 0).decode()
+        self.assertNotIn("Showing", text)
+        self.assertNotIn("More >>", text)
+
 
 class TestNomadNodeTalkbackSnapshots(unittest.TestCase):
     """Public plain-text accessors added for backend/talkback.py -- a
