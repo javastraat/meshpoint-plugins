@@ -145,19 +145,77 @@ class TestContentNarrowing(unittest.TestCase):
         out = html_to_micron.convert(html, "Page", "https://example.org/a")
         self.assertIn("Plain page, no special container.", out)
 
-    def test_outer_content_wrapper_is_used_when_mw_content_text_is_nested_inside(self) -> None:
-        # Real MediaWiki nests #content > #bodyContent > #mw-content-text;
-        # whichever is seen FIRST in document order wins the narrowing (all
-        # three are "the real article", just at different wrapper depths).
+    def test_narrowest_container_wins_when_several_are_nested(self) -> None:
+        # Real MediaWiki nests #content > #bodyContent > #mw-content-text,
+        # and the outer two commonly carry sibling chrome (a review notice,
+        # a "jump to navigation" skip link, category links) right next to
+        # the real content -- so the *narrowest* one present wins, not
+        # simply whichever is first in document order (that would always
+        # pick the broadest, chrome-including wrapper).
         html = (
             '<div id="content">'
-            '<div id="bodyContent"><div id="mw-content-text">'
-            "<p>Real article text.</p>"
-            "</div></div>"
+            '<p>Chrome that lives in #content but outside #bodyContent.</p>'
+            '<div id="bodyContent">'
+            '<p>Chrome that lives in #bodyContent but outside #mw-content-text.</p>'
+            '<div id="mw-content-text"><p>Real article text.</p></div>'
+            "</div>"
             "</div>"
         )
         out = html_to_micron.convert(html, "Page", "https://example.org/a")
         self.assertIn("Real article text.", out)
+        self.assertNotIn("Chrome that lives in #content", out)
+        self.assertNotIn("Chrome that lives in #bodyContent", out)
+
+
+class TestMediaWikiBoilerplateInsideContent(unittest.TestCase):
+    """Some boilerplate is a genuine descendant of the content container
+    itself (not a sibling container-narrowing alone can exclude) -- either
+    a MediaWiki-core marker (printfooter/catlinks) or a site's own
+    editorial-metadata table with no distinguishing class at all, found
+    while chasing a real scrape (eerstehulpwiki.nl/.../Splinter)."""
+
+    def _mw_content(self, inner: str) -> str:
+        return f'<div id="mw-content-text">{inner}</div>'
+
+    def test_printfooter_is_dropped(self) -> None:
+        html = self._mw_content(
+            "<p>Real text.</p>"
+            '<div class="printfooter">Retrieved from "http://example.org/x"</div>',
+        )
+        out = html_to_micron.convert(html, "Page", "https://example.org/a")
+        self.assertIn("Real text.", out)
+        self.assertNotIn("Retrieved from", out)
+
+    def test_catlinks_is_dropped(self) -> None:
+        html = self._mw_content(
+            '<p>Real text.</p><div id="catlinks">Categories: <a href="/c">Stuff</a></div>',
+        )
+        out = html_to_micron.convert(html, "Page", "https://example.org/a")
+        self.assertIn("Real text.", out)
+        self.assertNotIn("Categories:", out)
+
+    def test_leading_metadata_table_is_dropped(self) -> None:
+        # A <table> that's the first thing in the content container, before
+        # any real paragraph -- an author/reviewer box, in practice -- gets
+        # treated as site-template chrome and dropped.
+        html = self._mw_content(
+            "<table><tr><td>Author: Sija / Supervisor: Pim</td></tr></table>"
+            "<p>Real article text.</p>",
+        )
+        out = html_to_micron.convert(html, "Page", "https://example.org/a")
+        self.assertIn("Real article text.", out)
+        self.assertNotIn("Author: Sija", out)
+
+    def test_table_after_real_content_is_kept(self) -> None:
+        # The same tag, but genuinely mid-article (a dosage table, say) --
+        # only a table with nothing real before it is assumed to be chrome.
+        html = self._mw_content(
+            "<p>Real article text.</p>"
+            "<table><tr><td>Dosage: 10mg</td></tr></table>",
+        )
+        out = html_to_micron.convert(html, "Page", "https://example.org/a")
+        self.assertIn("Real article text.", out)
+        self.assertIn("Dosage: 10mg", out)
 
 
 if __name__ == "__main__":
