@@ -42,17 +42,21 @@ for `reticulum_micron.js`, ported from reticulum-meshchat, also MIT.)
 - **Form-field submission** on interactive `.mu` pages, and `/file/...`
   downloads -- ported from the reticulum plugin's own `reticulum_nomad.js`
   (same `data-nomad-fields` gathering, same download-as-blob flow).
-- **Identity fingerprinting** -- an "ID" toolbar button identifies your
-  Reticulum identity to the current node over its `RNS.Link`
-  (`link.identify(...)`), then that node's *next* form submission
-  automatically carries your LXMF address as a `dest` field -- so
-  guestbook/registration-style NomadNet pages know who's submitting
-  without you typing an address in. Not host verification (rBrowser's own
-  "fingerprint" action, read from source, turned out to be identity
-  disclosure in this direction, not the other) -- see
-  `plugins/apps/reticulum/backend/nomad.py`'s `identify_link()` for the
-  full mechanism, which lives in the reticulum plugin since it needs that
-  plugin's own RNS identity.
+- **Identity fingerprinting** -- an "ID" toolbar toggle (off by default,
+  per browser, same idiom as the \`c lenient-centring toggle next to it)
+  identifies your Reticulum identity to every node you visit over its
+  `RNS.Link` (`link.identify(...)`), once per node per tab; that node's
+  *next* form submission then automatically carries your LXMF address as
+  a `dest` field -- so guestbook/registration-style NomadNet pages know
+  who's submitting without you typing an address in. Turning the toggle
+  on also identifies you to whatever node is already open, not just ones
+  visited afterward. Was a one-shot "click before every node that needs
+  it" button; a persistent toggle means you don't have to remember to hit
+  it each time. Not host verification (rBrowser's own "fingerprint"
+  action, read from source, turned out to be identity disclosure in this
+  direction, not the other) -- see `plugins/apps/reticulum/backend/
+  nomad.py`'s `identify_link()` for the full mechanism, which lives in
+  the reticulum plugin since it needs that plugin's own RNS identity.
 - **"This node also runs Meshpoint" badge** -- a blue ⓘ button appears
   between Go and the raw/rendered toggle whenever the node you're
   browsing also serves `/page/info.mu`. Checked silently in the

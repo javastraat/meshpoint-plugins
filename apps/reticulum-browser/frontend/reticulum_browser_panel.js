@@ -46,6 +46,14 @@ const _RB_LENIENT_KEY = 'meshpoint.rbLenientMicron';
 function _rbLenient() { try { return localStorage.getItem(_RB_LENIENT_KEY) === '1'; } catch (_) { return false; } }
 function _rbSetLenient(on) { try { localStorage.setItem(_RB_LENIENT_KEY, on ? '1' : '0'); } catch (_) {} }
 
+// Auto-identify on every node you visit, per browser -- off by default
+// (identifying reveals your LXMF address to that node). Was a one-shot
+// "ID" button you had to remember to click each time a node needed it;
+// now a persistent toggle, same idiom as the lenient-centring one above.
+const _RB_AUTO_ID_KEY = 'meshpoint.rbAutoIdentify';
+function _rbAutoIdentify() { try { return localStorage.getItem(_RB_AUTO_ID_KEY) === '1'; } catch (_) { return false; } }
+function _rbSetAutoIdentify(on) { try { localStorage.setItem(_RB_AUTO_ID_KEY, on ? '1' : '0'); } catch (_) {} }
+
 function _rbToggleFavourite(hash, name) {
     const list = _rbFavourites();
     const idx = list.findIndex((f) => f.hash === hash);
@@ -105,9 +113,8 @@ class ReticulumBrowserPanel {
                             title="Toggle raw/rendered view">{ }</button>
                     <button class="terminal-button" type="button" data-rb-lenient
                             title="Lenient centring (MeshChatX-compatible): a \`c at the start of a line always centres that line. Off = standard NomadNet Micron, where \`c toggles">\`c</button>
-                    <button class="terminal-button" type="button" data-rb-fingerprint
-                            title="Identify yourself to this node — your LXMF address will be included in its next form submission"
-                            disabled>ID</button>
+                    <button class="terminal-button" type="button" data-rb-auto-id
+                            title="Auto-identify: automatically identify yourself to every node you visit — your LXMF address will be included in its form submissions. Off by default.">ID</button>
                 </div>
             </div>
 
@@ -133,7 +140,8 @@ class ReticulumBrowserPanel {
         this._rawBtn = this._q('[data-rb-raw]');
         this._lenientBtn = this._q('[data-rb-lenient]');
         this._lenientBtn.classList.toggle('is-active', _rbLenient());
-        this._fingerprintBtn = this._q('[data-rb-fingerprint]');
+        this._autoIdBtn = this._q('[data-rb-auto-id]');
+        this._autoIdBtn.classList.toggle('is-active', _rbAutoIdentify());
         this._meshpointBtn = this._q('[data-rb-meshpoint]');
         this._tabstripEl = this._q('[data-rb-tabstrip]');
         this._statusEl = this._q('[data-rb-status]');
@@ -178,7 +186,19 @@ class ReticulumBrowserPanel {
             const tab = this._activeTab();
             if (tab) this._renderPage(tab);
         });
-        this._fingerprintBtn.addEventListener('click', () => this._sendFingerprint());
+        this._autoIdBtn.addEventListener('click', () => {
+            const on = !_rbAutoIdentify();
+            _rbSetAutoIdentify(on);
+            this._autoIdBtn.classList.toggle('is-active', on);
+            // Turning it on identifies you to whatever node is already
+            // loaded right away too, not just nodes visited from now on --
+            // otherwise flipping the switch looks like it did nothing
+            // until the next navigation.
+            if (on) {
+                const tab = this._activeTab();
+                if (tab && tab.hash) this._identify(tab, { announce: true });
+            }
+        });
         this._pageEl.addEventListener('click', (e) => {
             const a = e.target.closest('a[data-nomad-url]');
             if (!a) return;
@@ -276,7 +296,6 @@ class ReticulumBrowserPanel {
         this._reloadBtn.disabled = tab.historyIdx < 0;
         this._rawBtn.classList.toggle('is-active', tab.rawMode);
         this._syncFavBtn(tab.hash ? _rbIsFavourite(tab.hash) : false);
-        this._syncFingerprintBtn(tab);
         this._syncMeshpointBtn(tab);
         this._renderPage(tab);
     }
@@ -362,6 +381,7 @@ class ReticulumBrowserPanel {
                 tab.fingerprinted = false;
                 tab.meshpointDetected = null;
                 this._checkMeshpointInfo(tab, hash);
+                if (_rbAutoIdentify()) this._identify(tab);
             }
             const known = this._nodes.find((n) => n.destination_hash === hash);
             const fav = _rbFavourites().find((f) => f.hash === hash);
@@ -457,10 +477,17 @@ class ReticulumBrowserPanel {
         }
     }
 
-    async _sendFingerprint() {
-        const tab = this._activeTab();
-        if (!tab || !tab.hash) return;
-        this._status('pending', 'Identifying yourself to this node…');
+    /** Identify to *tab*'s current node (auto-identify toggle). Idempotent
+     * per node-visit (tab.fingerprinted guards it, reset to false by
+     * _fetch()'s isNewNode branch whenever the tab navigates to a
+     * different hash). Silent by default -- this fires automatically on
+     * every new-node navigation once the toggle is on, and a status line
+     * on every single page load would get noisy fast; announce: true is
+     * for the one deliberate case (flipping the toggle on) where that
+     * feedback is actually wanted. */
+    async _identify(tab, { announce = false } = {}) {
+        if (!tab || !tab.hash || tab.fingerprinted) return;
+        if (announce) this._status('pending', 'Identifying yourself to this node…');
         try {
             const r = await fetch('/api/reticulum/nomad/fingerprint', {
                 method: 'POST',
@@ -470,14 +497,15 @@ class ReticulumBrowserPanel {
             });
             const data = await r.json().catch(() => ({}));
             if (!r.ok || !data.ok) {
-                this._status('error', data.error || `Failed (HTTP ${r.status})`);
+                if (announce) this._status('error', data.error || `Failed (HTTP ${r.status})`);
                 return;
             }
             tab.fingerprinted = true;
-            this._syncFingerprintBtn(tab);
-            this._status('success', 'Identified — your LXMF address will be included in this node’s next form submission');
+            if (announce) {
+                this._status('success', 'Identified — your LXMF address will be included in this node’s next form submission');
+            }
         } catch (e) {
-            this._status('error', `Network error: ${e.message}`);
+            if (announce) this._status('error', `Network error: ${e.message}`);
         }
     }
 
@@ -516,14 +544,6 @@ class ReticulumBrowserPanel {
         this._meshpointBtn.hidden = !detected;
     }
 
-    _syncFingerprintBtn(tab) {
-        if (!this._fingerprintBtn) return;
-        this._fingerprintBtn.disabled = !tab || !tab.hash;
-        this._fingerprintBtn.classList.toggle('is-active', !!(tab && tab.fingerprinted));
-        this._fingerprintBtn.title = tab && tab.fingerprinted
-            ? 'Already identified to this node'
-            : 'Identify yourself to this node — your LXMF address will be included in its next form submission';
-    }
 
     _status(kind, msg) {
         if (!this._statusEl) return;
