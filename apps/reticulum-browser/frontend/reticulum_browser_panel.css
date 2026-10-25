@@ -56,14 +56,15 @@
 }
 .rb-bar-row .terminal-button { flex: 0 0 auto; }
 .rb-bar-row [data-rb-raw].is-active,
-.rb-bar-row [data-rb-lenient].is-active {
+.rb-bar-row [data-rb-lenient].is-active,
+.rb-bar-row [data-rb-auto-id].is-active {
     color: var(--accent-cyan, #06b6d4);
     border-color: currentColor;
 }
 
 /* "This node also runs Meshpoint" badge -- blue on purpose, distinct
-   from the raw-toggle's cyan and the fingerprint button's default
-   styling, so it reads as its own kind of signal at a glance.
+   from the raw/lenient/auto-id toggles' shared cyan above, so it reads
+   as its own kind of signal at a glance.
 
    .terminal-button sets `display: inline-flex` -- an author-stylesheet
    rule, which always beats the browser's native `[hidden] { display:
