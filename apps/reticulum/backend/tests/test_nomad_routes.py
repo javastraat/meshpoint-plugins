@@ -91,6 +91,70 @@ class TestNodePagesRoutes(unittest.TestCase):
         body = self.client.get("/api/reticulum/nomad/sample-page").json()
         self.assertTrue(body["content"].strip())
 
+    # -- one level of subfolder (reticulum-scraper collections) --------
+
+    def test_put_then_get_roundtrips_inside_a_collection(self) -> None:
+        r = self.client.put(
+            "/api/reticulum/nomad/pages/hulp/index.mu", json={"content": "`!hi`!"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["page"]["collection"], "hulp")
+        got = self.client.get("/api/reticulum/nomad/pages/hulp/index.mu").json()
+        self.assertEqual(got["content"], "`!hi`!")
+
+    def test_list_includes_collection_pages(self) -> None:
+        self.client.put(
+            "/api/reticulum/nomad/pages/hulp/index.mu", json={"content": "x"},
+        )
+        body = self.client.get("/api/reticulum/nomad/pages").json()
+        coll = [p for p in body["pages"] if p["collection"] == "hulp"]
+        self.assertEqual([p["path"] for p in coll], ["hulp/index.mu"])
+
+    def test_put_bad_collection_slug_is_400(self) -> None:
+        r = self.client.put(
+            "/api/reticulum/nomad/pages/Hulp/index.mu", json={"content": "x"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_put_too_deep_is_400(self) -> None:
+        r = self.client.put(
+            "/api/reticulum/nomad/pages/a/b/c.mu", json={"content": "x"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_removes_a_file_inside_a_collection(self) -> None:
+        self.client.put(
+            "/api/reticulum/nomad/pages/hulp/about.mu", json={"content": "x"},
+        )
+        r = self.client.delete("/api/reticulum/nomad/pages/hulp/about.mu")
+        self.assertEqual(r.status_code, 200)
+        body = self.client.get("/api/reticulum/nomad/pages").json()
+        self.assertEqual([p for p in body["pages"] if p["collection"] == "hulp"], [])
+
+    def test_delete_folder_removes_every_page_in_it(self) -> None:
+        self.client.put(
+            "/api/reticulum/nomad/pages/hulp/index.mu", json={"content": "x"},
+        )
+        self.client.put(
+            "/api/reticulum/nomad/pages/hulp/about.mu", json={"content": "x"},
+        )
+        r = self.client.delete("/api/reticulum/nomad/pages-folder/hulp")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["deleted"])
+        self.assertFalse((Path(self.pages_dir) / "hulp").exists())
+        body = self.client.get("/api/reticulum/nomad/pages").json()
+        self.assertEqual([p for p in body["pages"] if p["collection"] == "hulp"], [])
+
+    def test_delete_folder_bad_name_is_400(self) -> None:
+        r = self.client.delete("/api/reticulum/nomad/pages-folder/UPPERCASE")
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_folder_missing_is_still_200(self) -> None:
+        # Same idempotent-delete convention as a missing file -- nothing
+        # to remove isn't an error.
+        r = self.client.delete("/api/reticulum/nomad/pages-folder/nope")
+        self.assertEqual(r.status_code, 200)
+
 
 class _FakeLxmfService:
     """Just enough of LxmfService for nomad_nodes() -- an empty roster is

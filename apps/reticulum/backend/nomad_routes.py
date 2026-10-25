@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from src.api.auth.dependencies import require_admin, require_auth
 from src.api.auth.jwt_session import SessionClaims
 
-from . import node_pages, nomad, state
+from . import node_pages, nomad, scraper, state
 from .lxmf_service import LxmfService
 
 router = APIRouter(prefix="/api/reticulum/nomad", tags=["reticulum"])
@@ -158,7 +158,7 @@ async def node_sample_page(_claims: SessionClaims = Depends(require_admin)):
     return {"content": node_pages.sample_index()}
 
 
-@router.get("/pages/{name}")
+@router.get("/pages/{name:path}")
 async def read_node_page(
     name: str, _claims: SessionClaims = Depends(require_admin),
 ):
@@ -169,7 +169,7 @@ async def read_node_page(
     return {"name": name, "content": node_pages.read_page(_pages_dir(), name)}
 
 
-@router.put("/pages/{name}")
+@router.put("/pages/{name:path}")
 async def write_node_page(
     name: str, req: PageWrite,
     _claims: SessionClaims = Depends(require_admin),
@@ -181,7 +181,7 @@ async def write_node_page(
     return {"saved": True, "page": meta, "served": _reload_node()}
 
 
-@router.delete("/pages/{name}")
+@router.delete("/pages/{name:path}")
 async def delete_node_page(
     name: str, _claims: SessionClaims = Depends(require_admin),
 ):
@@ -191,3 +191,20 @@ async def delete_node_page(
         raise HTTPException(400, str(exc)) from exc
     _reload_node()
     return {"deleted": True, "name": name}
+
+
+@router.delete("/pages-folder/{name}")
+async def delete_node_folder(
+    name: str, _claims: SessionClaims = Depends(require_admin),
+):
+    """Delete an entire collection subfolder (e.g. a scraped site) and
+    every page in it. Same underlying call as the Scrape tab's own
+    DELETE /api/reticulum/scrape/collections/{name} -- kept as a second,
+    Pages-tab-scoped route rather than having this editor's frontend reach
+    into an unrelated feature's URL space for what is, from here, just
+    "delete a folder"."""
+    try:
+        scraper.delete_collection(_pages_dir(), name)
+    except node_pages.PageError as exc:  # scraper.ScraperError is a PageError
+        raise HTTPException(400, str(exc)) from exc
+    return {"deleted": True, "name": name, "served": _reload_node()}

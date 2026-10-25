@@ -241,6 +241,15 @@ immediately — no restart. `info.mu` / `nodes.mu` / `spacestate.mu` /
 non-executable, so "dynamic pages" (executable `.mu` scripts) still need
 SSH, on purpose. A **Load sample** button drops in `sample-pages/index.mu`.
 
+The list also reaches one level into collection subfolders (e.g. anything
+`reticulum-scraper` wrote) — open, edit and save any `hulp/*.mu` the same
+way as a top-level page (name it `hulp/about.mu` from **+ New** to add a
+page into a folder, new or existing), and a **✕** button next to each
+folder name removes that whole folder and every page in it. The Scrape
+tab's own "Scraped collections" list is still the place to see a
+collection's source URL and re-scrape it — this is just the same editor
+now reaching the files it already produced.
+
 `sample-pages/index.mu` is a copy-me starter page with a Micron cheat-sheet
 in its header. `sample-bbs-techinc/` is a fuller worked example — a small
 read-only "BBS" (splash + `techinc.mu` / `meshpoint.mu` / `mesh.mu` /

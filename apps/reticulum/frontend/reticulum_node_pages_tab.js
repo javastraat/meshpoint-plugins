@@ -57,7 +57,7 @@ class ReticulumNodePagesTab {
                 <section class="rt-pages__editor">
                     <div class="rt-pages__editor-head">
                         <input type="text" class="cfg-field__input rt-pages__name" data-pg-name
-                               placeholder="index.mu" autocomplete="off" spellcheck="false" hidden>
+                               placeholder="index.mu or hulp/about.mu" autocomplete="off" spellcheck="false" hidden>
                         <span class="rt-pages__name-static" data-pg-name-static></span>
                         <div class="rt-pages__actions">
                             <button type="button" class="terminal-button" data-pg-sample>Load sample</button>
@@ -244,34 +244,81 @@ class ReticulumNodePagesTab {
 
     _renderList() {
         this._list.innerHTML = '';
+        const topLevel = this._pages.filter((p) => !p.collection);
+        const collections = []; // [{ name, pages }], in first-seen order
         this._pages.forEach((p) => {
-            const li = document.createElement('li');
-            li.className = 'rt-pages__item';
-            if (this._current && !this._current.isNew && this._current.name === p.name) {
-                li.classList.add('rt-pages__item--active');
+            if (!p.collection) return;
+            let group = collections.find((g) => g.name === p.collection);
+            if (!group) {
+                group = { name: p.collection, pages: [] };
+                collections.push(group);
             }
-            li.textContent = p.name;
-            if (!p.exists) {
-                const tag = document.createElement('span');
-                tag.className = 'rt-pages__tag';
-                tag.textContent = 'not created';
-                li.appendChild(tag);
-            }
-            li.addEventListener('click', () => this._open(p.name));
-            this._list.appendChild(li);
+            group.pages.push(p);
+        });
+
+        topLevel.forEach((p) => this._list.appendChild(this._renderItem(p)));
+
+        collections.forEach((group) => {
+            const head = document.createElement('li');
+            head.className = 'rt-pages__folder-head';
+            const label = document.createElement('span');
+            label.textContent = `${group.name}/`;
+            head.appendChild(label);
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'rt-pages__folder-delete';
+            delBtn.title = `Delete the "${group.name}" folder`;
+            delBtn.setAttribute('aria-label', delBtn.title);
+            delBtn.textContent = '✕';
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._deleteFolder(group.name);
+            });
+            head.appendChild(delBtn);
+            this._list.appendChild(head);
+
+            group.pages.forEach((p) => {
+                const li = this._renderItem(p);
+                li.classList.add('rt-pages__item--nested');
+                this._list.appendChild(li);
+            });
         });
     }
 
-    async _open(name) {
+    _renderItem(p) {
+        const li = document.createElement('li');
+        li.className = 'rt-pages__item';
+        if (this._current && !this._current.isNew && this._current.path === p.path) {
+            li.classList.add('rt-pages__item--active');
+        }
+        li.textContent = p.name;
+        if (!p.exists) {
+            const tag = document.createElement('span');
+            tag.className = 'rt-pages__tag';
+            tag.textContent = 'not created';
+            li.appendChild(tag);
+        }
+        li.addEventListener('click', () => this._open(p.path));
+        return li;
+    }
+
+    /** `path.split('/').map(encodeURIComponent).join('/')` -- a bare
+     * encodeURIComponent() would escape the "/" in a collection path
+     * ("hulp/index.mu"), which the backend's :path route needs literal. */
+    _encodePath(path) {
+        return path.split('/').map(encodeURIComponent).join('/');
+    }
+
+    async _open(path) {
         if (!(await this._confirmDiscard())) return;
         try {
-            const r = await fetch(`/api/reticulum/nomad/pages/${encodeURIComponent(name)}`,
+            const r = await fetch(`/api/reticulum/nomad/pages/${this._encodePath(path)}`,
                 { credentials: 'same-origin' });
-            if (!r.ok) { this._setStatus('error', `Could not open ${name} (HTTP ${r.status}).`); return; }
+            if (!r.ok) { this._setStatus('error', `Could not open ${path} (HTTP ${r.status}).`); return; }
             const body = await r.json();
-            this._current = { name, isNew: false };
+            this._current = { path, isNew: false };
             this._nameEl.hidden = true;
-            this._nameStaticEl.textContent = name;
+            this._nameStaticEl.textContent = path;
             this._srcEl.disabled = false;
             this._setToolbarEnabled(true);
             this._srcEl.value = body.content || '';
@@ -288,7 +335,7 @@ class ReticulumNodePagesTab {
 
     async _newPage() {
         if (!(await this._confirmDiscard())) return;
-        this._current = { name: null, isNew: true };
+        this._current = { path: null, isNew: true };
         this._nameEl.hidden = false;
         this._nameEl.value = '';
         this._nameStaticEl.textContent = '';
@@ -298,7 +345,7 @@ class ReticulumNodePagesTab {
         this._deleteBtn.hidden = true;
         this._saveBtn.disabled = true;
         this._dirty = false;
-        this._setStatus('', 'New page — name it (e.g. about.mu) and Save.');
+        this._setStatus('', 'New page — name it (e.g. about.mu, or hulp/about.mu for a folder) and Save.');
         this._renderList();
         this._renderPreview();
         this._nameEl.focus();
@@ -328,12 +375,12 @@ class ReticulumNodePagesTab {
     }
 
     async _save() {
-        const name = this._current?.isNew ? this._nameEl.value.trim() : this._current?.name;
-        if (!name) return;
+        const path = this._current?.isNew ? this._nameEl.value.trim() : this._current?.path;
+        if (!path) return;
         this._saveBtn.disabled = true;
         this._setStatus('pending', 'Saving…');
         try {
-            const r = await fetch(`/api/reticulum/nomad/pages/${encodeURIComponent(name)}`, {
+            const r = await fetch(`/api/reticulum/nomad/pages/${this._encodePath(path)}`, {
                 method: 'PUT',
                 credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json' },
@@ -345,13 +392,13 @@ class ReticulumNodePagesTab {
                 this._saveBtn.disabled = false;
                 return;
             }
-            this._current = { name, isNew: false };
+            this._current = { path, isNew: false };
             this._nameEl.hidden = true;
-            this._nameStaticEl.textContent = name;
+            this._nameStaticEl.textContent = path;
             this._deleteBtn.hidden = false;
             this._dirty = false;
             this._setStatus('success', body.served
-                ? `Saved — ${name} is live on the node.`
+                ? `Saved — ${path} is live on the node.`
                 : `Saved. Enable node hosting to serve it.`);
             await this._loadList();
         } catch (_e) {
@@ -361,16 +408,16 @@ class ReticulumNodePagesTab {
     }
 
     async _delete() {
-        const name = this._current?.name;
-        if (!name || this._current.isNew) return;
+        const path = this._current?.path;
+        if (!path || this._current.isNew) return;
         const ok = await this._confirm({
             label: 'Delete page?',
-            description: `Remove "${name}" from the node's pages folder on the device. `
+            description: `Remove "${path}" from the node's pages folder on the device. `
                 + `If the node is hosting, it stops serving that page.`,
         });
         if (!ok) return;
         try {
-            const r = await fetch(`/api/reticulum/nomad/pages/${encodeURIComponent(name)}`, {
+            const r = await fetch(`/api/reticulum/nomad/pages/${this._encodePath(path)}`, {
                 method: 'DELETE', credentials: 'same-origin',
             });
             if (!r.ok) {
@@ -386,10 +433,44 @@ class ReticulumNodePagesTab {
             this._nameStaticEl.textContent = '';
             this._saveBtn.disabled = true;
             this._previewEl.innerHTML = '';
-            this._setStatus('success', `${name} deleted.`);
+            this._setStatus('success', `${path} deleted.`);
             await this._loadList();
         } catch (_e) {
             this._setStatus('error', 'Network error deleting page.');
+        }
+    }
+
+    async _deleteFolder(name) {
+        const ok = await this._confirm({
+            label: 'Delete folder?',
+            description: `Remove the "${name}" folder and every page in it from the `
+                + `node's pages directory on the device. If the node is hosting, it `
+                + `stops serving all of them. This cannot be undone.`,
+        });
+        if (!ok) return;
+        try {
+            const r = await fetch(`/api/reticulum/nomad/pages-folder/${encodeURIComponent(name)}`, {
+                method: 'DELETE', credentials: 'same-origin',
+            });
+            if (!r.ok) {
+                const body = await r.json().catch(() => ({}));
+                this._setStatus('error', body.detail || `Delete failed (HTTP ${r.status}).`);
+                return;
+            }
+            if (this._current && this._current.path && this._current.path.startsWith(`${name}/`)) {
+                this._current = null;
+                this._srcEl.value = '';
+                this._srcEl.disabled = true;
+                this._setToolbarEnabled(false);
+                this._deleteBtn.hidden = true;
+                this._nameStaticEl.textContent = '';
+                this._saveBtn.disabled = true;
+                this._previewEl.innerHTML = '';
+            }
+            this._setStatus('success', `"${name}" folder deleted.`);
+            await this._loadList();
+        } catch (_e) {
+            this._setStatus('error', 'Network error deleting folder.');
         }
     }
 

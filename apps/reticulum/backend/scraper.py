@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urldefrag, urljoin, urlsplit
 
-from . import html_to_micron
+from . import html_to_micron, node_pages
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +56,6 @@ DEFAULT_MAX_PAGES = 40
 DEFAULT_MAX_DEPTH = 3
 HARD_MAX_PAGES = 200
 HARD_MAX_DEPTH = 6
-
-# Lowercase slug, same shape as node_pages.py's own name validation --
-# resolved + parent-checked below too (defense in depth).
-_COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
-_RESERVED_COLLECTIONS = frozenset({"files"})  # nomad_node.py's attachment dir
 
 # MediaWiki (and skins in general) link patterns that are never article
 # content -- meta/talk/admin pages, action links, revision diffs. Matched
@@ -75,18 +70,19 @@ _SKIP_LINK_SUBSTRINGS = (
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-class ScraperError(ValueError):
+class ScraperError(node_pages.PageError):
     """A bad collection name, or a start request while one is already running."""
 
 
 def validate_collection_name(name: str) -> str:
-    if not isinstance(name, str) or not _COLLECTION_RE.match(name) or ".." in name:
-        raise ScraperError(
-            "Name must be lowercase letters/digits/- (max 32 chars), e.g. 'hulp'.",
-        )
-    if name in _RESERVED_COLLECTIONS:
-        raise ScraperError(f"{name!r} is reserved.")
-    return name
+    """Thin wrapper -- node_pages.py owns the actual rule now (shared with
+    the Pages tab's own collection paths); re-raised as ScraperError so
+    every call site in this module can catch one consistent exception
+    type, same as before the rule moved."""
+    try:
+        return node_pages.validate_collection_slug(name)
+    except node_pages.PageError as exc:
+        raise ScraperError(str(exc)) from exc
 
 
 def _resolved_collection(pages_dir: str | Path, name: str) -> Path:
@@ -370,7 +366,7 @@ def list_collections(pages_dir: str | Path) -> list[dict]:
         return []
     out = []
     for entry in sorted(base.iterdir()):
-        if not entry.is_dir() or entry.name in _RESERVED_COLLECTIONS:
+        if not entry.is_dir() or entry.name in node_pages.RESERVED_COLLECTIONS:
             continue
         meta_path = entry / "_meta.json"
         if not meta_path.is_file():
