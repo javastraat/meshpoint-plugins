@@ -141,7 +141,14 @@ class ReticulumBrowserPanel {
         this._lenientBtn = this._q('[data-rb-lenient]');
         this._lenientBtn.classList.toggle('is-active', _rbLenient());
         this._autoIdBtn = this._q('[data-rb-auto-id]');
-        this._autoIdBtn.classList.toggle('is-active', _rbAutoIdentify());
+        // Read from storage once, at mount -- the *in-memory* flag is what
+        // every later check/toggle actually uses, not a fresh storage
+        // read each time. A storage write that silently fails (private
+        // browsing, a blocked/third-party-cookie-style restriction, quota)
+        // would otherwise make every click re-derive "on" from whatever
+        // was last actually persisted and get stuck unable to turn off.
+        this._autoIdOn = _rbAutoIdentify();
+        this._autoIdBtn.classList.toggle('is-active', this._autoIdOn);
         this._meshpointBtn = this._q('[data-rb-meshpoint]');
         this._tabstripEl = this._q('[data-rb-tabstrip]');
         this._statusEl = this._q('[data-rb-status]');
@@ -187,16 +194,23 @@ class ReticulumBrowserPanel {
             if (tab) this._renderPage(tab);
         });
         this._autoIdBtn.addEventListener('click', () => {
-            const on = !_rbAutoIdentify();
-            _rbSetAutoIdentify(on);
-            this._autoIdBtn.classList.toggle('is-active', on);
+            this._autoIdOn = !this._autoIdOn;
+            _rbSetAutoIdentify(this._autoIdOn);
+            this._autoIdBtn.classList.toggle('is-active', this._autoIdOn);
             // Turning it on identifies you to whatever node is already
             // loaded right away too, not just nodes visited from now on --
             // otherwise flipping the switch looks like it did nothing
-            // until the next navigation.
-            if (on) {
+            // until the next navigation. Reload after: a page that shows
+            // its own "identified?" status (like a peer's info page) was
+            // already rendered from before you identified, so the text on
+            // screen is stale until it's re-fetched.
+            if (this._autoIdOn) {
                 const tab = this._activeTab();
-                if (tab && tab.hash) this._identify(tab, { announce: true });
+                if (tab && tab.hash) {
+                    this._identify(tab, { announce: true }).then(() => {
+                        if (tab.id === this._activeTabId) this._reload();
+                    });
+                }
             }
         });
         this._pageEl.addEventListener('click', (e) => {
@@ -361,6 +375,18 @@ class ReticulumBrowserPanel {
 
     async _fetch(tab, hash, path, pushHistory, fieldData) {
         this._pageEl.innerHTML = '<p class="lw-empty">Loading…</p>';
+        const isNewNode = tab.hash !== hash;
+        // Identify BEFORE requesting the page, not after, when auto-
+        // identify is on and this is a new node -- some pages render
+        // their own "are you identified?" status server-side (this is
+        // what sent us here in the first place), and that status was
+        // otherwise always stale on the very first load: identifying only
+        // *after* the page already rendered meant it never reflected
+        // reality until a second, manual reload.
+        let justIdentified = false;
+        if (isNewNode && this._autoIdOn) {
+            justIdentified = await this._identifyHash(hash);
+        }
         try {
             const r = await fetch('/api/reticulum/nomad/page', {
                 method: 'POST',
@@ -373,15 +399,13 @@ class ReticulumBrowserPanel {
                 this._pageEl.textContent = data.error || `Failed (HTTP ${r.status})`;
                 return;
             }
-            const isNewNode = tab.hash !== hash;
             tab.hash = hash;
             tab.path = path;
             tab.content = data.content || '';
             if (isNewNode) {
-                tab.fingerprinted = false;
+                tab.fingerprinted = justIdentified;
                 tab.meshpointDetected = null;
                 this._checkMeshpointInfo(tab, hash);
-                if (_rbAutoIdentify()) this._identify(tab);
             }
             const known = this._nodes.find((n) => n.destination_hash === hash);
             const fav = _rbFavourites().find((f) => f.hash === hash);
@@ -485,27 +509,43 @@ class ReticulumBrowserPanel {
      * on every single page load would get noisy fast; announce: true is
      * for the one deliberate case (flipping the toggle on) where that
      * feedback is actually wanted. */
-    async _identify(tab, { announce = false } = {}) {
-        if (!tab || !tab.hash || tab.fingerprinted) return;
-        if (announce) this._status('pending', 'Identifying yourself to this node…');
+    /** The raw identify POST against a bare hash (no tab bookkeeping) --
+     * used both by _identify() below and by _fetch()'s auto-identify-
+     * before-the-page-request path, which doesn't have an up-to-date
+     * `tab.hash` to key off yet (that's only set once the page fetch
+     * itself succeeds). Returns whether it actually succeeded. */
+    async _identifyHash(hash) {
         try {
             const r = await fetch('/api/reticulum/nomad/fingerprint', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: tab.hash }),
+                body: JSON.stringify({ destination_hash: hash }),
             });
             const data = await r.json().catch(() => ({}));
-            if (!r.ok || !data.ok) {
-                if (announce) this._status('error', data.error || `Failed (HTTP ${r.status})`);
-                return;
-            }
-            tab.fingerprinted = true;
-            if (announce) {
-                this._status('success', 'Identified — your LXMF address will be included in this node’s next form submission');
-            }
-        } catch (e) {
-            if (announce) this._status('error', `Network error: ${e.message}`);
+            return !!(r.ok && data.ok);
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    /** Identify to *tab*'s current node -- the manual "turn the toggle on
+     * right now" path. Idempotent per node-visit (tab.fingerprinted
+     * guards it, reset to false by _fetch() whenever the tab navigates to
+     * a different hash). announce surfaces a status line; the auto path
+     * (_fetch()'s isNewNode branch) calls _identifyHash() directly
+     * instead, before tab.hash is even set, and silently. */
+    async _identify(tab, { announce = false } = {}) {
+        if (!tab || !tab.hash || tab.fingerprinted) return;
+        if (announce) this._status('pending', 'Identifying yourself to this node…');
+        const ok = await this._identifyHash(tab.hash);
+        if (!ok) {
+            if (announce) this._status('error', 'Failed to identify.');
+            return;
+        }
+        tab.fingerprinted = true;
+        if (announce) {
+            this._status('success', 'Identified — your LXMF address will be included in this node’s next form submission');
         }
     }
 
