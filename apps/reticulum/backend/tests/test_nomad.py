@@ -46,6 +46,34 @@ class TestNomadWithoutRns(unittest.TestCase):
         nomad.reset()
         self.assertEqual(nomad._fingerprints, {})
 
+    def test_drop_link_tears_down_and_forgets_both_caches(self) -> None:
+        class _FakeLink:
+            def __init__(self) -> None:
+                self.torn_down = False
+
+            def teardown(self) -> None:
+                self.torn_down = True
+
+        link = _FakeLink()
+        nomad._links["deadbeef"] = link
+        nomad._fingerprints["deadbeef"] = "some-hash"
+        self.assertTrue(nomad.drop_link("deadbeef"))
+        self.assertTrue(link.torn_down)
+        self.assertNotIn("deadbeef", nomad._links)
+        self.assertNotIn("deadbeef", nomad._fingerprints)
+
+    def test_drop_link_on_nothing_cached_is_false_not_an_error(self) -> None:
+        self.assertFalse(nomad.drop_link("neverseen"))
+
+    def test_drop_link_survives_teardown_raising(self) -> None:
+        class _BrokenLink:
+            def teardown(self) -> None:
+                raise RuntimeError("already gone")
+
+        nomad._links["deadbeef"] = _BrokenLink()
+        self.assertTrue(nomad.drop_link("deadbeef"))  # still reports it dropped the cache entry
+        self.assertNotIn("deadbeef", nomad._links)
+
 
 class TestFingerprintMergesIntoFieldData(unittest.TestCase):
     """The `dest` merge in fetch_page() is plain dict logic, checkable

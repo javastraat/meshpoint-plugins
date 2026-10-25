@@ -304,6 +304,32 @@ async def identify_link(destination_hash_hex: str, identity) -> tuple[bool, Opti
     return True, lxmf_hash_hex
 
 
+def drop_link(destination_hash_hex: str) -> bool:
+    """Tear down and forget the cached Link to this node, so the next
+    ``fetch_page()``/``identify_link()`` call builds a fresh one instead of
+    reusing whatever's cached -- the only way to make a node "forget" an
+    identify, since RNS itself has no reverse of ``link.identify()``.
+    Also forgets our remembered fingerprint for this destination (see
+    ``_fingerprints`` above), consistent with the fresh Link looking like
+    a brand new, anonymous visit.
+
+    Shared with every other consumer of this cache -- the Reticulum
+    page's own Browse tab, the Reticulum Dashboard's quick-browse modal,
+    any other open Reticulum Browser tab on the same node -- this isn't
+    scoped to whichever caller asked for it, it's the one Link this whole
+    process has open to that destination. Returns whether anything was
+    actually dropped (``False`` if nothing was cached for it)."""
+    link = _links.pop(destination_hash_hex, None)
+    _fingerprints.pop(destination_hash_hex, None)
+    if link is None:
+        return False
+    try:
+        link.teardown()
+    except Exception:  # noqa: BLE001 -- already out of the cache either way
+        logger.debug("Link teardown failed for %s", destination_hash_hex, exc_info=True)
+    return True
+
+
 def reset() -> None:
     """Drop the link cache (test helper / teardown)."""
     _links.clear()

@@ -57,6 +57,21 @@ for `reticulum_micron.js`, ported from reticulum-meshchat, also MIT.)
   direction, not the other) -- see `plugins/apps/reticulum/backend/
   nomad.py`'s `identify_link()` for the full mechanism, which lives in
   the reticulum plugin since it needs that plugin's own RNS identity.
+  Flipping the toggle either direction also drops and reconnects the
+  cached Link to whatever node is open (`nomad.py`'s `drop_link()`) --
+  RNS has no way to *un*-identify an already-identified Link, so a fresh
+  one is the only way the node actually sees the change on your next
+  request, not just future navigations. That reconnect is a real
+  path-discovery + link round trip, same cost as any "first load" of a
+  node -- can take a few seconds on a multi-hop LoRa path. The Link cache
+  is process-wide, not scoped to this plugin, so this also affects the
+  reticulum plugin's own Browse tab and the reticulum-dashboard plugin's
+  quick-browse modal if either is talking to the same node at the time.
+- **Stop button** -- the reload button turns into a Stop (✕) while a page
+  is loading, same idiom as every other browser. Cancels the in-flight
+  request (`AbortController`); a second navigation started before the
+  first one finishes also auto-cancels it, so a slow response can't land
+  after a newer one and silently overwrite what's on screen.
 - **"This node also runs Meshpoint" badge** -- a blue ⓘ button appears
   between Go and the raw/rendered toggle whenever the node you're
   browsing also serves `/page/info.mu`. Checked silently in the

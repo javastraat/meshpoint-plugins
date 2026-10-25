@@ -293,6 +293,18 @@ class TestBrowseAuthGating(unittest.TestCase):
         self.assertTrue(r.json()["ok"])
         self.assertEqual(r.json()["lxmf_hash"], "abc123")
 
+    def test_viewer_can_disconnect(self) -> None:
+        """Same auth tier as /fingerprint -- a browsing action, not an
+        edit to this node's own hosted content. nomad.drop_link() is real
+        here (not stubbed, unlike fetch_page/fetch_file/identify_link
+        above): it's pure dict bookkeeping, no RNS Link involved when
+        nothing's actually cached for this hash."""
+        r = self._viewer_client().post("/api/reticulum/nomad/disconnect", json={
+            "destination_hash": "ab" * 16,
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertFalse(r.json()["dropped"])  # nothing was cached for this hash
+
     def test_viewer_is_refused_the_pages_tab(self) -> None:
         client = self._viewer_client()
         self.assertEqual(client.get("/api/reticulum/nomad/pages").status_code, 403)

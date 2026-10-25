@@ -102,6 +102,20 @@ async def nomad_fingerprint(
     return {"ok": ok, "lxmf_hash": result if ok else None, "error": None if ok else result}
 
 
+@router.post("/disconnect")
+async def nomad_disconnect(
+    req: FingerprintRequest, _claims: SessionClaims = Depends(require_auth),
+):
+    """Tear down the cached Link to this node (see `nomad.py`'s
+    `drop_link()`) -- the only way to make a node "forget" an identify,
+    since RNS has no reverse of `link.identify()`. Same auth tier as
+    `/fingerprint`: a browsing action, not an edit to this node's own
+    hosted content. Affects every consumer of the shared Link cache for
+    that destination, not just the caller."""
+    dropped = nomad.drop_link(req.destination_hash)
+    return {"dropped": dropped}
+
+
 class FileRequest(BaseModel):
     destination_hash: str = Field(..., min_length=1)
     path: str = Field(..., min_length=1)

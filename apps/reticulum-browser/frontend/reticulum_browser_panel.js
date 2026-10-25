@@ -72,6 +72,8 @@ class ReticulumBrowserPanel {
         this._activeTabId = null;
         this._nodes = [];
         this._nodeSearchQuery = '';
+        this._loading = false;
+        this._fetchController = null;
         this._onKeyDown = this._onKeyDown.bind(this);
     }
 
@@ -184,7 +186,10 @@ class ReticulumBrowserPanel {
         });
         this._backBtn.addEventListener('click', () => this._historyGo(-1));
         this._fwdBtn.addEventListener('click', () => this._historyGo(1));
-        this._reloadBtn.addEventListener('click', () => this._reload());
+        this._reloadBtn.addEventListener('click', () => {
+            if (this._loading && this._fetchController) this._fetchController.abort();
+            else this._reload();
+        });
         this._rawBtn.addEventListener('click', () => this._toggleRaw());
         this._lenientBtn.addEventListener('click', () => {
             const on = !_rbLenient();
@@ -193,26 +198,7 @@ class ReticulumBrowserPanel {
             const tab = this._activeTab();
             if (tab) this._renderPage(tab);
         });
-        this._autoIdBtn.addEventListener('click', () => {
-            this._autoIdOn = !this._autoIdOn;
-            _rbSetAutoIdentify(this._autoIdOn);
-            this._autoIdBtn.classList.toggle('is-active', this._autoIdOn);
-            // Turning it on identifies you to whatever node is already
-            // loaded right away too, not just nodes visited from now on --
-            // otherwise flipping the switch looks like it did nothing
-            // until the next navigation. Reload after: a page that shows
-            // its own "identified?" status (like a peer's info page) was
-            // already rendered from before you identified, so the text on
-            // screen is stale until it's re-fetched.
-            if (this._autoIdOn) {
-                const tab = this._activeTab();
-                if (tab && tab.hash) {
-                    this._identify(tab, { announce: true }).then(() => {
-                        if (tab.id === this._activeTabId) this._reload();
-                    });
-                }
-            }
-        });
+        this._autoIdBtn.addEventListener('click', () => this._toggleAutoIdentify());
         this._pageEl.addEventListener('click', (e) => {
             const a = e.target.closest('a[data-nomad-url]');
             if (!a) return;
@@ -307,7 +293,10 @@ class ReticulumBrowserPanel {
         this._addrEl.value = tab.hash ? `${tab.hash}:${tab.path}` : '';
         this._backBtn.disabled = tab.historyIdx <= 0;
         this._fwdBtn.disabled = tab.historyIdx >= tab.history.length - 1;
-        this._reloadBtn.disabled = tab.historyIdx < 0;
+        // While loading, the reload button is showing Stop (always
+        // clickable) -- _setLoading() owns .disabled in that state, don't
+        // stomp on it with the Reload-specific history check here.
+        if (!this._loading) this._reloadBtn.disabled = tab.historyIdx < 0;
         this._rawBtn.classList.toggle('is-active', tab.rawMode);
         this._syncFavBtn(tab.hash ? _rbIsFavourite(tab.hash) : false);
         this._syncMeshpointBtn(tab);
@@ -356,11 +345,15 @@ class ReticulumBrowserPanel {
         if (tab) this._fetch(tab, hash, path, true, fieldData);
     }
 
+    /** Returns the underlying _fetch() promise (callers that just want
+     * "reload, fire-and-forget" -- the button, link-following -- can
+     * ignore it same as always; _toggleAutoIdentify() awaits it so it can
+     * show a final status once the reconnect actually finishes). */
     _reload() {
         const tab = this._activeTab();
-        if (!tab) return;
+        if (!tab) return undefined;
         const e = tab.history[tab.historyIdx];
-        if (e) this._fetch(tab, e.hash, e.path, false, e.field_data);
+        return e ? this._fetch(tab, e.hash, e.path, false, e.field_data) : undefined;
     }
 
     _historyGo(delta) {
@@ -374,6 +367,14 @@ class ReticulumBrowserPanel {
     }
 
     async _fetch(tab, hash, path, pushHistory, fieldData) {
+        // Supersede, don't race: a second navigation (new link clicked,
+        // Go pressed again) while one's still in flight aborts the first
+        // instead of letting whichever response lands last silently win.
+        if (this._fetchController) this._fetchController.abort();
+        const controller = new AbortController();
+        this._fetchController = controller;
+        this._setLoading(true);
+
         this._pageEl.innerHTML = '<p class="lw-empty">Loading…</p>';
         const isNewNode = tab.hash !== hash;
         // Identify BEFORE requesting the page, not after, when auto-
@@ -384,15 +385,16 @@ class ReticulumBrowserPanel {
         // *after* the page already rendered meant it never reflected
         // reality until a second, manual reload.
         let justIdentified = false;
-        if (isNewNode && this._autoIdOn) {
-            justIdentified = await this._identifyHash(hash);
-        }
         try {
+            if (isNewNode && this._autoIdOn) {
+                justIdentified = await this._identifyHash(hash, controller.signal);
+            }
             const r = await fetch('/api/reticulum/nomad/page', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
                 body: JSON.stringify({ destination_hash: hash, path, field_data: fieldData || null }),
+                signal: controller.signal,
             });
             const data = await r.json().catch(() => ({}));
             if (!r.ok || !data.ok) {
@@ -418,7 +420,36 @@ class ReticulumBrowserPanel {
             if (tab.id === this._activeTabId) this._renderActiveTab();
             this._renderTabStrip();
         } catch (e) {
-            this._pageEl.textContent = `Network error: ${e.message}`;
+            if (e.name === 'AbortError') {
+                this._pageEl.textContent = 'Stopped.';
+            } else {
+                this._pageEl.textContent = `Network error: ${e.message}`;
+            }
+        } finally {
+            // Only this call's own controller gets to clear the loading
+            // state -- if a newer _fetch() has already superseded this
+            // one (see the abort() above), that newer call owns it now.
+            if (this._fetchController === controller) {
+                this._fetchController = null;
+                this._setLoading(false);
+            }
+        }
+    }
+
+    /** Toggles the reload button into a Stop button (same spot, same
+     * idiom every browser uses) while a page is loading. Stop is always
+     * clickable regardless of history state -- unlike Reload, which stays
+     * disabled with no history to reload from. */
+    _setLoading(on) {
+        this._loading = on;
+        if (!this._reloadBtn) return;
+        this._reloadBtn.innerHTML = on ? '&times;' : '&#x21bb;';
+        this._reloadBtn.title = on ? 'Stop' : 'Reload';
+        if (on) {
+            this._reloadBtn.disabled = false;
+        } else {
+            const tab = this._activeTab();
+            this._reloadBtn.disabled = !tab || tab.historyIdx < 0;
         }
     }
 
@@ -501,26 +532,21 @@ class ReticulumBrowserPanel {
         }
     }
 
-    /** Identify to *tab*'s current node (auto-identify toggle). Idempotent
-     * per node-visit (tab.fingerprinted guards it, reset to false by
-     * _fetch()'s isNewNode branch whenever the tab navigates to a
-     * different hash). Silent by default -- this fires automatically on
-     * every new-node navigation once the toggle is on, and a status line
-     * on every single page load would get noisy fast; announce: true is
-     * for the one deliberate case (flipping the toggle on) where that
-     * feedback is actually wanted. */
     /** The raw identify POST against a bare hash (no tab bookkeeping) --
      * used both by _identify() below and by _fetch()'s auto-identify-
      * before-the-page-request path, which doesn't have an up-to-date
      * `tab.hash` to key off yet (that's only set once the page fetch
-     * itself succeeds). Returns whether it actually succeeded. */
-    async _identifyHash(hash) {
+     * itself succeeds). Returns whether it actually succeeded. `signal`
+     * is optional -- only _fetch()'s own call passes one, so Stop can
+     * cancel the identify-before-fetch leg too, not just the page fetch. */
+    async _identifyHash(hash, signal) {
         try {
             const r = await fetch('/api/reticulum/nomad/fingerprint', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
                 body: JSON.stringify({ destination_hash: hash }),
+                signal,
             });
             const data = await r.json().catch(() => ({}));
             return !!(r.ok && data.ok);
@@ -546,6 +572,54 @@ class ReticulumBrowserPanel {
         tab.fingerprinted = true;
         if (announce) {
             this._status('success', 'Identified — your LXMF address will be included in this node’s next form submission');
+        }
+    }
+
+    /** Tear down the backend's cached Link to *hash* (backend/nomad.py's
+     * drop_link()) -- best-effort, errors are swallowed since this is
+     * always followed by a reload that will surface any real connection
+     * problem on its own. */
+    async _disconnectHash(hash) {
+        try {
+            await fetch('/api/reticulum/nomad/disconnect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ destination_hash: hash }),
+            });
+        } catch (_e) { /* best-effort */ }
+    }
+
+    /** The auto-identify toggle's click handler. Identification can't be
+     * undone over an existing Link -- RNS has no reverse of
+     * link.identify() -- so flipping the toggle either direction drops
+     * the cached Link for whatever node is currently open and reconnects,
+     * rather than just changing *future* navigations while the current,
+     * already-identified (or not) Link keeps answering exactly as before.
+     * That reconnect costs a real path-discovery + link-establishment
+     * round trip -- can take a few seconds on a multi-hop LoRa path, same
+     * as any other "first load of a node" (see _fetch()'s own comments). */
+    async _toggleAutoIdentify() {
+        this._autoIdOn = !this._autoIdOn;
+        _rbSetAutoIdentify(this._autoIdOn);
+        this._autoIdBtn.classList.toggle('is-active', this._autoIdOn);
+
+        const tab = this._activeTab();
+        if (!tab || !tab.hash) return;
+
+        this._status('pending', this._autoIdOn ? 'Identifying…' : 'Reconnecting…');
+        await this._disconnectHash(tab.hash);
+        tab.fingerprinted = false;
+        if (this._autoIdOn) {
+            await this._identify(tab, { announce: false });
+        }
+        if (tab.id === this._activeTabId) {
+            await this._reload();
+            if (tab.id === this._activeTabId) {
+                this._status('success', this._autoIdOn
+                    ? 'Identified — your LXMF address will be included in this node’s next form submission'
+                    : 'Reconnected with a fresh, unidentified link.');
+            }
         }
     }
 
