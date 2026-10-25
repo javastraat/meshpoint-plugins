@@ -234,7 +234,7 @@
       "id": "reticulum",
       "kind": "app",
       "path": "apps/reticulum",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "meshpoint_api": 1,
       "provides": [
         "service",

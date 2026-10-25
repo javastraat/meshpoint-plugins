@@ -169,7 +169,7 @@ class ReticulumPanel {
                             <button class="lw-tab" type="button" role="tab"
                                     data-rt-tab="contacts" ${this._isAdmin ? '' : 'hidden'}>Contacts</button>
                             <button class="lw-tab" type="button" role="tab"
-                                    data-rt-tab="call" ${this._isAdmin ? '' : 'hidden'}>Call</button>
+                                    data-rt-tab="call" ${this._isAdmin ? '' : 'hidden'}>Extensions</button>
                             <button class="lw-tab" type="button" role="tab"
                                     data-rt-tab="browse" ${this._hiddenTabPrefs.browse ? 'hidden' : ''}>Browse</button>
                             <button class="lw-tab" type="button" role="tab"
@@ -320,8 +320,10 @@ class ReticulumPanel {
                     <div data-rt-view="call" hidden>
                         <div class="panel__body">
                             <p class="lw-panel__limit" data-rt-call-hint>
-                                Install and enable the <strong>reticulum-call</strong> plugin
-                                for voice calls over Reticulum (Settings → Plugins).
+                                Plugins that hook into this page show up here -- e.g.
+                                <strong>reticulum-call</strong> (voice calls) or
+                                <strong>reticulum-scraper</strong> (scrape a site into offline
+                                pages). Install one in Settings → Plugins to see its tab here.
                             </p>
                             <div data-rt-call-hooks></div>
                         </div>
@@ -406,10 +408,15 @@ class ReticulumPanel {
             this._telemetryModal = new window.ReticulumTelemetryModal();
         }
 
-        // "Call" tab content comes entirely from a hook plugin (e.g.
-        // reticulum-call) -- see frontend/sidebar/page_hook_registry.js.
-        // Costs nothing when none is installed: mountPageHooks() leaves
-        // this tab's static hint text untouched in that case.
+        // "Extensions" tab content comes entirely from whichever plugin(s)
+        // hook into this page (reticulum-call, reticulum-scraper, ...) --
+        // see frontend/sidebar/page_hook_registry.js. With two or more
+        // hooks installed, mountPageHooks() auto-builds its own small
+        // internal tabbar here (same mechanism the RTL-SDR host page uses
+        // for its several decoder plugins) -- nothing extra needed on this
+        // side for that. Costs nothing when none is installed:
+        // mountPageHooks() leaves this tab's static hint text untouched in
+        // that case.
         this._callHooks = window.mountPageHooks
             ? window.mountPageHooks('reticulum', this._q('[data-rt-call-hooks]'))
             : { show() {}, hide() {} };
