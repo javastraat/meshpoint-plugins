@@ -416,7 +416,8 @@ class MicronParser {
                 masked: field_masked, data: field_data, style,
             };
         }
-        return { obj, skip: (field_end - startIndex) + 2 };
+        // +1, not +2 -- same off-by-one as parseLink() below, same fix.
+        return { obj, skip: (field_end - startIndex) + 1 };
     }
 
     parseLink(line, startIndex, state) {
@@ -442,7 +443,15 @@ class MicronParser {
             fields: fields ? fields.split("|") : [],
             style: this.stateToStyle(state),
         };
-        return { obj, skip: (endpos - startIndex) + 2 };
+        // +1, not +2: startIndex is "[" and endpos is "]" -- the next
+        // character the main loop should see is line[endpos + 1], i.e.
+        // i must become endpos + 1 once added to startIndex. The former
+        // +2 landed one character past that, silently eating whatever
+        // came right after "]" (a space fuses two words together; a lone
+        // punctuation mark just vanishes) -- harmless only when the link
+        // was the last thing on its line, which is why hand-written pages
+        // (links usually on their own line) never surfaced it.
+        return { obj, skip: (endpos - startIndex) + 1 };
     }
 }
 
