@@ -116,6 +116,26 @@ async def nomad_disconnect(
     return {"dropped": dropped}
 
 
+@router.get("/links")
+async def nomad_links(_claims: SessionClaims = Depends(require_auth)):
+    """How many NomadNet Links this process currently has cached -- feeds
+    the Reticulum page's "disconnect all" count. Shared across every
+    consumer of the cache (Browse tab, Reticulum Browser, the Dashboard's
+    quick-browse modal), same as `/disconnect`."""
+    return {"count": nomad.link_count()}
+
+
+@router.post("/disconnect-all")
+async def nomad_disconnect_all(_claims: SessionClaims = Depends(require_admin)):
+    """Tear down every cached NomadNet Link at once (see `nomad.py`'s
+    `drop_all_links()`) -- the manual counterpart to the idle sweep that
+    already runs on a timer (`lxmf_service.py`'s `_link_sweep_loop`).
+    Admin-gated (unlike `/disconnect`, which is a single-destination
+    browsing action) since it affects every open tab/consumer at once."""
+    dropped = nomad.drop_all_links()
+    return {"dropped": dropped}
+
+
 class FileRequest(BaseModel):
     destination_hash: str = Field(..., min_length=1)
     path: str = Field(..., min_length=1)

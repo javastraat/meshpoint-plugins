@@ -180,6 +180,108 @@ class TestEvictStaleLink(unittest.TestCase):
         nomad._evict_stale_link("not-cached", object())
 
 
+class _FakeLinkStatus:
+    """Stand-in for RNS.Link's status constants -- sweep_stale_links()
+    compares against RNS.Link.CLOSED, so these tests monkeypatch
+    nomad.RNS regardless of whether the real package is installed on
+    this machine."""
+    CLOSED = "closed"
+    ACTIVE = "active"
+
+
+class _FakeRNS:
+    Link = _FakeLinkStatus
+
+
+def _fake_link(status=_FakeLinkStatus.ACTIVE, inactive_for=0):
+    class _Link:
+        torn_down = False
+
+        def teardown(self) -> None:
+            self.torn_down = True
+
+    link = _Link()
+    link.status = status
+    link.inactive_for = lambda: inactive_for
+    return link
+
+
+class TestSweepStaleLinks(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_rns = nomad.RNS
+        nomad.RNS = _FakeRNS
+
+    def tearDown(self) -> None:
+        nomad.RNS = self._original_rns
+        nomad.reset()
+
+    def test_drops_links_idle_past_the_threshold(self) -> None:
+        nomad._links["stale"] = _fake_link(inactive_for=400)
+        nomad._links["fresh"] = _fake_link(inactive_for=10)
+        dropped = nomad.sweep_stale_links(idle_threshold_s=300)
+        self.assertEqual(dropped, 1)
+        self.assertNotIn("stale", nomad._links)
+        self.assertIn("fresh", nomad._links)
+
+    def test_drops_links_rns_already_closed_regardless_of_idle_time(self) -> None:
+        nomad._links["deadbeef"] = _fake_link(status=_FakeLinkStatus.CLOSED, inactive_for=0)
+        dropped = nomad.sweep_stale_links(idle_threshold_s=300)
+        self.assertEqual(dropped, 1)
+        self.assertNotIn("deadbeef", nomad._links)
+
+    def test_leaves_active_recent_links_alone(self) -> None:
+        nomad._links["deadbeef"] = _fake_link(inactive_for=5)
+        dropped = nomad.sweep_stale_links(idle_threshold_s=300)
+        self.assertEqual(dropped, 0)
+        self.assertIn("deadbeef", nomad._links)
+
+    def test_also_forgets_the_fingerprint_for_a_swept_link(self) -> None:
+        nomad._links["deadbeef"] = _fake_link(inactive_for=400)
+        nomad._fingerprints["deadbeef"] = "some-hash"
+        nomad.sweep_stale_links(idle_threshold_s=300)
+        self.assertNotIn("deadbeef", nomad._fingerprints)
+
+    def test_empty_cache_is_a_noop(self) -> None:
+        self.assertEqual(nomad.sweep_stale_links(), 0)
+
+    def test_uses_the_default_threshold_when_not_given(self) -> None:
+        nomad._links["deadbeef"] = _fake_link(inactive_for=nomad._IDLE_SWEEP_THRESHOLD_S + 1)
+        self.assertEqual(nomad.sweep_stale_links(), 1)
+
+
+class TestDropAllLinks(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_rns = nomad.RNS
+        nomad.RNS = _FakeRNS
+
+    def tearDown(self) -> None:
+        nomad.RNS = self._original_rns
+        nomad.reset()
+
+    def test_drops_every_cached_link_regardless_of_idle_time(self) -> None:
+        nomad._links["a"] = _fake_link(inactive_for=0)
+        nomad._links["b"] = _fake_link(inactive_for=9999)
+        dropped = nomad.drop_all_links()
+        self.assertEqual(dropped, 2)
+        self.assertEqual(nomad._links, {})
+
+    def test_empty_cache_is_a_noop(self) -> None:
+        self.assertEqual(nomad.drop_all_links(), 0)
+
+
+class TestLinkCount(unittest.TestCase):
+    """Pure dict logic, no RNS involved -- runs on every machine."""
+
+    def tearDown(self) -> None:
+        nomad.reset()
+
+    def test_counts_cached_links(self) -> None:
+        self.assertEqual(nomad.link_count(), 0)
+        nomad._links["a"] = object()
+        nomad._links["b"] = object()
+        self.assertEqual(nomad.link_count(), 2)
+
+
 class TestExtractFile(unittest.TestCase):
     def test_bytes_plus_name_metadata_list(self) -> None:
         name, data = nomad._extract_file([b"payload", {"name": b"/x/report.pdf"}], None)

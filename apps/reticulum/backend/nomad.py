@@ -57,6 +57,16 @@ _path_lookup_timeout_s = 20
 _link_timeout_s = 20
 _request_timeout_s = 30
 
+# How long a cached Link can sit with no inbound activity before
+# sweep_stale_links() (run on a timer by lxmf_service.py's
+# _link_sweep_loop) drops it. Mirrors the SenseCAP P1 repeater firmware's
+# own sm_links_watchdog() -- that one uses a 15-minute LINK_TIMEOUT, but
+# it's tearing down inbound Links to a repeater serving live mesh traffic;
+# this is a UI-driven browsing cache (Browse tab / Reticulum Browser /
+# the Dashboard's quick-browse modal), where nobody's looked at a page in
+# 5 minutes is a much safer "probably not coming back right now" signal.
+_IDLE_SWEEP_THRESHOLD_S = 300
+
 
 def set_timeouts(base_s: Optional[int]) -> None:
     """Scale the three timeouts from one ``nomad_timeout_s`` knob
@@ -328,6 +338,37 @@ def drop_link(destination_hash_hex: str) -> bool:
     except Exception:  # noqa: BLE001 -- already out of the cache either way
         logger.debug("Link teardown failed for %s", destination_hash_hex, exc_info=True)
     return True
+
+
+def sweep_stale_links(idle_threshold_s: int = _IDLE_SWEEP_THRESHOLD_S) -> int:
+    """Drop every cached Link that's been idle for at least
+    *idle_threshold_s* (default ``_IDLE_SWEEP_THRESHOLD_S``), or that RNS
+    itself already closed out from under the cache. Returns how many were
+    dropped. Meant to be called on a timer (see lxmf_service.py's
+    ``_link_sweep_loop``) -- a Link still in active use simply isn't idle,
+    so it's left alone regardless of how long it's been cached."""
+    stale = [
+        dest_hash for dest_hash, link in list(_links.items())
+        if link.status == RNS.Link.CLOSED or link.inactive_for() >= idle_threshold_s
+    ]
+    for dest_hash in stale:
+        drop_link(dest_hash)
+    return len(stale)
+
+
+def drop_all_links() -> int:
+    """Manual "disconnect all" -- tears down and forgets every cached
+    Link regardless of how recently it was used. Returns how many were
+    dropped."""
+    dest_hashes = list(_links.keys())
+    for dest_hash in dest_hashes:
+        drop_link(dest_hash)
+    return len(dest_hashes)
+
+
+def link_count() -> int:
+    """How many Links are currently cached -- for a UI badge/count."""
+    return len(_links)
 
 
 def reset() -> None:

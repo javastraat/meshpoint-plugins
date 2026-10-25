@@ -266,6 +266,12 @@ class TestBrowseAuthGating(unittest.TestCase):
         viewer = SessionClaims(subject="viewer1", role=ROLE_VIEWER, session_version=1)
         return self._client_as(auth_override=lambda: viewer, admin_override=_deny_forbidden)
 
+    def _admin_client(self):
+        from src.api.auth.jwt_session import ROLE_ADMIN, SessionClaims
+
+        admin = SessionClaims(subject="admin1", role=ROLE_ADMIN, session_version=1)
+        return self._client_as(auth_override=lambda: admin, admin_override=lambda: admin)
+
     def test_viewer_can_list_nodes(self) -> None:
         r = self._viewer_client().get("/api/reticulum/nomad/nodes")
         self.assertEqual(r.status_code, 200, r.text)
@@ -304,6 +310,29 @@ class TestBrowseAuthGating(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 200, r.text)
         self.assertFalse(r.json()["dropped"])  # nothing was cached for this hash
+
+    def test_viewer_can_check_link_count(self) -> None:
+        """Same auth tier as /fingerprint and /disconnect -- read-only,
+        not an edit, so a viewer can see the count even though they can't
+        clear it (that's /disconnect-all, admin-only, below)."""
+        r = self._viewer_client().get("/api/reticulum/nomad/links")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["count"], 0)
+
+    def test_viewer_is_refused_disconnect_all(self) -> None:
+        """Unlike the single-destination /disconnect, this affects every
+        open tab/consumer at once -- admin-gated."""
+        r = self._viewer_client().post("/api/reticulum/nomad/disconnect-all")
+        self.assertEqual(r.status_code, 403)
+
+    def test_admin_can_disconnect_all(self) -> None:
+        from plugins.apps.reticulum.backend import nomad
+
+        nomad.reset()
+        r = self._admin_client().post("/api/reticulum/nomad/disconnect-all")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["dropped"], 0)  # nothing was cached
+        nomad.reset()
 
     def test_viewer_is_refused_the_pages_tab(self) -> None:
         client = self._viewer_client()

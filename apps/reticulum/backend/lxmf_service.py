@@ -42,6 +42,7 @@ from . import (
     attachments as attachments_store,
     audio_call,
     host_stats,
+    nomad,
     notify,
     talkback,
     telemetry as telemetry_codec,
@@ -84,6 +85,12 @@ _PROPAGATION_ANNOUNCE_INTERVAL_S = 21600  # 6h -- re-announce the lxmf.propagati
 # Shorter than the propagation interval above since call reachability
 # matters in the moment, not just eventually.
 _CALL_ANNOUNCE_INTERVAL_S = 1800  # 30m
+
+# How often to check the NomadNet Link cache (nomad.py) for idle entries.
+# Independent of node_cfg/audio_calls_enabled/telemetry_cfg -- this cache
+# is populated by *browsing* (Browse tab, Reticulum Browser, the
+# Dashboard's quick-browse modal), which works whenever RNS itself is up.
+_LINK_SWEEP_INTERVAL_S = 60  # 1m
 
 # Total wait budget for a cold-cache path request in send_message():
 # 5 x 1s = 5s. Long enough for a same-network shared-instance response
@@ -252,6 +259,7 @@ class LxmfService:
         self._announce_log: deque = deque(maxlen=_ANNOUNCE_LOG_MAX)
         self._bg_tasks: set = set()
         self._pn_task: Optional[asyncio.Task] = None
+        self._link_sweep_task: Optional[asyncio.Task] = None
 
     def _spawn(self, coro) -> None:
         """Fire-and-forget a coroutine, holding a strong ref so it isn't
@@ -341,6 +349,9 @@ class LxmfService:
             "Reticulum LXMF service started -- address %s", self.own_address
         )
 
+        if self._loop is not None:
+            self._link_sweep_task = self._loop.create_task(self._link_sweep_loop())
+
         if self._propagation_cfg.get("enabled"):
             self._start_propagation()
 
@@ -380,6 +391,16 @@ class LxmfService:
             if self._audio_call_manager is not None:
                 self._audio_call_manager.announce()
 
+    async def _link_sweep_loop(self) -> None:
+        """Drops idle cached NomadNet Links on a timer (see nomad.py's
+        sweep_stale_links()) -- same idea as the P1 repeater firmware's
+        own sm_links_watchdog(), for this process's own browsing cache."""
+        while True:
+            await asyncio.sleep(_LINK_SWEEP_INTERVAL_S)
+            dropped = nomad.sweep_stale_links()
+            if dropped:
+                logger.debug("Swept %d idle NomadNet link(s)", dropped)
+
     def _on_incoming_call(self, call: "audio_call.AudioCall") -> None:
         """Runs on RNS's own callback thread (a Link-established callback,
         not the asyncio loop) -- same threading situation as
@@ -416,6 +437,9 @@ class LxmfService:
         if self._telemetry_task is not None:
             self._telemetry_task.cancel()
             self._telemetry_task = None
+        if self._link_sweep_task is not None:
+            self._link_sweep_task.cancel()
+            self._link_sweep_task = None
         if self._node is not None:
             await self._node.stop()
             self._node = None

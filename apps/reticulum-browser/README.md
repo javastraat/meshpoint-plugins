@@ -67,6 +67,10 @@ for `reticulum_micron.js`, ported from reticulum-meshchat, also MIT.)
   is process-wide, not scoped to this plugin, so this also affects the
   reticulum plugin's own Browse tab and the reticulum-dashboard plugin's
   quick-browse modal if either is talking to the same node at the time.
+  That same cache also drops idle entries on its own after a few minutes
+  of no activity, and has a manual "disconnect all" button on the
+  Reticulum page's Settings tab -- see `apps/reticulum/README.md`'s "The
+  Link cache, and cleaning it up" section.
 - **Stop button** -- the reload button turns into a Stop (✕) while a page
   is loading, same idiom as every other browser. Cancels the in-flight
   request (`AbortController`); a second navigation started before the

@@ -459,6 +459,20 @@ class ReticulumSettingsTab {
                         restart button.
                     </p>
                     <p class="cfg-status" data-rt-rnsd-status aria-live="polite"></p>
+                    <div class="cfg-card__actions">
+                        <button class="terminal-button" type="button" data-rt-disconnect-links>
+                            Disconnect all NomadNet links
+                        </button>
+                        <span class="cfg-field__hint" data-rt-links-count>--</span>
+                    </div>
+                    <p class="cfg-field__hint">
+                        Tears down every cached NomadNet Link at once (Browse tab,
+                        Reticulum Browser, the Dashboard's quick-browse modal all share
+                        this one cache). Idle links already drop on their own after a
+                        few minutes of no activity — this is for forcing it right now,
+                        e.g. after an identify toggle or a node you know has restarted.
+                    </p>
+                    <p class="cfg-status" data-rt-links-status aria-live="polite"></p>
                     <fieldset class="cfg-fieldset">
                         <legend class="cfg-fieldset__legend">Browser preferences</legend>
                         <p class="cfg-field__hint">
@@ -534,6 +548,8 @@ class ReticulumSettingsTab {
         this._nodeStatusEl = this._q('[data-rt-node-status]');
         this._statusEl = this._q('[data-rt-status]');
         this._rnsdStatusEl = this._q('[data-rt-rnsd-status]');
+        this._linksCountEl = this._q('[data-rt-links-count]');
+        this._linksStatusEl = this._q('[data-rt-links-status]');
 
         // Checked = shown; each tab defaults to hidden (unchecked) unless
         // localStorage already has an explicit "1" from a previous visit.
@@ -554,7 +570,9 @@ class ReticulumSettingsTab {
         this._frequency.addEventListener('input', () => this._renderFrequencyHint());
         this._q('[data-rt-rescan-usb]').addEventListener('click', (e) => this._rescanUsb(e.currentTarget));
         this._q('[data-rt-restart-rnsd]').addEventListener('click', () => this._restartRnsd());
+        this._q('[data-rt-disconnect-links]').addEventListener('click', () => this._disconnectAllLinks());
         this._q('[data-rt-telemetry-send]')?.addEventListener('click', (e) => this._sendTelemetry(e.currentTarget));
+        this._loadLinkCount();
 
         this._q('[data-rt-extra-iface-add]')?.addEventListener('click', () => {
             this._readExtraInterfaces();  // keep any in-progress edits
@@ -1109,6 +1127,47 @@ class ReticulumSettingsTab {
         }
     }
 
+    async _loadLinkCount() {
+        if (!this._linksCountEl) return;
+        try {
+            const res = await fetch('/api/reticulum/nomad/links', { credentials: 'same-origin' });
+            const body = await res.json();
+            const n = body.count || 0;
+            this._linksCountEl.textContent = `${n} link${n === 1 ? '' : 's'} cached`;
+        } catch (_) {
+            this._linksCountEl.textContent = '--';
+        }
+    }
+
+    async _disconnectAllLinks() {
+        const ok = window.confirmModal
+            ? await window.confirmModal({
+                label: 'Disconnect all NomadNet links',
+                description: 'Tear down every cached NomadNet Link right now? Affects '
+                    + 'the Browse tab, Reticulum Browser, and the Dashboard\'s '
+                    + 'quick-browse modal at once -- any open page will just '
+                    + 'reconnect fresh on its next request.',
+            })
+            : window.confirm('Disconnect all cached NomadNet links now?');
+        if (!ok) return;
+
+        const button = this._q('[data-rt-disconnect-links]');
+        button.disabled = true;
+        this._setLinksStatus('pending', 'Disconnecting…');
+        try {
+            const result = await this._request('POST', '/api/reticulum/nomad/disconnect-all', {});
+            if (result) {
+                const n = result.dropped || 0;
+                this._setLinksStatus('success', `Disconnected ${n} link${n === 1 ? '' : 's'}.`);
+            } else {
+                this._setLinksStatus('error', 'Disconnect failed.');
+            }
+        } finally {
+            button.disabled = false;
+            this._loadLinkCount();
+        }
+    }
+
     _setStatus(kind, message) {
         if (!this._statusEl) return;
         this._statusEl.dataset.kind = kind;
@@ -1119,6 +1178,12 @@ class ReticulumSettingsTab {
         if (!this._rnsdStatusEl) return;
         this._rnsdStatusEl.dataset.kind = kind;
         this._rnsdStatusEl.textContent = message;
+    }
+
+    _setLinksStatus(kind, message) {
+        if (!this._linksStatusEl) return;
+        this._linksStatusEl.dataset.kind = kind;
+        this._linksStatusEl.textContent = message;
     }
 
     /** Minimal stand-in for ConfigurationPanel's `this._api` wrapper --

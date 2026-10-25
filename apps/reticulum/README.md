@@ -136,6 +136,36 @@ the recent list. The address bar pre-fills with the current node's full
 shortcuts against it — edit the path and Go to reach a page nothing links
 to (e.g. `:/page/info.mu`).
 
+### The Link cache, and cleaning it up
+
+`nomad.py` keeps one `RNS.Link` per destination alive across page
+navigations (`_links`, keyed by destination hash) rather than re-linking
+on every click — shared process-wide across this plugin's own Browse tab,
+the reticulum-browser plugin, and the reticulum-dashboard plugin's
+quick-browse modal, since it's the one Link the process has open to that
+destination, not one scoped per consumer.
+
+Two ways it gets cleaned up:
+
+- **Automatic idle sweep** — `LxmfService` runs a background loop
+  (`_link_sweep_loop`, every 60s) that calls `nomad.sweep_stale_links()`,
+  which tears down and forgets any cached Link idle for 5+ minutes
+  (`RNS.Link.inactive_for()`), or already `CLOSED` out from under the
+  cache. Mirrors the SenseCAP P1 repeater firmware's own
+  `sm_links_watchdog()` — same idea (nobody's using this Link, let it
+  go), much shorter threshold, since this is a UI-driven browsing cache
+  rather than a repeater carrying live mesh traffic.
+- **Manual "Disconnect all" button** — Settings → Reticulum has a
+  Disconnect-all-NomadNet-links action (admin-only,
+  `POST /api/reticulum/nomad/disconnect-all`) plus a live cached-link
+  count (`GET /api/reticulum/nomad/links`), for forcing it right now
+  rather than waiting on the sweep — e.g. right after flipping the
+  Reticulum Browser's identify toggle, or when you know a node has
+  restarted. Closing a browser tab does **not** drop its Link — RNS
+  Links aren't ref-counted per consumer here, so a tab-close would be
+  guessing at whether some *other* tab/plugin is still using the same
+  cached Link to the same node.
+
 ## Activity tab
 
 The **Activity** tab is the raw announce feed — every `lxmf.delivery`,
