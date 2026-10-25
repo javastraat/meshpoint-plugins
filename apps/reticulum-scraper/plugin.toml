@@ -1,0 +1,17 @@
+name = "reticulum-scraper"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["hook"]
+
+[frontend]
+scripts = ["frontend/reticulum_scraper_tab.js"]
+styles = ["frontend/reticulum_scraper_tab.css"]
+
+[hook]
+host = "reticulum"    # target's [sidebar].route -- injects a "Scrape" tab
+                       # into the Reticulum page instead of owning a page
+
+[meta]
+description = "Scrape a website into Micron pages a hosted Reticulum node can serve with zero internet -- the offline-emergency-reference use case (e.g. a first-aid wiki). A form takes a source URL and a short name; the result lands under node_pages_dir/<name>/, browsable at :/page/<name>/index.mu."
+homepage = "https://github.com/javastraat/meshpoint-plugins"
+author = "Einstein PD2EMC"

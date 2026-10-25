@@ -46,7 +46,10 @@ def register(reg) -> None:
     from src.storage.message_repository import MessageRepository
     from src.version import __version__
 
-    from . import call_routes, config_routes, host_stats, nomad_routes, routes, state
+    from . import (
+        call_routes, config_routes, host_stats, nomad_routes, routes,
+        scrape_routes, state,
+    )
     from .lxmf_service import LxmfService
     from .peer_repo import ReticulumPeerRepository
 
@@ -55,6 +58,7 @@ def register(reg) -> None:
     reg.add_router(routes.router)
     reg.add_router(config_routes.router)
     reg.add_router(nomad_routes.router)
+    reg.add_router(scrape_routes.router)
     # public=True: the websocket route in here can't use the router-level
     # Depends(require_auth) safety net every other router relies on (see
     # call_routes.py's own module docstring) -- every route in this file
@@ -144,6 +148,7 @@ def register(reg) -> None:
         routes.init_routes(service, MessageRepository(context.pipeline.database))
         nomad_routes.init_routes(service)
         call_routes.init_routes(service)
+        scrape_routes.init_routes(service)
 
     reg.add_service("reticulum", build, wire)
 

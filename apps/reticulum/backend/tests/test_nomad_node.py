@@ -424,5 +424,141 @@ class TestNomadNodeTalkbackSnapshots(unittest.TestCase):
         self.assertEqual(n.events_snapshot(), [{"summary": "Talk"}])
 
 
+class TestPageCountIncludesSubfolders(unittest.TestCase):
+    """_page_count() is pure Path globbing -- no RNS needed, unlike handler
+    registration below."""
+
+    def _node(self, pages_dir) -> NomadNode:
+        return NomadNode(
+            identity=object(), name="x", pages_dir=str(pages_dir),
+            announce_interval_s=21600,
+        )
+
+    def test_counts_top_level_and_collection_pages(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pages = Path(tmp) / "pages"
+            pages.mkdir()
+            (pages / "about.mu").write_text("hi")
+            collection = pages / "hulp"
+            collection.mkdir()
+            (collection / "index.mu").write_text("hi")
+            (collection / "burns.mu").write_text("hi")
+            (collection / "_meta.json").write_text("{}")
+            files_dir = pages / "files"
+            files_dir.mkdir()
+            (files_dir / "photo.png").write_bytes(b"")
+
+            n = self._node(pages)
+            # 3 fixed generated pages (index/info/nodes) + about.mu + 2 collection pages
+            self.assertEqual(n._page_count(), 3 + 1 + 2)
+
+
+class _FakeRNSDestination:
+    """Just enough of RNS.Destination for _register_handlers() to run for
+    real on a Mac without the rns package installed -- same stubbing
+    approach CLAUDE.md prescribes for aiosqlite/fastapi."""
+
+    IN = "IN"
+    SINGLE = "SINGLE"
+    ALLOW_ALL = "ALLOW_ALL"
+
+    def __init__(self, identity, direction, dest_type, *aspects):
+        self.hash = b"\x01" * 16
+        self.handlers: dict[str, object] = {}
+
+    def set_link_established_callback(self, cb) -> None:
+        pass
+
+    def register_request_handler(self, path, response_generator=None, allow=None, auto_compress=None):
+        self.handlers[path] = response_generator
+
+    def announce(self, app_data=None) -> None:
+        pass
+
+
+class _FakeRNS:
+    Destination = _FakeRNSDestination
+
+
+class TestSubfolderPageRegistration(unittest.IsolatedAsyncioTestCase):
+    """Collections (reticulum-scraper's output) register one level of
+    subfolder .mu pages at /page/<collection>/<file>.mu -- additive to the
+    existing top-level registration, which stays covered by every test
+    above unchanged."""
+
+    async def _started_node(self, pages_dir) -> NomadNode:
+        real_rns = nomad_node_module.RNS
+        nomad_node_module.RNS = _FakeRNS
+        try:
+            n = NomadNode(
+                identity=object(), name="x", pages_dir=str(pages_dir),
+                announce_interval_s=21600,
+            )
+            await n.start()
+            return n
+        finally:
+            nomad_node_module.RNS = real_rns
+
+    async def test_collection_pages_registered_with_prefix(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pages = Path(tmp) / "pages"
+            pages.mkdir()
+            collection = pages / "hulp"
+            collection.mkdir()
+            (collection / "index.mu").write_text("hi")
+            (collection / "burns.mu").write_text("hi")
+
+            n = await self._started_node(pages)
+            try:
+                handlers = n._destination.handlers
+                self.assertIn("/page/hulp/index.mu", handlers)
+                self.assertIn("/page/hulp/burns.mu", handlers)
+            finally:
+                await n.stop()
+
+    async def test_files_dir_and_meta_json_are_never_registered_as_pages(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pages = Path(tmp) / "pages"
+            pages.mkdir()
+            collection = pages / "hulp"
+            collection.mkdir()
+            (collection / "index.mu").write_text("hi")
+            (collection / "_meta.json").write_text("{}")
+            (pages / "files").mkdir()  # the pre-existing attachments dir
+
+            n = await self._started_node(pages)
+            try:
+                handlers = n._destination.handlers
+                self.assertNotIn("/page/hulp/_meta.json", handlers)
+                self.assertFalse(any(p.startswith("/page/files/") for p in handlers))
+            finally:
+                await n.stop()
+
+    async def test_top_level_pages_still_register_unprefixed(self) -> None:
+        """Proves the subfolder addition didn't change existing behaviour."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pages = Path(tmp) / "pages"
+            pages.mkdir()
+            (pages / "about.mu").write_text("hi")
+
+            n = await self._started_node(pages)
+            try:
+                self.assertIn("/page/about.mu", n._destination.handlers)
+            finally:
+                await n.stop()
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

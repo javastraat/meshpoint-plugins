@@ -294,6 +294,21 @@
       "requires": "reticulum"
     },
     {
+      "id": "reticulum-scraper",
+      "kind": "app",
+      "path": "apps/reticulum-scraper",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "hook"
+      ],
+      "description": "Scrape a website into Micron pages a hosted Reticulum node can serve with zero internet -- the offline-emergency-reference use case (e.g. a first-aid wiki). A form takes a source URL and a short name; the result lands under node_pages_dir/<name>/, browsable at :/page/<name>/index.mu.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/javastraat/meshpoint-plugins",
+      "has_setup": false,
+      "hook_host": "reticulum"
+    },
+    {
       "id": "rtl433",
       "kind": "app",
       "path": "apps/rtl433",

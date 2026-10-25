@@ -292,6 +292,22 @@ class NomadNode:
                     allow=RNS.Destination.ALLOW_ALL,
                     auto_compress=False,
                 )
+            # Scraped collections (reticulum-scraper plugin): one subfolder
+            # level under node_pages_dir, e.g. pages/hulp/index.mu ->
+            # /page/hulp/index.mu. Deliberately one level only (glob, not
+            # rglob) -- every collection's pages sit flat inside its own
+            # folder (see scraper.py), so there's never a deeper level to
+            # walk. "files" stays reserved for binary attachments below.
+            for collection_dir in sorted(pages.iterdir()):
+                if not collection_dir.is_dir() or collection_dir.name == "files":
+                    continue
+                for p in sorted(collection_dir.glob("*.mu")):
+                    d.register_request_handler(
+                        f"/page/{collection_dir.name}/{p.name}",
+                        response_generator=self._make_file_server(p),
+                        allow=RNS.Destination.ALLOW_ALL,
+                        auto_compress=False,
+                    )
             files_dir = pages / "files"
             if files_dir.is_dir():
                 for p in sorted(files_dir.rglob("*")):
@@ -329,6 +345,9 @@ class NomadNode:
                 1 for p in self._pages_dir.glob("*.mu")
                 if p.name not in _GENERATED_PAGES
             )
+            for collection_dir in self._pages_dir.iterdir():
+                if collection_dir.is_dir() and collection_dir.name != "files":
+                    n += sum(1 for _ in collection_dir.glob("*.mu"))
         return n
 
     # --- announce ------------------------------------------------------

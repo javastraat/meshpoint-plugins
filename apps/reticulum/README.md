@@ -101,9 +101,12 @@ backend/
   config_routes.py             /api/config/reticulum (Settings tab)
   nomad.py                     NomadNet page fetch over RNS Links
   nomad_routes.py              /api/reticulum/nomad/{nodes,page,file}
-  nomad_node.py                host our own nomadnetwork.node destination
+  nomad_node.py                host our own nomadnetwork.node destination (+ one subfolder level, see Scrape tab below)
   spaceapi.py                  SpaceAPI fetch/normalise (-> /page/spacestate.mu)
   ical.py                      iCalendar fetch/parse (-> /page/events.mu)
+  scraper.py                   website crawl + write a pages/<name>/ collection (reticulum-scraper's backend)
+  html_to_micron.py            HTML -> Micron conversion (reticulum-scraper's backend)
+  scrape_routes.py             /api/reticulum/scrape/{start,stop,status,collections}
   tests/
 frontend/
   reticulum_panel.js           the page (registerSidebarPage)
@@ -213,6 +216,11 @@ answers `Link`/`Request` with:
 - `/page/events.mu` — generated, only when `node_events_ical_url` is set
 - any other `*.mu` file you drop in `node_pages_dir` (`data/reticulum/pages/`
   by default)
+- one level of subfolder under `node_pages_dir` — `<collection>/*.mu` is
+  served at `/page/<collection>/<name>.mu` (e.g. `pages/hulp/index.mu` →
+  `:/page/hulp/index.mu`). This is how the **reticulum-scraper** plugin's
+  scraped sites are served — see below — and is deliberately one level
+  only, not arbitrary nesting; `files/` stays reserved (next line).
 - `files/**` under that dir, served at `/file/<relpath>`
 
 ### Editing pages — the "Pages" tab
@@ -243,6 +251,24 @@ carrying real TechInc details; see its own README to deploy + adapt. On the Pi t
 first save. Editing a `.mu` file **on disk** (SSH) is picked up per
 request; *adding* one that way still needs a restart (or a save from the
 Pages tab, which re-scans). Toggling `node_enabled` needs a restart.
+
+### Scraping a website into pages (the **reticulum-scraper** plugin)
+
+A separate plugin, **reticulum-scraper**, hooks a **Scrape** tab into this
+page: give it a source URL and a short name (e.g. `hulp`), it crawls same-
+host links from that page, converts each to Micron, and writes them to
+`node_pages_dir/<name>/` — the seed URL becomes that collection's
+`index.mu`, served (once a node is hosting) at `:/page/<name>/index.mu`.
+This is the offline-reference use case: mirror a wiki or reference site
+once while you have internet, then serve it over Reticulum/LoRa with
+none. The crawl/convert logic (`backend/scraper.py`,
+`backend/html_to_micron.py`) and its routes
+(`backend/scrape_routes.py`, `/api/reticulum/scrape/*`) live in *this*
+plugin, same reason the Call tab's backend does — it needs this plugin's
+`node_pages_dir` config and `reload_node_pages()` directly; the
+reticulum-scraper plugin itself is UI-only. See that plugin's own README
+for what is and isn't converted (no image downloading yet, no
+`robots.txt` handling, one crawl at a time).
 
 ```yaml
 plugins:

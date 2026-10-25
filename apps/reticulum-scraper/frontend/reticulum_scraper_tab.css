@@ -1,0 +1,38 @@
+/* Hooked into the Reticulum page as a tab -- no page-level chrome of its
+   own, just the two cards' worth of content. Log/row styling mirrors
+   offline-map's own .om-log (same tokens, same shape) rather than
+   inventing a new look for the same kind of element. */
+
+.rtscrape-log {
+    margin-top: 10px;
+    padding: 10px 12px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: var(--bg-inset);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.rtscrape__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline);
+}
+
+.rtscrape__row:last-child {
+    border-bottom: none;
+}
+
+.rtscrape__row .cfg-card__hint {
+    display: block;
+    margin-top: 2px;
+}
