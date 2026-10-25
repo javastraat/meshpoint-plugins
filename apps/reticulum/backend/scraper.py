@@ -333,19 +333,20 @@ class Scraper:
             target = url_to_slug.get(_normalize(href))
             return f":/page/{target}.mu" if target else None
 
+        # Every page -- the seed included -- gets its own real content.
+        # The seed (-> index.mu) additionally gets a "Pages" section
+        # linking to whatever else the crawl captured, since it's also the
+        # collection's natural landing page; past commits rendered it as a
+        # separate table-of-contents stub instead that discarded the
+        # seed's own article text entirely -- a one-page crawl (the common
+        # "just mirror this one article" case) produced an empty page.
+        other_pages = [(p.title, f"{job.name}/{p.slug}") for p in pages if p.slug != "index"]
         for page in pages:
-            if page.slug == "index":
-                continue
+            extra_links = other_pages if page.slug == "index" else None
             content = html_to_micron.convert(
-                page.html, page.title, page.url, scraped_at, resolver,
+                page.html, page.title, page.url, resolver, extra_links,
             )
             (collection_dir / f"{page.slug}.mu").write_text(content, encoding="utf-8")
-
-        toc = [(p.title, f"{job.name}/{p.slug}") for p in pages if p.slug != "index"]
-        index_content = html_to_micron.index_page(
-            pages[0].title, job.source_url, scraped_at, toc,
-        )
-        (collection_dir / "index.mu").write_text(index_content, encoding="utf-8")
 
         meta = {
             "source_url": job.source_url,

@@ -231,15 +231,24 @@ def convert(
     html: str,
     title: str,
     source_url: str,
-    scraped_at: str,
     link_resolver=lambda url: None,
+    extra_links: list[tuple[str, str]] | None = None,
 ) -> str:
     """Render one scraped page as a complete Micron document: a title
-    header, the converted body, and a source/date footer.
+    header and the converted body -- no source-URL/scraped-date footer
+    (deliberately left out of the page itself; that's what the Scrape
+    tab's own "Scraped collections" list is for).
 
-    ``link_resolver(absolute_url) -> str | None`` -- see ``_ArticleParser``.
-    ``scraped_at`` is a pre-formatted date string (caller's choice of
-    format) so this stays free of any time-zone decision.
+    ``source_url`` is the page's own URL -- needed to resolve a
+    page-relative ``href`` (``/wiki/Burns``) to an absolute one before
+    ``link_resolver(absolute_url) -> str | None`` gets to decide whether
+    it's an internal link (see ``_ArticleParser``).
+
+    ``extra_links``, when given a non-empty ``[(label, slug), ...]``,
+    appends a ``>Pages`` section linking to each -- used for the seed
+    page (``index.mu``) so it both reads as the real article *and* points
+    at whatever else the crawl captured, instead of a separate stub page
+    that discarded the seed's own content entirely.
     """
     parser = _ArticleParser(link_resolver, base_url=source_url)
     parser.feed(html)
@@ -263,39 +272,8 @@ def convert(
         "-",
         "",
         *body_lines,
-        "",
-        "-",
-        f"`F888Source: {_esc(source_url)}`f",
-        f"`F888Scraped: {_esc(scraped_at)}`f",
     ]
+    if extra_links:
+        out += ["", ">Pages", ""]
+        out += [f"`[{_esc(label)}`:/page/{slug}.mu]" for label, slug in extra_links]
     return "\n".join(out) + "\n"
-
-
-def index_page(
-    title: str,
-    source_url: str,
-    scraped_at: str,
-    pages: list[tuple[str, str]],
-) -> str:
-    """Render the collection's own ``index.mu`` table of contents --
-    ``pages`` is ``[(label, slug), ...]`` for every other page captured in
-    the crawl, since wiki articles don't reliably cross-link everything a
-    crawl visits."""
-    lines = [
-        "`F38f`!" + _esc(title or "Untitled") + "`!`f",
-        "-",
-        "",
-        f"Offline copy of `[{_esc(source_url)}`{source_url}].",
-        "",
-        ">Pages",
-        "",
-    ]
-    for label, slug in pages:
-        lines.append(f"`[{_esc(label)}`:/page/{slug}.mu]")
-    lines += [
-        "",
-        "-",
-        f"`F888Source: {_esc(source_url)}`f",
-        f"`F888Scraped: {_esc(scraped_at)}`f",
-    ]
-    return "\n".join(lines) + "\n"

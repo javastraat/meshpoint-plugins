@@ -1,5 +1,5 @@
 name = "reticulum"
-version = "1.1.1"
+version = "1.1.2"
 meshpoint_api = 1
 provides = ["service", "routes", "sidebar", "topbar"]
                                     #   service  the LxmfService (RNS/LXMF
