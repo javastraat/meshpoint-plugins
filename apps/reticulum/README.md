@@ -122,6 +122,7 @@ map again after roughly 7 days without an announce once disabled.
 ```
 plugin.toml                    provides = ["service", "routes", "sidebar", "topbar"]
 clear_reticulum_packets.py     maintenance: wipe reticulum messages / peer roster
+nomad_fetch.py                 CLI: fetch a NomadNet page/API path through meshpoint's own /nomad/page endpoint
 backend/
   __init__.py                  register(reg) -- add_router x3 + add_service
   state.py                     plugins.reticulum.* config + set_config/_persist
