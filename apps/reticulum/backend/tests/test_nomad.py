@@ -179,14 +179,33 @@ class TestEvictStaleLink(unittest.TestCase):
     def test_missing_key_does_not_raise(self) -> None:
         nomad._evict_stale_link("not-cached", object())
 
+    def test_tears_down_the_link_not_just_forgets_it(self) -> None:
+        # RNS.Transport holds its own reference -- a Link only popped from the
+        # cache keeps sending keepalives and stays open on the remote node.
+        link = _fake_link()
+        nomad._links["deadbeef"] = link
+        nomad._evict_stale_link("deadbeef", link)
+        self.assertTrue(link.torn_down)
+
+    def test_tears_down_even_when_no_longer_cached(self) -> None:
+        stale_link = _fake_link()
+        fresh_link = _fake_link()
+        nomad._links["deadbeef"] = fresh_link
+        nomad._evict_stale_link("deadbeef", stale_link)
+        self.assertTrue(stale_link.torn_down)
+        self.assertFalse(fresh_link.torn_down)
+
 
 class _FakeLinkStatus:
     """Stand-in for RNS.Link's status constants -- sweep_stale_links()
     compares against RNS.Link.CLOSED, so these tests monkeypatch
     nomad.RNS regardless of whether the real package is installed on
     this machine."""
-    CLOSED = "closed"
+    PENDING = "pending"
+    HANDSHAKE = "handshake"
     ACTIVE = "active"
+    STALE = "stale"
+    CLOSED = "closed"
 
 
 class _FakeRNS:
@@ -300,3 +319,77 @@ class TestExtractFile(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestEnsureLink(unittest.TestCase):
+    """_ensure_link() with a fake RNS: what happens to a cached Link that
+    isn't ACTIVE, and to a new one that never comes up."""
+
+    def setUp(self) -> None:
+        self._original_rns = nomad.RNS
+        self._original_timeout = nomad._link_timeout_s
+        self.created = []
+        created = self.created
+
+        class _NewLink:
+            status = _FakeLinkStatus.PENDING
+            torn_down = False
+
+            def __init__(self, destination) -> None:
+                created.append(self)
+
+            def teardown(self) -> None:
+                self.torn_down = True
+
+        for name in ("PENDING", "HANDSHAKE", "ACTIVE", "STALE", "CLOSED"):
+            setattr(_NewLink, name, getattr(_FakeLinkStatus, name))
+
+        class _RNS:
+            Link = _NewLink
+
+            class Identity:
+                @staticmethod
+                def recall(_hash):
+                    return object()
+
+            class Destination:
+                OUT = SINGLE = None
+
+                def __init__(self, *args) -> None:
+                    pass
+
+        nomad.RNS = _RNS
+        nomad._link_timeout_s = 0.2
+
+    def tearDown(self) -> None:
+        nomad.RNS = self._original_rns
+        nomad._link_timeout_s = self._original_timeout
+        nomad.reset()
+
+    def test_link_that_never_comes_up_is_torn_down_and_uncached(self) -> None:
+        result = asyncio.run(nomad._ensure_link("deadbeef", b"\xde\xad"))
+        self.assertIsNone(result)
+        self.assertEqual(len(self.created), 1)
+        self.assertTrue(self.created[0].torn_down)
+        self.assertNotIn("deadbeef", nomad._links)
+
+    def test_stale_cached_link_is_torn_down_before_replacing(self) -> None:
+        old = _fake_link(status=_FakeLinkStatus.STALE)
+        nomad._links["deadbeef"] = old
+        asyncio.run(nomad._ensure_link("deadbeef", b"\xde\xad"))
+        self.assertTrue(old.torn_down)
+
+    def test_link_still_coming_up_is_waited_on_not_duplicated(self) -> None:
+        pending = _fake_link(status=_FakeLinkStatus.PENDING)
+        nomad._links["deadbeef"] = pending
+
+        async def _run():
+            async def _come_up():
+                await asyncio.sleep(0.05)
+                pending.status = _FakeLinkStatus.ACTIVE
+            asyncio.get_running_loop().create_task(_come_up())
+            return await nomad._ensure_link("deadbeef", b"\xde\xad")
+
+        self.assertIs(asyncio.run(_run()), pending)
+        self.assertEqual(self.created, [])
+        self.assertFalse(pending.torn_down)

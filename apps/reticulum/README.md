@@ -197,6 +197,16 @@ Two ways it gets cleaned up:
   guessing at whether some *other* tab/plugin is still using the same
   cached Link to the same node.
 
+Every Link that leaves the cache is torn down, never just forgotten —
+including one evicted after a failed or timed-out request, a STALE one
+being replaced, and one that never came up within the link timeout.
+`RNS.Transport` holds its own reference, so a Link only popped from
+`_links` kept sending keepalives every 360 s and the remote node kept
+it open indefinitely. A repeater polled every 15 minutes (e.g. from
+Node-RED via `/api/reticulum/nomad/page`) piled up 15+ such Links.
+A cached Link still coming up (PENDING/HANDSHAKE) is waited on by the
+next request instead of being replaced by a second one alongside it.
+
 ## Activity tab
 
 The **Activity** tab is the raw announce feed — every `lxmf.delivery`,

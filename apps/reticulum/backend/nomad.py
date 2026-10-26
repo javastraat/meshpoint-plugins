@@ -60,7 +60,7 @@ _request_timeout_s = 30
 # How long a cached Link can sit with no inbound activity before
 # sweep_stale_links() (run on a timer by lxmf_service.py's
 # _link_sweep_loop) drops it. Mirrors the SenseCAP P1 repeater firmware's
-# own sm_links_watchdog() -- that one uses a 15-minute LINK_TIMEOUT, but
+# own sm_links_watchdog() -- that one closes after 725 s with nothing received, but
 # it's tearing down inbound Links to a repeater serving live mesh traffic;
 # this is a UI-driven browsing cache (Browse tab / Reticulum Browser /
 # the Dashboard's quick-browse modal), where nobody's looked at a page in
@@ -116,18 +116,33 @@ async def _ensure_path(dest_hash: bytes) -> bool:
     return RNS.Transport.has_path(dest_hash)
 
 
+def _teardown_quietly(destination_hash_hex: str, link) -> None:
+    try:
+        link.teardown()
+    except Exception:  # noqa: BLE001 -- dropping it either way
+        logger.debug("Link teardown failed for %s", destination_hash_hex, exc_info=True)
+
+
 def _evict_stale_link(destination_hash_hex: str, link) -> None:
-    """Drop a cached Link that just proved itself dead (failed request, or
-    no response at all within our own timeout) so the next attempt builds a
-    fresh one instead of retrying the same dead Link forever.
+    """Tear down and drop a cached Link that just proved itself dead (failed
+    request, no response within our own timeout, or never came up) so the
+    next attempt builds a fresh one instead of retrying the same dead Link
+    forever.
 
     Needed because RNS.Link has no concept of "the remote process restarted
     out from under me" -- a Link torn down by the other end simply vanishing
     (e.g. an RTNode reboot, which sends no graceful close) can keep reporting
     ACTIVE here for minutes via RNS's own keepalive/staleness timers, well
-    past the point every request over it starts failing. Only evicts if the
-    cache still holds this exact Link object -- a concurrent request may
-    have already replaced it with a working one.
+    past the point every request over it starts failing.
+
+    Always torn down, not just forgotten: RNS.Transport keeps its own
+    reference, so a Link only popped from ``_links`` stays alive in this
+    process and keeps sending keepalives every 360 s. The remote answers
+    them, so it never looks idle there either -- each one held a Link (and
+    its memory) open on the node indefinitely, piling up on a repeater
+    polled every 15 minutes. Only pops the cache entry if it still holds
+    this exact Link object -- a concurrent request may have already
+    replaced it with a working one.
 
     Called from both the asyncio loop (the timeout/exception paths in
     ``_request``) and RNS's own callback thread (``_on_failed`` below, same
@@ -137,14 +152,35 @@ def _evict_stale_link(destination_hash_hex: str, link) -> None:
     """
     if _links.get(destination_hash_hex) is link:
         _links.pop(destination_hash_hex, None)
+    _teardown_quietly(destination_hash_hex, link)
+
+
+async def _wait_active(link, loop) -> bool:
+    deadline = loop.time() + _link_timeout_s
+    while link.status != RNS.Link.ACTIVE and loop.time() < deadline:
+        await asyncio.sleep(0.1)
+    return link.status == RNS.Link.ACTIVE
 
 
 async def _ensure_link(destination_hash_hex: str, dest_hash: bytes):
-    """Return an ACTIVE RNS.Link to the node, from cache or freshly made."""
+    """Return an ACTIVE RNS.Link to the node, from cache or freshly made.
+
+    A cached Link still coming up (PENDING/HANDSHAKE -- multi-hop LoRa can
+    take longer than one caller's timeout) is waited on, not replaced: a
+    second Link alongside it would orphan the first. Anything that doesn't
+    end up ACTIVE is torn down before being dropped (see
+    ``_evict_stale_link``)."""
     loop = asyncio.get_running_loop()
     link = _links.get(destination_hash_hex)
     if link is not None and link.status == RNS.Link.ACTIVE:
         return link
+    if link is not None and link.status in (RNS.Link.PENDING, RNS.Link.HANDSHAKE):
+        if await _wait_active(link, loop):
+            return link
+        _evict_stale_link(destination_hash_hex, link)
+        return None
+    if link is not None:
+        _evict_stale_link(destination_hash_hex, link)   # STALE/CLOSED
 
     identity = RNS.Identity.recall(dest_hash)
     if identity is None:
@@ -156,10 +192,10 @@ async def _ensure_link(destination_hash_hex: str, dest_hash: bytes):
     )
     link = RNS.Link(destination)
     _links[destination_hash_hex] = link
-    deadline = loop.time() + _link_timeout_s
-    while link.status != RNS.Link.ACTIVE and loop.time() < deadline:
-        await asyncio.sleep(0.1)
-    return link if link.status == RNS.Link.ACTIVE else None
+    if await _wait_active(link, loop):
+        return link
+    _evict_stale_link(destination_hash_hex, link)
+    return None
 
 
 async def _request(destination_hash_hex: str, path: str, field_data: Optional[dict]):
@@ -333,10 +369,7 @@ def drop_link(destination_hash_hex: str) -> bool:
     _fingerprints.pop(destination_hash_hex, None)
     if link is None:
         return False
-    try:
-        link.teardown()
-    except Exception:  # noqa: BLE001 -- already out of the cache either way
-        logger.debug("Link teardown failed for %s", destination_hash_hex, exc_info=True)
+    _teardown_quietly(destination_hash_hex, link)
     return True
 
 
