@@ -165,6 +165,51 @@ class ReticulumSettingsTab {
                                     announces still go out over LoRa.
                                 </span>
                             </label>
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" data-rt-rnode-discoverable>
+                                <span class="cfg-field__label">Show on rmap.world</span>
+                            </label>
+                            <span class="cfg-field__hint">
+                                Lets rnsd announce this radio's location on the public
+                                <a href="https://rmap.world" target="_blank" rel="noopener">rmap.world</a>
+                                map -- meshpoint itself sends nothing extra. Switches
+                                Interface mode above to <em>Gateway</em> automatically:
+                                Reticulum otherwise forces a discoverable radio into
+                                <em>Access point</em> instead, which blocks all of its
+                                announce forwarding.
+                            </span>
+                            <div class="cfg-row" data-rt-rnode-discovery-fields>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Name on the map</span>
+                                    <input class="cfg-field__input" type="text" maxlength="32"
+                                           placeholder="(defaults to display name)"
+                                           data-rt-rnode-discovery-name>
+                                </label>
+                                <label class="cfg-field cfg-field--narrow">
+                                    <span class="cfg-field__label">Latitude</span>
+                                    <input class="cfg-field__input" type="number" step="any"
+                                           min="-90" max="90"
+                                           placeholder="(from Configuration)"
+                                           data-rt-rnode-discovery-lat>
+                                </label>
+                                <label class="cfg-field cfg-field--narrow">
+                                    <span class="cfg-field__label">Longitude</span>
+                                    <input class="cfg-field__input" type="number" step="any"
+                                           min="-180" max="180"
+                                           placeholder="(from Configuration)"
+                                           data-rt-rnode-discovery-lon>
+                                </label>
+                                <label class="cfg-field cfg-field--narrow">
+                                    <span class="cfg-field__label">Announce every (min)</span>
+                                    <input class="cfg-field__input" type="number"
+                                           min="5" max="1440" step="1"
+                                           data-rt-rnode-discovery-interval>
+                                </label>
+                            </div>
+                            <span class="cfg-field__hint">
+                                Leave name/latitude/longitude blank to use this device's
+                                own display name and Configuration &rarr; GPS pin.
+                            </span>
                         </fieldset>
                         <fieldset class="cfg-fieldset">
                             <legend class="cfg-fieldset__legend">TCP backbone</legend>
@@ -517,6 +562,12 @@ class ReticulumSettingsTab {
         this._sf = this._q('[data-rt-sf]');
         this._cr = this._q('[data-rt-cr]');
         this._rnodeMode = this._q('[data-rt-rnode-mode]');
+        this._rnodeDiscoverable = this._q('[data-rt-rnode-discoverable]');
+        this._rnodeDiscoveryFields = this._q('[data-rt-rnode-discovery-fields]');
+        this._rnodeDiscoveryName = this._q('[data-rt-rnode-discovery-name]');
+        this._rnodeDiscoveryLat = this._q('[data-rt-rnode-discovery-lat]');
+        this._rnodeDiscoveryLon = this._q('[data-rt-rnode-discovery-lon]');
+        this._rnodeDiscoveryInterval = this._q('[data-rt-rnode-discovery-interval]');
         this._backboneMode = this._q('[data-rt-backbone-mode]');
         this._backboneEnabled = this._q('[data-rt-backbone-enabled]');
         this._backboneHost = this._q('[data-rt-backbone-host]');
@@ -573,6 +624,17 @@ class ReticulumSettingsTab {
         this._q('[data-rt-disconnect-links]').addEventListener('click', () => this._disconnectAllLinks());
         this._q('[data-rt-telemetry-send]')?.addEventListener('click', (e) => this._sendTelemetry(e.currentTarget));
         this._loadLinkCount();
+        this._rnodeDiscoverable.addEventListener('change', () => {
+            // Reticulum forces a discoverable RNodeInterface into Access
+            // point mode unless it's already gateway/access_point/internal
+            // -- see config_routes.py's _discoverable_forces_gateway_mode
+            // for the full story. Flip the visible dropdown to match what
+            // actually gets saved, rather than let it silently diverge.
+            const safe = ['gateway', 'access_point', 'internal'];
+            if (this._rnodeDiscoverable.checked && !safe.includes(this._rnodeMode.value)) {
+                this._rnodeMode.value = 'gateway';
+            }
+        });
 
         this._q('[data-rt-extra-iface-add]')?.addEventListener('click', () => {
             this._readExtraInterfaces();  // keep any in-progress edits
@@ -771,6 +833,11 @@ class ReticulumSettingsTab {
         if (this._sf) this._sf.value = rt.rnode_spreading_factor ?? 8;
         if (this._cr) this._cr.value = rt.rnode_coding_rate ?? 5;
         if (this._rnodeMode) this._rnodeMode.value = rt.rnode_interface_mode || 'full';
+        if (this._rnodeDiscoverable) this._rnodeDiscoverable.checked = !!rt.rnode_discoverable;
+        if (this._rnodeDiscoveryName) this._rnodeDiscoveryName.value = rt.rnode_discovery_name || '';
+        if (this._rnodeDiscoveryLat) this._rnodeDiscoveryLat.value = rt.rnode_latitude ?? '';
+        if (this._rnodeDiscoveryLon) this._rnodeDiscoveryLon.value = rt.rnode_longitude ?? '';
+        if (this._rnodeDiscoveryInterval) this._rnodeDiscoveryInterval.value = rt.rnode_announce_interval_min ?? 360;
         if (this._backboneMode) this._backboneMode.value = rt.backbone_interface_mode || 'internal';
         if (this._backboneEnabled) this._backboneEnabled.checked = rt.backbone_enabled !== false;
         if (this._backboneHost) this._backboneHost.value = rt.backbone_host || 'node.reticulumnet.nl';
@@ -1051,6 +1118,13 @@ class ReticulumSettingsTab {
             rnode_spreading_factor: Number(this._sf.value),
             rnode_coding_rate: Number(this._cr.value),
             rnode_interface_mode: this._rnodeMode?.value || 'full',
+            rnode_discoverable: !!this._rnodeDiscoverable?.checked,
+            rnode_discovery_name: (this._rnodeDiscoveryName?.value || '').trim(),
+            rnode_latitude: (this._rnodeDiscoveryLat?.value ?? '') !== ''
+                ? Number(this._rnodeDiscoveryLat.value) : null,
+            rnode_longitude: (this._rnodeDiscoveryLon?.value ?? '') !== ''
+                ? Number(this._rnodeDiscoveryLon.value) : null,
+            rnode_announce_interval_min: Number(this._rnodeDiscoveryInterval?.value) || 360,
             backbone_enabled: backboneEnabled,
             backbone_host: this._backboneHost.value.trim() || 'node.reticulumnet.nl',
             backbone_port: Number(this._backbonePort.value),

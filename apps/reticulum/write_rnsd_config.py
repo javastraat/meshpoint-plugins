@@ -79,7 +79,7 @@ _RNODE_TEMPLATE = """
     txpower = {rnode_tx_power}
     spreadingfactor = {rnode_spreading_factor}
     codingrate = {rnode_coding_rate}
-"""
+{discoverable_block}"""
 
 _BACKBONE_TEMPLATE = """
   [[ReticulumNet Internet]]
@@ -105,6 +105,18 @@ _BACKBONE_TEMPLATE = """
 # blocks this node's own announces. A backbone of "full" forwards
 # everything onto RF again; an extra TCP interface wants "internal" too.
 _INTERFACE_MODES = ("full", "gateway", "access_point", "roaming", "boundary", "internal")
+
+# RNode interface modes RNS itself treats as safe to combine with
+# "discoverable = Yes" without rewriting them -- Reticulum.py's own loader
+# (~r.1019-1023) forces any OTHER mode into access_point the moment
+# discoverable is set on an RNodeInterface, which blocks ALL of that
+# interface's own announce forwarding (confirmed against the installed RNS
+# package's source, not just observed behaviour). config_routes.py's
+# ReticulumUpdate already coerces rnode_interface_mode to "gateway" in this
+# case before it's ever saved, but _effective_rnode_mode() below re-checks
+# at generation time too -- defense in depth against a stored config from
+# before this existed, or a hand-edited local.yaml.
+_RMAP_SAFE_MODES = ("gateway", "access_point", "internal")
 
 # Operator-added extra interfaces (Settings tab -> "Extra interfaces").
 # Only these three types are emitted; the fields listed are the ones each
@@ -186,6 +198,11 @@ _DEFAULTS = {
     "rnode_spreading_factor": 8,
     "rnode_coding_rate": 5,
     "rnode_interface_mode": "full",
+    "rnode_discoverable": False,
+    "rnode_discovery_name": "",
+    "rnode_latitude": None,
+    "rnode_longitude": None,
+    "rnode_announce_interval_min": 360,
     "backbone_enabled": True,
     "backbone_host": "node.reticulumnet.nl",
     "backbone_port": 4242,
@@ -201,6 +218,33 @@ def _interface_mode(rc: dict, key: str) -> str:
         return mode
     print(f"plugins.reticulum.{key} {rc[key]!r} is not a valid mode -- using {_DEFAULTS[key]}")
     return _DEFAULTS[key]
+
+
+def _effective_rnode_mode(rc: dict) -> str:
+    """rnode_interface_mode, forced to "gateway" if rnode_discoverable is
+    on and it isn't already one of _RMAP_SAFE_MODES -- see that constant's
+    comment. config_routes.py already does this before saving, so this is
+    normally a no-op; it's the generator's own backstop."""
+    mode = _interface_mode(rc, "rnode_interface_mode")
+    if rc["rnode_discoverable"] and mode not in _RMAP_SAFE_MODES:
+        print(
+            f"reticulum: rnode_discoverable is true and rnode_interface_mode "
+            f"was {mode!r} -- using gateway so RNS doesn't silently fall "
+            f"back to access_point (which blocks all RNode announce "
+            f"forwarding)."
+        )
+        mode = "gateway"
+    return mode
+
+
+def _sanitise_discovery_name(name, fallback: str) -> str:
+    """A single-line, bracket-free discovery_name -- ConfigObj would choke
+    on a literal newline or "[" inside a value, same reasoning as
+    _sanitise_interface_name() above. Capped at 32 chars (rmap.world display
+    name, not a hard protocol limit)."""
+    cleaned = str(name or "").strip().replace("[", "").replace("]", "")
+    cleaned = cleaned.splitlines()[0] if cleaned else ""
+    return cleaned[:32] or fallback
 
 
 def main() -> int:
@@ -228,6 +272,24 @@ def main() -> int:
             "with no RNode interface."
         )
     else:
+        discoverable_block = ""
+        if rc["rnode_discoverable"]:
+            name = _sanitise_discovery_name(
+                rc["rnode_discovery_name"], cfg.device.device_name or "Meshpoint",
+            )
+            lat = rc["rnode_latitude"]
+            lon = rc["rnode_longitude"]
+            if lat in (None, "") or lon in (None, ""):
+                lat, lon = cfg.device.latitude, cfg.device.longitude
+            interval = max(5, int(rc["rnode_announce_interval_min"] or 360))
+            lines = ["    discoverable = Yes", f"    discovery_name = {name}"]
+            if lat is not None and lon is not None:
+                lines.append(f"    latitude = {lat}")
+                lines.append(f"    longitude = {lon}")
+            lines.append(f"    announce_interval = {interval}")
+            discoverable_block = "\n".join(lines) + "\n"
+            print(f"reticulum: RNode discoverable as {name!r} (rmap.world)")
+
         rnode_block = _RNODE_TEMPLATE.format(
             rnode_serial_port=rc["rnode_serial_port"],
             rnode_frequency_hz=rc["rnode_frequency_hz"],
@@ -235,7 +297,8 @@ def main() -> int:
             rnode_tx_power=rc["rnode_tx_power"],
             rnode_spreading_factor=rc["rnode_spreading_factor"],
             rnode_coding_rate=rc["rnode_coding_rate"],
-            rnode_interface_mode=_interface_mode(rc, "rnode_interface_mode"),
+            rnode_interface_mode=_effective_rnode_mode(rc),
+            discoverable_block=discoverable_block,
         )
 
     backbone_block = ""

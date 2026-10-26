@@ -112,6 +112,81 @@ class TestInterfaceModes(unittest.TestCase):
         self.assertNotIn("mode", m.extra_interfaces[1].to_stored())
 
 
+class TestRmapDiscovery(unittest.TestCase):
+    def test_defaults_to_off(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED)
+        self.assertFalse(m.rnode_discoverable)
+        self.assertEqual(m.rnode_discovery_name, "")
+        self.assertIsNone(m.rnode_latitude)
+        self.assertIsNone(m.rnode_longitude)
+        self.assertEqual(m.rnode_announce_interval_min, 360)
+
+    def test_needs_rnode_enabled(self) -> None:
+        with self.assertRaises(ValidationError) as cm:
+            ReticulumUpdate(**_REQUIRED, rnode_enabled=False, rnode_discoverable=True)
+        self.assertIn("rmap.world", str(cm.exception))
+
+    def test_with_rnode_enabled_is_accepted(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED, rnode_enabled=True, rnode_discoverable=True)
+        self.assertTrue(m.rnode_discoverable)
+
+    def test_discoverable_forces_full_to_gateway(self) -> None:
+        m = ReticulumUpdate(
+            **_REQUIRED, rnode_discoverable=True, rnode_interface_mode="full",
+        )
+        self.assertEqual(m.rnode_interface_mode, "gateway")
+
+    def test_discoverable_forces_roaming_to_gateway(self) -> None:
+        m = ReticulumUpdate(
+            **_REQUIRED, rnode_discoverable=True, rnode_interface_mode="roaming",
+        )
+        self.assertEqual(m.rnode_interface_mode, "gateway")
+
+    def test_discoverable_leaves_access_point_alone(self) -> None:
+        m = ReticulumUpdate(
+            **_REQUIRED, rnode_discoverable=True, rnode_interface_mode="access_point",
+        )
+        self.assertEqual(m.rnode_interface_mode, "access_point")
+
+    def test_discoverable_leaves_internal_alone(self) -> None:
+        m = ReticulumUpdate(
+            **_REQUIRED, rnode_discoverable=True, rnode_interface_mode="internal",
+        )
+        self.assertEqual(m.rnode_interface_mode, "internal")
+
+    def test_not_discoverable_leaves_mode_alone(self) -> None:
+        m = ReticulumUpdate(
+            **_REQUIRED, rnode_discoverable=False, rnode_interface_mode="full",
+        )
+        self.assertEqual(m.rnode_interface_mode, "full")
+
+    def test_name_brackets_stripped(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED, rnode_discovery_name="[[Olympic]]")
+        self.assertEqual(m.rnode_discovery_name, "Olympic")
+
+    def test_name_newline_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            ReticulumUpdate(**_REQUIRED, rnode_discovery_name="a\nb")
+
+    def test_name_too_long_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            ReticulumUpdate(**_REQUIRED, rnode_discovery_name="x" * 33)
+
+    def test_latitude_out_of_range_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            ReticulumUpdate(**_REQUIRED, rnode_latitude=95.0)
+
+    def test_longitude_out_of_range_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            ReticulumUpdate(**_REQUIRED, rnode_longitude=-185.0)
+
+    def test_announce_interval_floor_and_ceiling(self) -> None:
+        with self.assertRaises(ValidationError):
+            ReticulumUpdate(**_REQUIRED, rnode_announce_interval_min=4)
+        with self.assertRaises(ValidationError):
+            ReticulumUpdate(**_REQUIRED, rnode_announce_interval_min=1441)
+
+
 class TestPropagationOutboundNode(unittest.TestCase):
     def test_blank_is_fine(self) -> None:
         m = ReticulumUpdate(**_REQUIRED, propagation_outbound_node="")

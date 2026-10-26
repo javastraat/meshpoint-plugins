@@ -96,7 +96,7 @@ class TestInterfaceModes(unittest.TestCase):
         rnode = w._RNODE_TEMPLATE.format(
             rnode_serial_port="/dev/ttyACM0", rnode_frequency_hz=1, rnode_bandwidth_hz=1,
             rnode_tx_power=1, rnode_spreading_factor=8, rnode_coding_rate=5,
-            rnode_interface_mode="roaming",
+            rnode_interface_mode="roaming", discoverable_block="",
         )
         self.assertIn("mode = roaming", rnode)
         # the half that keeps internal-mode (backbone) announces off RF
@@ -120,6 +120,63 @@ class TestInterfaceModes(unittest.TestCase):
         ])
         self.assertEqual(out.count("mode = "), 1)
         self.assertIn("[[A]]\n    type = TCPClientInterface\n    enabled = Yes\n    mode = boundary", out)
+
+
+class TestEffectiveRnodeMode(unittest.TestCase):
+    def test_discoverable_off_leaves_mode_alone(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_discoverable=False, rnode_interface_mode="full")
+        self.assertEqual(w._effective_rnode_mode(rc), "full")
+
+    def test_discoverable_on_full_becomes_gateway(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_discoverable=True, rnode_interface_mode="full")
+        self.assertEqual(w._effective_rnode_mode(rc), "gateway")
+
+    def test_discoverable_on_roaming_becomes_gateway(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_discoverable=True, rnode_interface_mode="roaming")
+        self.assertEqual(w._effective_rnode_mode(rc), "gateway")
+
+    def test_discoverable_on_already_gateway_stays_gateway(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_discoverable=True, rnode_interface_mode="gateway")
+        self.assertEqual(w._effective_rnode_mode(rc), "gateway")
+
+    def test_discoverable_on_access_point_is_left_alone(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_discoverable=True, rnode_interface_mode="access_point")
+        self.assertEqual(w._effective_rnode_mode(rc), "access_point")
+
+    def test_discoverable_on_internal_is_left_alone(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_discoverable=True, rnode_interface_mode="internal")
+        self.assertEqual(w._effective_rnode_mode(rc), "internal")
+
+
+class TestSanitiseDiscoveryName(unittest.TestCase):
+    def test_blank_falls_back(self) -> None:
+        self.assertEqual(w._sanitise_discovery_name("", "Meshpoint"), "Meshpoint")
+        self.assertEqual(w._sanitise_discovery_name(None, "Meshpoint"), "Meshpoint")
+
+    def test_brackets_stripped(self) -> None:
+        self.assertEqual(w._sanitise_discovery_name("[[Olympic]]", "x"), "Olympic")
+
+    def test_only_first_line_kept(self) -> None:
+        self.assertEqual(w._sanitise_discovery_name("Olympic\nextra", "x"), "Olympic")
+
+    def test_capped_at_32_chars(self) -> None:
+        self.assertEqual(len(w._sanitise_discovery_name("x" * 50, "x")), 32)
+
+
+class TestDiscoverableBlockRendering(unittest.TestCase):
+    """Formatting-level check that the template's new slot actually lands
+    inside the RNode block, without needing the full load_config() stack."""
+
+    def test_discoverable_block_renders_inside_the_rnode_block(self) -> None:
+        rnode = w._RNODE_TEMPLATE.format(
+            rnode_serial_port="/dev/ttyACM0", rnode_frequency_hz=1, rnode_bandwidth_hz=1,
+            rnode_tx_power=1, rnode_spreading_factor=8, rnode_coding_rate=5,
+            rnode_interface_mode="gateway",
+            discoverable_block="    discoverable = Yes\n    discovery_name = Olympic\n",
+        )
+        self.assertIn("discoverable = Yes", rnode)
+        self.assertIn("discovery_name = Olympic", rnode)
+        self.assertIn("mode = gateway", rnode)
 
 
 if __name__ == "__main__":  # pragma: no cover

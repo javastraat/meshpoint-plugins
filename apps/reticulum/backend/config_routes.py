@@ -44,7 +44,7 @@ edits made here don't reach rnsd yet. Repointed in the Phase 5 cutover.
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -177,6 +177,11 @@ class ReticulumUpdate(BaseModel):
     rnode_spreading_factor: int = Field(8, ge=5, le=12)
     rnode_coding_rate: int = Field(5, ge=5, le=8)
     rnode_interface_mode: InterfaceMode = "full"
+    rnode_discoverable: bool = False
+    rnode_discovery_name: str = ""
+    rnode_latitude: Optional[float] = Field(None, ge=-90, le=90)
+    rnode_longitude: Optional[float] = Field(None, ge=-180, le=180)
+    rnode_announce_interval_min: int = Field(360, ge=5, le=1440)
     backbone_enabled: bool = True
     backbone_host: str = "node.reticulumnet.nl"
     backbone_port: int = Field(4242, ge=1, le=65535)
@@ -216,6 +221,16 @@ class ReticulumUpdate(BaseModel):
                 "must be a Reticulum destination hash (hex, e.g. the 32-char "
                 "hash from a peer's Destination column) or blank"
             )
+        return cleaned
+
+    @field_validator("rnode_discovery_name")
+    @classmethod
+    def _discovery_name_ok(cls, value: str) -> str:
+        cleaned = value.strip().replace("[", "").replace("]", "")
+        if "\n" in cleaned or "\r" in cleaned:
+            raise ValueError("rnode_discovery_name must be a single line")
+        if len(cleaned) > 32:
+            raise ValueError("rnode_discovery_name must be 32 characters or fewer")
         return cleaned
 
     @field_validator("telemetry_collector")
@@ -283,6 +298,32 @@ class ReticulumUpdate(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _discoverable_needs_rnode(self) -> "ReticulumUpdate":
+        if self.rnode_discoverable and not self.rnode_enabled:
+            raise ValueError(
+                "Show on rmap.world needs the RNode radio interface enabled"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _discoverable_forces_gateway_mode(self) -> "ReticulumUpdate":
+        """RNS silently forces a *discoverable* RNodeInterface into
+        access_point mode (blocking ALL of its announce forwarding) unless
+        the mode is already gateway/access_point/internal -- see
+        write_rnsd_config.py's _INTERFACE_MODES comment. Rather than let
+        that happen silently on rnsd's side, coerce it here to "gateway"
+        (same forwarding behaviour as "full", see the Settings tab's own
+        hint text) whenever it isn't already one of the three safe values --
+        matches the Settings tab JS, which flips the dropdown the moment the
+        "Show on rmap.world" checkbox is checked, but this is the authority
+        for any other caller of this API."""
+        if self.rnode_discoverable and self.rnode_interface_mode not in (
+            "gateway", "access_point", "internal",
+        ):
+            self.rnode_interface_mode = "gateway"
+        return self
+
 
 @router.get("/reticulum")
 async def get_reticulum(_claims: SessionClaims = Depends(require_admin)):
@@ -326,6 +367,11 @@ async def update_reticulum(
         "rnode_spreading_factor": req.rnode_spreading_factor,
         "rnode_coding_rate": req.rnode_coding_rate,
         "rnode_interface_mode": req.rnode_interface_mode,
+        "rnode_discoverable": req.rnode_discoverable,
+        "rnode_discovery_name": req.rnode_discovery_name,
+        "rnode_latitude": req.rnode_latitude,
+        "rnode_longitude": req.rnode_longitude,
+        "rnode_announce_interval_min": req.rnode_announce_interval_min,
         "backbone_enabled": req.backbone_enabled,
         "backbone_host": req.backbone_host,
         "backbone_port": req.backbone_port,

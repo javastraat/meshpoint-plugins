@@ -22,6 +22,11 @@ user a migration diff moving their real ``reticulum:`` values here:
         rnode_spreading_factor: 8
         rnode_coding_rate: 5
         rnode_interface_mode: full
+        rnode_discoverable: false
+        rnode_discovery_name: ""
+        rnode_latitude: null
+        rnode_longitude: null
+        rnode_announce_interval_min: 360
         backbone_enabled: true
         backbone_host: node.reticulumnet.nl
         backbone_port: 4242
@@ -96,6 +101,23 @@ _DEFAULTS: dict[str, Any] = {
     "rnode_tx_power": 20,
     "rnode_spreading_factor": 8,
     "rnode_coding_rate": 5,
+    # rmap.world discovery: writes RNS's own interface-discovery-announce
+    # lines (discoverable/discovery_name/latitude/longitude/announce_interval)
+    # into the RNode block -- rnsd sends the announce itself, this plugin
+    # sends nothing extra. Blank name/lat/lon fall back to the device name
+    # and Configuration -> GPS pin (core's device.latitude/longitude) at
+    # generation time -- see write_rnsd_config.py. config_routes.py's
+    # ReticulumUpdate forces rnode_interface_mode to "gateway" whenever this
+    # is on and the mode isn't already gateway/access_point/internal: RNS
+    # silently forces a discoverable RNodeInterface into access_point
+    # (blocking ALL of its announce forwarding) unless the mode is already
+    # one of those three -- see write_rnsd_config.py's _INTERFACE_MODES
+    # comment for the full story.
+    "rnode_discoverable": False,
+    "rnode_discovery_name": "",
+    "rnode_latitude": None,
+    "rnode_longitude": None,
+    "rnode_announce_interval_min": 360,
     "backbone_enabled": True,
     "backbone_host": "node.reticulumnet.nl",
     "backbone_port": 4242,

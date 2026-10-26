@@ -87,6 +87,36 @@ The **RNode firmware flasher** and the **Heltec-V4 Reticulum-node firmware
 card** stay in core (Configuration → Firmware) — they're hardware
 provisioning, usable with or without this plugin.
 
+### rmap.world discovery (opt-in)
+
+Settings tab → RNode radio → **Show on rmap.world** writes
+`rnsd`'s own `discoverable`/`discovery_name`/`latitude`/`longitude`/
+`announce_interval` lines into the RNode's interface block — `rnsd` sends
+the announce itself (aspect `rnstransport.discovery.interface`, carried
+over the TCP backbone to `node.reticulumnet.nl`), meshpoint sends nothing
+extra. Name/latitude/longitude left blank fall back to the display name
+and the Configuration → GPS pin (`device.latitude`/`device.longitude`) at
+generation time.
+
+RNS forces a *discoverable* `RNodeInterface` into `access_point` mode
+(blocking **all** of that interface's own announce forwarding) unless its
+mode is already `gateway`, `access_point`, or `internal` — confirmed
+against the installed RNS package's own loader, not just observed
+behaviour. Checking the box flips **Interface mode** to `gateway`
+automatically (visibly, in the Settings tab) so the radio keeps forwarding
+normally; `config_routes.py`'s `ReticulumUpdate` validator enforces the
+same thing server-side (the actual authority — covers any caller that
+isn't this page's own JS), and `write_rnsd_config.py` re-checks once more
+at generation time as a last backstop. Unchecking the toggle again leaves
+whatever mode was last set alone — it does not try to guess or restore
+what the mode was before you turned discovery on.
+
+A node can show up on rmap.world whether or not it also acts as a
+repeater — discovery is purely about the RNode interface announcing its
+own location, unrelated to repeater/relay hardware like the SenseCAP P1.
+Can take minutes to hours to appear after enabling; a node drops off the
+map again after roughly 7 days without an announce once disabled.
+
 ## Layout
 
 ```
