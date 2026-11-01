@@ -165,7 +165,9 @@ optgroup at the top of the picker and stay selectable after they age off
 the recent list. The address bar pre-fills with the current node's full
 `<hash>:/page/…` address and accepts `:/page/x.mu` / `/page/x.mu`
 shortcuts against it — edit the path and Go to reach a page nothing links
-to (e.g. `:/page/info.mu`).
+to (e.g. `:/page/info.mu`). Request variables go after a backtick, as in a
+Micron link: `` :/api/links`s=1|n=15|o=8 `` sends `var_s`, `var_n` and
+`var_o` with the request (typed into the bar or clicked on a page alike).
 
 ### The Link cache, and cleaning it up
 

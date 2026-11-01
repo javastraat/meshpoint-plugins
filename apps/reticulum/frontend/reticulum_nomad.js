@@ -215,12 +215,29 @@ class ReticulumNomadTab {
         if (!raw) return;
         // ":/page/x.mu" and "/page/x.mu" resolve against the node we're on --
         // so you can edit just the path in the pre-filled address bar.
-        const { hash, path } = this._splitAddr(raw, this._currentHash);
+        // a typed `key=val|key2=val2 tail is sent as request vars, the same
+        // as on a clicked link -- left in the path, the node sees a page
+        // name it has no handler for and the request times out
+        const { addr, varData } = this._splitVars(raw);
+        const { hash, path } = this._splitAddr(addr, this._currentHash);
         if (!hash) {
             this._status('error', 'Type <hash>:/page/x.mu — or :/page/x.mu once you\'re on a node');
             return;
         }
-        this._go(hash, path);
+        this._go(hash, path, Object.keys(varData).length ? varData : null);
+    }
+
+    /** "<addr>`key=val|key2=val2" -> {addr, varData: {var_key: "val", ...}};
+     * no backtick -> the whole string is the address, no vars. */
+    _splitVars(raw) {
+        const varData = {};
+        const btick = raw.indexOf('`');
+        if (btick === -1) return { addr: raw, varData };
+        for (const pair of raw.slice(btick + 1).split('|')) {
+            const eq = pair.indexOf('=');
+            if (eq !== -1) varData[`var_${pair.slice(0, eq)}`] = pair.slice(eq + 1);
+        }
+        return { addr: raw.slice(0, btick), varData };
     }
 
     /** "<hex>:/page/x.mu" -> {hash, path}. A bare "/page/x.mu" or ":/page/x.mu"
@@ -295,16 +312,7 @@ class ReticulumNomadTab {
         const currentHash = this._history[this._historyIdx]?.hash || '';
         const rawUrl = a.dataset.nomadUrl || '';
         // rawUrl may carry `key=val|key2=val2 request vars after a backtick
-        let addrPart = rawUrl;
-        const varData = {};
-        const btick = rawUrl.indexOf('`');
-        if (btick !== -1) {
-            addrPart = rawUrl.slice(0, btick);
-            for (const pair of rawUrl.slice(btick + 1).split('|')) {
-                const eq = pair.indexOf('=');
-                if (eq !== -1) varData[`var_${pair.slice(0, eq)}`] = pair.slice(eq + 1);
-            }
-        }
+        const { addr: addrPart, varData } = this._splitVars(rawUrl);
         // an external http(s) link opens a normal browser tab instead of
         // being parsed as a <hash>:/page/... Reticulum address
         if (/^https?:\/\//i.test(addrPart)) {
