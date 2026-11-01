@@ -393,3 +393,103 @@ class TestEnsureLink(unittest.TestCase):
         self.assertIs(asyncio.run(_run()), pending)
         self.assertEqual(self.created, [])
         self.assertFalse(pending.torn_down)
+
+
+class _IdHash:
+    def hex(self) -> str:
+        return "aabbcc"
+
+
+class _IdRNS:
+    """Fake RNS for _ensure_identified(): only Destination.hash is used."""
+    Link = _FakeLinkStatus
+
+    class Destination:
+        @staticmethod
+        def hash(_identity, *_aspects):
+            return _IdHash()
+
+
+def _identifiable_link(raises=False):
+    class _Link:
+        identify_calls = 0
+
+        def identify(self, _identity) -> None:
+            self.identify_calls += 1
+            if raises:
+                raise RuntimeError("link closed")
+
+    return _Link()
+
+
+class TestEnsureIdentified(unittest.TestCase):
+    """The ID toggle's "stay identified": identification belongs to the
+    Link, so a fresh Link (idle sweep, failed request, node restart) has
+    to be identified again, and an already-identified one must not be."""
+
+    def setUp(self) -> None:
+        self._original_rns = nomad.RNS
+        nomad.RNS = _IdRNS
+
+    def tearDown(self) -> None:
+        nomad.RNS = self._original_rns
+        nomad.reset()
+
+    def test_fresh_link_is_identified_and_marked(self) -> None:
+        link = _identifiable_link()
+        self.assertIsNone(nomad._ensure_identified("deadbeef", link, object()))
+        self.assertEqual(link.identify_calls, 1)
+        self.assertTrue(link._mp_identified)
+        self.assertEqual(nomad._fingerprints["deadbeef"], "aabbcc")
+
+    def test_already_identified_link_is_left_alone(self) -> None:
+        link = _identifiable_link()
+        nomad._ensure_identified("deadbeef", link, object())
+        nomad._ensure_identified("deadbeef", link, object())
+        self.assertEqual(link.identify_calls, 1)
+
+    def test_replacement_link_after_a_sweep_is_identified_again(self) -> None:
+        first = _identifiable_link()
+        nomad._ensure_identified("deadbeef", first, object())
+        nomad._fingerprints.pop("deadbeef")   # what drop_link() does on a sweep
+        second = _identifiable_link()
+        self.assertIsNone(nomad._ensure_identified("deadbeef", second, object()))
+        self.assertEqual(second.identify_calls, 1)
+        self.assertEqual(nomad._fingerprints["deadbeef"], "aabbcc")
+
+    def test_identify_failure_is_an_error_not_a_mark(self) -> None:
+        link = _identifiable_link(raises=True)
+        error = nomad._ensure_identified("deadbeef", link, object())
+        self.assertIn("Identify failed", error)
+        self.assertFalse(getattr(link, "_mp_identified", False))
+        self.assertNotIn("deadbeef", nomad._fingerprints)
+
+
+class TestFetchPagePassesIdentity(unittest.TestCase):
+    """fetch_page(identity=...) hands it to _request(); without it the call
+    is unchanged (no identity keyword at all)."""
+
+    def tearDown(self) -> None:
+        nomad.reset()
+
+    def _run(self, **kwargs):
+        seen = {}
+
+        async def fake_request(dest_hash_hex, path, field_data, **kw):
+            seen["kw"] = kw
+            return "err", "stub"
+
+        original = nomad._request
+        nomad._request = fake_request
+        try:
+            asyncio.run(nomad.fetch_page("deadbeef", "/page/index.mu", **kwargs))
+        finally:
+            nomad._request = original
+        return seen["kw"]
+
+    def test_identity_is_passed_through(self) -> None:
+        marker = object()
+        self.assertIs(self._run(identity=marker)["identity"], marker)
+
+    def test_no_identity_means_no_identity_keyword(self) -> None:
+        self.assertEqual(self._run(), {})

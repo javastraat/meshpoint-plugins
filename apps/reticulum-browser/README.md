@@ -45,14 +45,19 @@ for `reticulum_micron.js`, ported from reticulum-meshchat, also MIT.)
 - **Identity fingerprinting** -- an "ID" toolbar toggle (off by default,
   per browser, same idiom as the \`c lenient-centring toggle next to it)
   identifies your Reticulum identity to every node you visit over its
-  `RNS.Link` (`link.identify(...)`), once per node per tab; that node's
+  `RNS.Link` (`link.identify(...)`); that node's
   *next* form submission then automatically carries your LXMF address as
   a `dest` field -- so guestbook/registration-style NomadNet pages know
   who's submitting without you typing an address in. Turning the toggle
   on also identifies you to whatever node is already open, not just ones
   visited afterward. Was a one-shot "click before every node that needs
   it" button; a persistent toggle means you don't have to remember to hit
-  it each time. Not host verification (rBrowser's own "fingerprint"
+  it each time. With the toggle on, every page request asks the backend
+  for an identified Link (`identify: true` on `/nomad/page`): identification
+  belongs to the Link, and the backend replaces Links on its own (the
+  5-minute idle sweep, a failed request, the node restarting), so a fresh
+  one is identified again before the request instead of the node quietly
+  seeing you as anonymous until the toggle was flipped off and on. Not host verification (rBrowser's own "fingerprint"
   action, read from source, turned out to be identity disclosure in this
   direction, not the other) -- see `plugins/apps/reticulum/backend/
   nomad.py`'s `identify_link()` for the full mechanism, which lives in

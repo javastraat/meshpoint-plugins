@@ -389,11 +389,15 @@ class ReticulumBrowserPanel {
             if (isNewNode && this._autoIdOn) {
                 justIdentified = await this._identifyHash(hash, controller.signal);
             }
+            // identify: with the toggle on, every request asks for an
+            // identified Link -- the backend re-identifies a Link it replaced
+            // since (5-min idle sweep, failed request, node restart), which
+            // the isNewNode check above can't see on the same node
             const r = await fetch('/api/reticulum/nomad/page', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: hash, path, field_data: fieldData || null }),
+                body: JSON.stringify({ destination_hash: hash, path, field_data: fieldData || null, identify: this._autoIdOn }),
                 signal: controller.signal,
             });
             const data = await r.json().catch(() => ({}));

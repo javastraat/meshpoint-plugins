@@ -61,6 +61,10 @@ class PageRequest(BaseModel):
     destination_hash: str = Field(..., min_length=1)
     path: str = "/page/index.mu"
     field_data: dict | None = None
+    # Fetch over an identified Link (the browser's ID toggle): a Link the
+    # cache replaced since (idle sweep, failure, node restart) is
+    # identified again first instead of quietly going anonymous.
+    identify: bool = False
 
 
 @router.post("/page")
@@ -70,8 +74,9 @@ async def nomad_page(
     """Fetch one NomadNet page. Returns `{ok, content}` (Micron markup) or
     `{ok: false, error}` -- a fetch failure is a 200 with `ok: false`, not
     an HTTP error, so the Browse tab can show it inline."""
+    identity = _service.identity if (req.identify and _service is not None) else None
     result = await nomad.fetch_page(
-        req.destination_hash, req.path or "/page/index.mu", req.field_data,
+        req.destination_hash, req.path or "/page/index.mu", req.field_data, identity=identity,
     )
     return {
         "ok": result.ok,

@@ -198,9 +198,33 @@ async def _ensure_link(destination_hash_hex: str, dest_hash: bytes):
     return None
 
 
-async def _request(destination_hash_hex: str, path: str, field_data: Optional[dict]):
+def _ensure_identified(destination_hash_hex: str, link, identity) -> Optional[str]:
+    """Identify *identity* over *link* unless this Link already was.
+    Returns None on success, else an error message.
+
+    Identification belongs to the Link, not the destination: a fresh Link
+    starts anonymous, and the cache replaces Links behind the caller's back
+    (the 5-minute idle sweep, a failed or timed-out request, the node
+    restarting). Marking the Link object itself -- rather than trusting
+    ``_fingerprints``, which outlives a replaced Link -- is what lets a
+    "keep me identified" caller (the browser's ID toggle) stay identified
+    across those replacements instead of silently going anonymous."""
+    if getattr(link, "_mp_identified", False):
+        return None
+    try:
+        link.identify(identity)
+        link._mp_identified = True
+        _fingerprints[destination_hash_hex] = RNS.Destination.hash(identity, "lxmf", "delivery").hex()
+    except Exception as exc:  # noqa: BLE001
+        return f"Identify failed: {exc}"
+    return None
+
+
+async def _request(destination_hash_hex: str, path: str, field_data: Optional[dict], *, identity=None):
     """Shared path/link/request core. Returns ``("ok", receipt)`` or
-    ``("err", message)`` -- caller decodes the receipt's response."""
+    ``("err", message)`` -- caller decodes the receipt's response. With
+    *identity*, the Link is identified first if it isn't yet (see
+    ``_ensure_identified``)."""
     if not available():
         return "err", "Reticulum is not running (enable + set up the reticulum plugin)"
 
@@ -215,6 +239,10 @@ async def _request(destination_hash_hex: str, path: str, field_data: Optional[di
     link = await _ensure_link(destination_hash_hex, dest_hash)
     if link is None:
         return "err", "Could not establish a link to that node"
+    if identity is not None:
+        error = _ensure_identified(destination_hash_hex, link, identity)
+        if error:
+            return "err", error
 
     loop = asyncio.get_running_loop()
     fut: asyncio.Future = loop.create_future()
@@ -251,16 +279,28 @@ async def fetch_page(
     destination_hash_hex: str,
     path: str = "/page/index.mu",
     field_data: Optional[dict] = None,
+    identity=None,
 ) -> NomadResult:
     """Fetch one NomadNet page. ``field_data`` (optional) is a dict of
     already-prefixed (``field_``/``var_``) form values -- ``dest`` (our
     own LXMF address, unprefixed) is merged in automatically once
-    ``identify_link()`` has been called for this destination."""
+    ``identify_link()`` has been called for this destination. With
+    *identity*, the page is fetched over an identified Link: one that
+    isn't yet (including a fresh one replacing an identified Link) is
+    identified first."""
     fingerprint = _fingerprints.get(destination_hash_hex)
+    if identity is not None and not fingerprint and available():
+        try:   # the Link about to be identified may be a fresh one the sweep left no fingerprint for
+            fingerprint = RNS.Destination.hash(identity, "lxmf", "delivery").hex()
+        except Exception:  # noqa: BLE001
+            fingerprint = None
     if fingerprint:
         field_data = {**(field_data or {}), "dest": fingerprint}
     result = NomadResult(ok=False, destination_hash=destination_hash_hex, path=path)
-    kind, payload = await _request(destination_hash_hex, path, field_data)
+    if identity is None:
+        kind, payload = await _request(destination_hash_hex, path, field_data)
+    else:
+        kind, payload = await _request(destination_hash_hex, path, field_data, identity=identity)
     if kind == "err":
         result.error = payload
         return result
@@ -340,14 +380,11 @@ async def identify_link(destination_hash_hex: str, identity) -> tuple[bool, Opti
     if link is None:
         return False, "Could not establish a link to that node"
 
-    try:
-        link.identify(identity)
-        lxmf_hash_hex = RNS.Destination.hash(identity, "lxmf", "delivery").hex()
-    except Exception as exc:  # noqa: BLE001
-        return False, f"Identify failed: {exc}"
-
-    _fingerprints[destination_hash_hex] = lxmf_hash_hex
-    return True, lxmf_hash_hex
+    link._mp_identified = False   # identify_link() always (re-)identifies: it's the explicit request
+    error = _ensure_identified(destination_hash_hex, link, identity)
+    if error:
+        return False, error
+    return True, _fingerprints[destination_hash_hex]
 
 
 def drop_link(destination_hash_hex: str) -> bool:

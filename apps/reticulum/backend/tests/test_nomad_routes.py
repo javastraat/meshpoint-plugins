@@ -221,7 +221,10 @@ class TestBrowseAuthGating(unittest.TestCase):
         self._orig_fetch_file = nomad.fetch_file
         self._orig_identify_link = nomad.identify_link
 
-        async def _fake_fetch_page(dest_hash, path="/page/index.mu", field_data=None):
+        self.fetched_identity = "not called"
+
+        async def _fake_fetch_page(dest_hash, path="/page/index.mu", field_data=None, identity=None):
+            self.fetched_identity = identity
             return nomad.NomadResult(ok=True, content="`!hi`!", destination_hash=dest_hash, path=path)
 
         async def _fake_fetch_file(dest_hash, path):
@@ -283,6 +286,20 @@ class TestBrowseAuthGating(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json()["ok"])
+
+    def test_page_without_identify_fetches_anonymously(self) -> None:
+        self._viewer_client().post("/api/reticulum/nomad/page", json={"destination_hash": "ab" * 16})
+        self.assertIsNone(self.fetched_identity)
+
+    def test_page_with_identify_hands_over_the_service_identity(self) -> None:
+        from plugins.apps.reticulum.backend import nomad_routes
+
+        nomad_routes._service.identity = marker = object()
+        r = self._viewer_client().post("/api/reticulum/nomad/page", json={
+            "destination_hash": "ab" * 16, "identify": True,
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIs(self.fetched_identity, marker)
 
     def test_viewer_can_fetch_a_file(self) -> None:
         r = self._viewer_client().post("/api/reticulum/nomad/file", json={
