@@ -150,6 +150,14 @@ class ReticulumBrowserPanel {
         // would otherwise make every click re-derive "on" from whatever
         // was last actually persisted and get stuck unable to turn off.
         this._autoIdOn = _rbAutoIdentify();
+        // Identifying acts as this meshpoint's own Reticulum identity, so
+        // the backend refuses it for viewers (nomad_routes.py) -- keep the
+        // toggle off and disabled for them rather than failing every load.
+        if (window.meshpointIdentity?.role === 'viewer') {
+            this._autoIdOn = false;
+            this._autoIdBtn.disabled = true;
+            this._autoIdBtn.title = 'Only meshpoint admins can identify';
+        }
         this._autoIdBtn.classList.toggle('is-active', this._autoIdOn);
         this._meshpointBtn = this._q('[data-rb-meshpoint]');
         this._tabstripEl = this._q('[data-rb-tabstrip]');

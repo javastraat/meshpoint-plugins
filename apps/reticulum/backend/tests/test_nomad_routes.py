@@ -191,7 +191,8 @@ class TestBrowseAuthGating(unittest.TestCase):
     """Regression coverage for the 2026-09-09 auditor finding: /nodes,
     /page, /file are read-only "browse another node" actions and must
     accept any logged-in session (viewer included), while /pages* (this
-    node's own hosted content) stays admin-only. /nodes also used to have
+    node's own hosted content) stays admin-only, as does identifying as
+    this meshpoint (/page with identify, /fingerprint). /nodes also used to have
     no auth dependency at all -- covered here as the unauthenticated case.
 
     Builds its own dependency_overrides for require_auth/require_admin
@@ -295,11 +296,24 @@ class TestBrowseAuthGating(unittest.TestCase):
         from plugins.apps.reticulum.backend import nomad_routes
 
         nomad_routes._service.identity = marker = object()
-        r = self._viewer_client().post("/api/reticulum/nomad/page", json={
+        r = self._admin_client().post("/api/reticulum/nomad/page", json={
             "destination_hash": "ab" * 16, "identify": True,
         })
         self.assertEqual(r.status_code, 200, r.text)
         self.assertIs(self.fetched_identity, marker)
+
+    def test_viewer_is_refused_an_identified_page(self) -> None:
+        """Identifying acts as this meshpoint's own Reticulum identity,
+        which other nodes may trust (e.g. a repeater's admin list) --
+        admin only, and refused before anything is fetched."""
+        from plugins.apps.reticulum.backend import nomad_routes
+
+        nomad_routes._service.identity = object()
+        r = self._viewer_client().post("/api/reticulum/nomad/page", json={
+            "destination_hash": "ab" * 16, "identify": True,
+        })
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(self.fetched_identity, "not called")
 
     def test_viewer_can_fetch_a_file(self) -> None:
         r = self._viewer_client().post("/api/reticulum/nomad/file", json={
@@ -308,8 +322,14 @@ class TestBrowseAuthGating(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.content, b"x")
 
-    def test_viewer_can_send_a_fingerprint(self) -> None:
+    def test_viewer_is_refused_a_fingerprint(self) -> None:
         r = self._viewer_client().post("/api/reticulum/nomad/fingerprint", json={
+            "destination_hash": "ab" * 16,
+        })
+        self.assertEqual(r.status_code, 403, r.text)
+
+    def test_admin_can_send_a_fingerprint(self) -> None:
+        r = self._admin_client().post("/api/reticulum/nomad/fingerprint", json={
             "destination_hash": "ab" * 16,
         })
         self.assertEqual(r.status_code, 200, r.text)
@@ -317,8 +337,8 @@ class TestBrowseAuthGating(unittest.TestCase):
         self.assertEqual(r.json()["lxmf_hash"], "abc123")
 
     def test_viewer_can_disconnect(self) -> None:
-        """Same auth tier as /fingerprint -- a browsing action, not an
-        edit to this node's own hosted content. nomad.drop_link() is real
+        """Open to viewers -- a browsing action, not an edit to this
+        node's own hosted content. nomad.drop_link() is real
         here (not stubbed, unlike fetch_page/fetch_file/identify_link
         above): it's pure dict bookkeeping, no RNS Link involved when
         nothing's actually cached for this hash."""
@@ -329,7 +349,7 @@ class TestBrowseAuthGating(unittest.TestCase):
         self.assertFalse(r.json()["dropped"])  # nothing was cached for this hash
 
     def test_viewer_can_check_link_count(self) -> None:
-        """Same auth tier as /fingerprint and /disconnect -- read-only,
+        """Same auth tier as /disconnect -- read-only,
         not an edit, so a viewer can see the count even though they can't
         clear it (that's /disconnect-all, admin-only, below)."""
         r = self._viewer_client().get("/api/reticulum/nomad/links")

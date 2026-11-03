@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from src.api.auth.dependencies import require_admin, require_auth
-from src.api.auth.jwt_session import SessionClaims
+from src.api.auth.jwt_session import ROLE_ADMIN, SessionClaims
 
 from . import node_pages, nomad, scraper, state
 from .lxmf_service import LxmfService
@@ -64,16 +64,28 @@ class PageRequest(BaseModel):
     # Fetch over an identified Link (the browser's ID toggle): a Link the
     # cache replaced since (idle sweep, failure, node restart) is
     # identified again first instead of quietly going anonymous.
+    # Admin only: see _IDENTIFY_ADMIN_ONLY.
     identify: bool = False
+
+
+# Identifying hands a remote node this meshpoint's own Reticulum identity,
+# and nodes may grant that identity rights (e.g. a repeater's admin list).
+# A viewer login must not be able to act as the meshpoint that way, so
+# `identify` on /page and the /fingerprint route are admin only; anonymous
+# browsing stays open to viewers.
+_IDENTIFY_ADMIN_ONLY = "Only meshpoint admins can identify"
 
 
 @router.post("/page")
 async def nomad_page(
-    req: PageRequest, _claims: SessionClaims = Depends(require_auth),
+    req: PageRequest, claims: SessionClaims = Depends(require_auth),
 ):
     """Fetch one NomadNet page. Returns `{ok, content}` (Micron markup) or
     `{ok: false, error}` -- a fetch failure is a 200 with `ok: false`, not
-    an HTTP error, so the Browse tab can show it inline."""
+    an HTTP error, so the Browse tab can show it inline. `identify` from a
+    non-admin is a 403."""
+    if req.identify and claims.role != ROLE_ADMIN:
+        raise HTTPException(403, _IDENTIFY_ADMIN_ONLY)
     identity = _service.identity if (req.identify and _service is not None) else None
     result = await nomad.fetch_page(
         req.destination_hash, req.path or "/page/index.mu", req.field_data, identity=identity,
@@ -93,14 +105,15 @@ class FingerprintRequest(BaseModel):
 
 @router.post("/fingerprint")
 async def nomad_fingerprint(
-    req: FingerprintRequest, _claims: SessionClaims = Depends(require_auth),
+    req: FingerprintRequest, _claims: SessionClaims = Depends(require_admin),
 ):
     """Identify our own Reticulum identity to a NomadNet node over its
     Link -- some `.mu` pages (guestbooks, registration forms) read the
     resulting LXMF address from a form submission to know who's visiting.
     Ported in spirit from rBrowser's fingerprint action (see backend/nomad.py
     for the full explanation); a fetch failure is a 200 with `ok: false`,
-    matching the `/page` route's convention."""
+    matching the `/page` route's convention. Admin only: see
+    _IDENTIFY_ADMIN_ONLY."""
     if _service is None:
         raise HTTPException(503, "Reticulum companion is disabled")
     ok, result = await nomad.identify_link(req.destination_hash, _service.identity)
@@ -113,9 +126,8 @@ async def nomad_disconnect(
 ):
     """Tear down the cached Link to this node (see `nomad.py`'s
     `drop_link()`) -- the only way to make a node "forget" an identify,
-    since RNS has no reverse of `link.identify()`. Same auth tier as
-    `/fingerprint`: a browsing action, not an edit to this node's own
-    hosted content. Affects every consumer of the shared Link cache for
+    since RNS has no reverse of `link.identify()`. Open to viewers: a
+    browsing action, not an edit to this node's own hosted content. Affects every consumer of the shared Link cache for
     that destination, not just the caller."""
     dropped = nomad.drop_link(req.destination_hash)
     return {"dropped": dropped}

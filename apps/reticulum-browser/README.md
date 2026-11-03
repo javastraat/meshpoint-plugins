@@ -62,6 +62,11 @@ for `reticulum_micron.js`, ported from reticulum-meshchat, also MIT.)
   direction, not the other) -- see `plugins/apps/reticulum/backend/
   nomad.py`'s `identify_link()` for the full mechanism, which lives in
   the reticulum plugin since it needs that plugin's own RNS identity.
+  **Admins only:** the identity sent is the meshpoint's own, and other
+  nodes may grant it rights (e.g. a repeater's admin list), so the
+  backend refuses `identify: true` and `/nomad/fingerprint` with a 403
+  for viewer logins, and the toggle is disabled for them. Viewers still
+  browse anonymously.
   Flipping the toggle either direction also drops and reconnects the
   cached Link to whatever node is open (`nomad.py`'s `drop_link()`) --
   RNS has no way to *un*-identify an already-identified Link, so a fresh
