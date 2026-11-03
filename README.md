@@ -65,3 +65,11 @@ view — a stale or edited catalog can't smuggle anything in.
 | `raspberry-network` | app | Scan and connect to WiFi networks from the dashboard, no shell needed |
 | `github-dark-theme` | theme | GitHub's dark default (Primer) |
 | `github-light-theme` | theme | GitHub's light default (Primer) |
+
+## License
+
+AGPL-3.0, the same as [Meshpoint](https://github.com/javastraat/meshpoint) -- see [LICENSE](LICENSE).
+Third-party code bundled in a plugin keeps its own license and notice, e.g.
+`apps/reticulum/frontend/reticulum_micron.js` (ported from reticulum-meshchat's
+MicronParser.js, MIT, Liam Cottle) and `apps/offline-map/offline-map-src/` (its
+own LICENSE file).
