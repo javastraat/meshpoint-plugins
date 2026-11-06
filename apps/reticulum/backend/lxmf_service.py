@@ -1273,8 +1273,11 @@ class LxmfService:
         )
         return row_id, uri
 
-    async def list_peers(self):
-        return await self._peer_repo.list_peers()
+    async def list_peers(self, aspect: str | None = None, limit: int | None = None):
+        """The roster, newest first; `aspect`/`limit` are filtered and capped
+        in SQL (peer_repo) -- the public network's roster runs into tens of
+        thousands, so callers that want a slice shouldn't fetch it all."""
+        return await self._peer_repo.list_peers(aspect, limit=limit)
 
     async def peer_count(self) -> int:
         return await self._peer_repo.count()

@@ -161,8 +161,10 @@ class _FakeLxmfService:
     fine, this class exists to prove auth passes, not to test peer data."""
 
     identity = None
+    list_peers_args = None
 
-    async def list_peers(self):
+    async def list_peers(self, aspect=None, limit=None):
+        self.list_peers_args = (aspect, limit)
         return []
 
 
@@ -280,6 +282,16 @@ class TestBrowseAuthGating(unittest.TestCase):
         r = self._viewer_client().get("/api/reticulum/nomad/nodes")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json(), [])
+
+    def test_nodes_are_filtered_and_capped_in_the_query(self) -> None:
+        """/nodes asks the roster for nomadnetwork.node only, at most
+        _NODE_LIMIT -- not the whole roster filtered afterwards in Python
+        (tens of thousands of rows on the public network)."""
+        from plugins.apps.reticulum.backend import nomad_routes
+
+        self._viewer_client().get("/api/reticulum/nomad/nodes")
+        self.assertEqual(nomad_routes._service.list_peers_args,
+                         ("nomadnetwork.node", nomad_routes._NODE_LIMIT))
 
     def test_viewer_can_fetch_a_page(self) -> None:
         r = self._viewer_client().post("/api/reticulum/nomad/page", json={

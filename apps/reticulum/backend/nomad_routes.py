@@ -52,9 +52,11 @@ async def nomad_nodes(_claims: SessionClaims = Depends(require_auth)):
     """The most recently-seen `nomadnetwork.node` destinations (capped)."""
     if _service is None:
         raise HTTPException(503, "Reticulum companion is disabled")
-    peers = await _service.list_peers()  # already sorted last_seen DESC
-    nodes = [p.to_dict() for p in peers if p.aspect == "nomadnetwork.node"]
-    return nodes[:_NODE_LIMIT]
+    # Filtered and capped in SQL (newest first): fetching the whole roster
+    # (~27k rows on a meshpoint on the public backbone) and filtering in
+    # Python took seconds, long enough for the app's picker to open empty.
+    peers = await _service.list_peers(aspect="nomadnetwork.node", limit=_NODE_LIMIT)
+    return [p.to_dict() for p in peers]
 
 
 class PageRequest(BaseModel):
