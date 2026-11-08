@@ -72,7 +72,7 @@ class TestExtraInterfaceBlocks(unittest.TestCase):
     def test_template_has_the_extra_slot(self) -> None:
         # a formatting regression here means rnsd gets a broken config
         rendered = w._TEMPLATE.format(
-            lan_autodiscovery_enabled="No", rnode_block="", backbone_block="", extra_block="X",
+            discovery_block="", lan_autodiscovery_enabled="No", rnode_block="", backbone_block="", extra_block="X",
         )
         self.assertIn("X", rendered)
         self.assertIn("[interfaces]", rendered)
@@ -82,7 +82,7 @@ class TestExtraInterfaceBlocks(unittest.TestCase):
 
     def test_lan_autodiscovery_enabled_renders_yes(self) -> None:
         rendered = w._TEMPLATE.format(
-            lan_autodiscovery_enabled="Yes", rnode_block="", backbone_block="", extra_block="",
+            discovery_block="", lan_autodiscovery_enabled="Yes", rnode_block="", backbone_block="", extra_block="",
         )
         self.assertIn("[[Default Interface]]\n    type = AutoInterface\n    enabled = Yes", rendered)
 
@@ -177,6 +177,26 @@ class TestDiscoverableBlockRendering(unittest.TestCase):
         self.assertIn("discoverable = Yes", rnode)
         self.assertIn("discovery_name = Olympic", rnode)
         self.assertIn("mode = gateway", rnode)
+
+
+
+class TestDiscoverInterfaces(unittest.TestCase):
+    def _render(self, block: str) -> str:
+        return w._TEMPLATE.format(
+            discovery_block=block, lan_autodiscovery_enabled="No",
+            rnode_block="", backbone_block="", extra_block="",
+        )
+
+    def test_defaults_off_and_off_writes_nothing(self) -> None:
+        self.assertFalse(w._DEFAULTS["discover_interfaces"])
+        self.assertNotIn("discover_interfaces", self._render(""))
+
+    def test_on_lands_in_the_reticulum_section_without_autoconnect(self) -> None:
+        rendered = self._render(w._DISCOVERY_BLOCK)
+        reticulum = rendered.split("[logging]")[0]
+        self.assertIn("[reticulum]", reticulum)
+        self.assertIn("  discover_interfaces = Yes\n", reticulum)
+        self.assertIn("  autoconnect_discovered_interfaces = No\n", reticulum)
 
 
 if __name__ == "__main__":  # pragma: no cover

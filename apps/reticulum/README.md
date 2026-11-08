@@ -117,6 +117,27 @@ own location, unrelated to repeater/relay hardware like the SenseCAP P1.
 Can take minutes to hours to appear after enabling; a node drops off the
 map again after roughly 7 days without an announce once disabled.
 
+### Discovered repeaters (opt-in)
+
+Settings tab → **Show discovered repeaters on the dashboard map**
+(`discover_interfaces`, off by default) writes `discover_interfaces = Yes`
+and `autoconnect_discovered_interfaces = No` into rnsd's `[reticulum]`
+section. rnsd then validates other nodes' discovery announces (the same
+`rnstransport.discovery.interface` announces as above, stamp value 16) and
+keeps one msgpack file per interface under
+`<reticulum_config_dir>/storage/discovery/interfaces/`.
+`backend/discovered.py` reads those files **read-only** (rnsd removes
+entries after 7 days; RNS's own `list_discovered_interfaces()` deletes
+files as a side effect, so it isn't used), keeps only whitelisted fields
+(never `ifac_netkey` or the ready-made `config_entry` that contains it),
+drops entries without a location, and marks each available (< 24 h),
+unknown (< 3 d) or stale (< 7 d), like RNS. `GET /api/reticulum/discovered`
+returns `{enabled, interfaces}` (30 s cache); the `reachable_on`/`port` of
+TCP/backbone nodes only for admins. The Reticulum Dashboard plugin draws
+them on its map. A repeater shows up only if it sends these announces
+(the ScotMesh firmware's rmap option); ordinary LXMF/NomadNet announces
+carry no location.
+
 ## Layout
 
 ```

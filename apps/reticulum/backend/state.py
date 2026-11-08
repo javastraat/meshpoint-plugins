@@ -27,6 +27,7 @@ user a migration diff moving their real ``reticulum:`` values here:
         rnode_latitude: null
         rnode_longitude: null
         rnode_announce_interval_min: 360
+        discover_interfaces: false
         backbone_enabled: true
         backbone_host: node.reticulumnet.nl
         backbone_port: 4242
@@ -118,6 +119,11 @@ _DEFAULTS: dict[str, Any] = {
     "rnode_latitude": None,
     "rnode_longitude": None,
     "rnode_announce_interval_min": 360,
+    # rnsd keeps other nodes' interface-discovery announces (ScotMesh
+    # repeaters, discoverable meshpoints, TCP/backbone nodes) for the
+    # Reticulum Dashboard map -- write_rnsd_config.py, backend/discovered.py.
+    # rnsd restart.
+    "discover_interfaces": False,
     "backbone_enabled": True,
     "backbone_host": "node.reticulumnet.nl",
     "backbone_port": 4242,
@@ -189,6 +195,10 @@ def display_name() -> str:
 
 def reticulum_config_dir() -> str:
     return str(_config["reticulum_config_dir"])
+
+
+def discover_interfaces() -> bool:
+    return bool(_config.get("discover_interfaces"))
 
 
 def identity_path() -> str:

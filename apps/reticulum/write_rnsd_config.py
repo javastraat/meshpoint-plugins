@@ -55,7 +55,7 @@ _TEMPLATE = """\
   enable_transport = True
   share_instance = Yes
   instance_name = default
-
+{discovery_block}
 [logging]
   loglevel = 4
 
@@ -65,6 +65,13 @@ _TEMPLATE = """\
     type = AutoInterface
     enabled = {lan_autodiscovery_enabled}
 {rnode_block}{backbone_block}{extra_block}"""
+
+# [reticulum] lines for the discover_interfaces setting. Autoconnect is
+# written out explicitly so a future RNS default can't start opening
+# interfaces to whatever the network announces.
+_DISCOVERY_BLOCK = """  discover_interfaces = Yes
+  autoconnect_discovered_interfaces = No
+"""
 
 _RNODE_TEMPLATE = """
   [[RNode LoRa]]
@@ -203,6 +210,10 @@ _DEFAULTS = {
     "rnode_latitude": None,
     "rnode_longitude": None,
     "rnode_announce_interval_min": 360,
+    # Listen for other nodes' interface-discovery announces and keep them in
+    # storage/discovery/interfaces/ (read by backend/discovered.py for the
+    # Reticulum Dashboard map). Never auto-connects to what it finds.
+    "discover_interfaces": False,
     "backbone_enabled": True,
     "backbone_host": "node.reticulumnet.nl",
     "backbone_port": 4242,
@@ -318,7 +329,13 @@ def main() -> int:
             n = extra_block.count("[[")
             print(f"reticulum: wrote {n} extra interface(s) from plugins.reticulum.extra_interfaces.")
 
+    discovery_block = ""
+    if rc["discover_interfaces"]:
+        discovery_block = _DISCOVERY_BLOCK
+        print("reticulum: listening for discovered interfaces (no autoconnect)")
+
     content = _TEMPLATE.format(
+        discovery_block=discovery_block,
         lan_autodiscovery_enabled="Yes" if rc["lan_autodiscovery_enabled"] else "No",
         rnode_block=rnode_block,
         backbone_block=backbone_block,

@@ -182,6 +182,7 @@ class ReticulumUpdate(BaseModel):
     rnode_latitude: Optional[float] = Field(None, ge=-90, le=90)
     rnode_longitude: Optional[float] = Field(None, ge=-180, le=180)
     rnode_announce_interval_min: int = Field(360, ge=5, le=1440)
+    discover_interfaces: bool = False
     backbone_enabled: bool = True
     backbone_host: str = "node.reticulumnet.nl"
     backbone_port: int = Field(4242, ge=1, le=65535)
@@ -372,6 +373,7 @@ async def update_reticulum(
         "rnode_latitude": req.rnode_latitude,
         "rnode_longitude": req.rnode_longitude,
         "rnode_announce_interval_min": req.rnode_announce_interval_min,
+        "discover_interfaces": req.discover_interfaces,
         "backbone_enabled": req.backbone_enabled,
         "backbone_host": req.backbone_host,
         "backbone_port": req.backbone_port,

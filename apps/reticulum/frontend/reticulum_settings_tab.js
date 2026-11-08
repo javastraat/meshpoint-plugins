@@ -210,6 +210,18 @@ class ReticulumSettingsTab {
                                 Leave name/latitude/longitude blank to use this device's
                                 own display name and Configuration &rarr; GPS pin.
                             </span>
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" data-rt-discover-interfaces>
+                                <span class="cfg-field__label">Show discovered repeaters on the dashboard map</span>
+                            </label>
+                            <span class="cfg-field__hint">
+                                rnsd keeps the location announces other nodes send (the
+                                same ones rmap.world shows: repeaters, discoverable
+                                meshpoints, public TCP nodes) and the Reticulum Dashboard
+                                map shows them. It only listens, it never connects to what
+                                it finds. Needs an rnsd restart; the map fills as nodes
+                                announce (every few hours).
+                            </span>
                         </fieldset>
                         <fieldset class="cfg-fieldset">
                             <legend class="cfg-fieldset__legend">TCP backbone</legend>
@@ -568,6 +580,7 @@ class ReticulumSettingsTab {
         this._rnodeDiscoveryLat = this._q('[data-rt-rnode-discovery-lat]');
         this._rnodeDiscoveryLon = this._q('[data-rt-rnode-discovery-lon]');
         this._rnodeDiscoveryInterval = this._q('[data-rt-rnode-discovery-interval]');
+        this._discoverInterfaces = this._q('[data-rt-discover-interfaces]');
         this._backboneMode = this._q('[data-rt-backbone-mode]');
         this._backboneEnabled = this._q('[data-rt-backbone-enabled]');
         this._backboneHost = this._q('[data-rt-backbone-host]');
@@ -838,6 +851,7 @@ class ReticulumSettingsTab {
         if (this._rnodeDiscoveryLat) this._rnodeDiscoveryLat.value = rt.rnode_latitude ?? '';
         if (this._rnodeDiscoveryLon) this._rnodeDiscoveryLon.value = rt.rnode_longitude ?? '';
         if (this._rnodeDiscoveryInterval) this._rnodeDiscoveryInterval.value = rt.rnode_announce_interval_min ?? 360;
+        if (this._discoverInterfaces) this._discoverInterfaces.checked = !!rt.discover_interfaces;
         if (this._backboneMode) this._backboneMode.value = rt.backbone_interface_mode || 'internal';
         if (this._backboneEnabled) this._backboneEnabled.checked = rt.backbone_enabled !== false;
         if (this._backboneHost) this._backboneHost.value = rt.backbone_host || 'node.reticulumnet.nl';
@@ -1125,6 +1139,7 @@ class ReticulumSettingsTab {
             rnode_longitude: (this._rnodeDiscoveryLon?.value ?? '') !== ''
                 ? Number(this._rnodeDiscoveryLon.value) : null,
             rnode_announce_interval_min: Number(this._rnodeDiscoveryInterval?.value) || 360,
+            discover_interfaces: !!this._discoverInterfaces?.checked,
             backbone_enabled: backboneEnabled,
             backbone_host: this._backboneHost.value.trim() || 'node.reticulumnet.nl',
             backbone_port: Number(this._backbonePort.value),

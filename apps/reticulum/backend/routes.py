@@ -20,11 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from src.api.auth.dependencies import require_admin, require_auth
-from src.api.auth.jwt_session import SessionClaims
+from src.api.auth.dependencies import optional_auth, require_admin, require_auth
+from src.api.auth.jwt_session import ROLE_ADMIN, SessionClaims
 from src.storage.message_repository import MessageRepository
 
 from . import attachments as attachments_store
+from . import discovered as discovered_store
 from . import state
 from .contacts import ContactStore
 from .lxmf_service import LxmfService
@@ -296,6 +297,22 @@ async def reticulum_telemetry_peers():
     if _service is None:
         raise HTTPException(503, "Reticulum companion is disabled")
     return _service.telemetry_peers()
+
+
+@router.get("/discovered")
+async def reticulum_discovered(claims: SessionClaims | None = Depends(optional_auth)):
+    """Interfaces rnsd discovered on the network (repeaters, discoverable
+    meshpoints, TCP/backbone nodes) that carry a location -- the Reticulum
+    Dashboard's repeater layer. ``enabled`` false (Settings -> "Show
+    discovered repeaters on the dashboard map" off) means an empty list and
+    no layer. The public host:port of TCP/backbone nodes is admin only."""
+    if not state.discover_interfaces():
+        return {"enabled": False, "interfaces": []}
+    is_admin = claims is not None and claims.role == ROLE_ADMIN
+    return {
+        "enabled": True,
+        "interfaces": discovered_store.list_for(state.reticulum_config_dir(), include_address=is_admin),
+    }
 
 
 @router.post("/telemetry/send")

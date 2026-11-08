@@ -388,6 +388,13 @@ class ReticulumDashboard {
         this._isAdmin = window.meshpointIdentity?.role !== 'viewer';
         this._peers = [];
         this._telemetry = [];
+        // Interfaces rnsd discovered on the network (the reticulum plugin's
+        // GET /api/reticulum/discovered) -- repeaters etc. on their own
+        // layer. enabled=false (the plugin setting is off) hides the layer
+        // and its filters entirely.
+        this._discovered = { enabled: false, interfaces: [] };
+        this._discFilters = this._loadDiscFilters();
+        this._discSig = null;
         this._homeLat = null;
         this._homeLon = null;
         this._homeMarker = null;
@@ -457,6 +464,10 @@ class ReticulumDashboard {
                             <div class="panel__header">
                                 Telemetry Map
                                 <div class="panel__header-actions">
+                                    <span id="rtd-disc-filters" class="rtd-disc-filters" hidden>
+                                        <label title="Only LoRa radios (repeaters, meshpoints with an RNode), no internet nodes"><input type="checkbox" data-disc-filter="rnodeOnly"> RNode only</label>
+                                        <label title="Hide repeaters not heard for 3 days or more"><input type="checkbox" data-disc-filter="hideStale"> Hide stale</label>
+                                    </span>
                                     <button id="rtd-map-basemap-btn" class="map-expand-btn" type="button" title="Darken the map"></button>
                                     <button id="rtd-map-home-btn" class="map-expand-btn" type="button" title="Center on home">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
@@ -542,6 +553,14 @@ class ReticulumDashboard {
         this._q('#rtd-map-basemap-btn')?.addEventListener('click', () => this._toggleBasemap());
         this._q('#rtd-map-home-btn')?.addEventListener('click', () => this._centerOnHome());
         this._q('#rtd-map-expand-btn')?.addEventListener('click', () => this._toggleExpand());
+        this._root.querySelectorAll('[data-disc-filter]').forEach((cb) => {
+            cb.checked = !!this._discFilters[cb.dataset.discFilter];
+            cb.addEventListener('change', () => {
+                this._discFilters[cb.dataset.discFilter] = cb.checked;
+                this._saveDiscFilters();
+                this._renderTelemetryMap();
+            });
+        });
 
         // Same detail drawer/modal the Reticulum page's own Peers/Activity
         // rows open (plugins/apps/reticulum/frontend/reticulum_detail_
@@ -674,6 +693,7 @@ class ReticulumDashboard {
         await Promise.all([
             this._loadStatus(), this._loadPeers(), this._loadConversationCount(),
             this._loadTickerSeed(), this._loadTelemetry(), this._loadHomeLocation(),
+            this._loadDiscovered(),
         ]);
     }
 
@@ -794,6 +814,18 @@ class ReticulumDashboard {
         } catch (_) {}
     }
 
+    async _loadDiscovered() {
+        try {
+            const r = await fetch('/api/reticulum/discovered', { credentials: 'same-origin' });
+            if (!r.ok) return;
+            const d = await r.json();
+            this._discovered = { enabled: !!d.enabled, interfaces: Array.isArray(d.interfaces) ? d.interfaces : [] };
+            const filters = this._q('#rtd-disc-filters');
+            if (filters) filters.hidden = !this._discovered.enabled;
+            this._renderTelemetryMap();
+        } catch (_) {}
+    }
+
     // --- Peers list (right column) ----------------------------------------
 
     _renderPeersList() {
@@ -845,11 +877,12 @@ class ReticulumDashboard {
         if (!el || typeof L === 'undefined') return;
         const located = this._telemetry.filter((t) => t.latitude != null && t.longitude != null);
         const hasHome = this._homeLat != null && this._homeLon != null;
+        const hasDisc = this._discVisible().length > 0;
         // Show the map whenever there's ANYTHING to put on it -- located
         // peers or just home -- not only when peers exist like before
         // home was added; otherwise a box with no located peers yet never
         // shows its own home pin at all.
-        if (!located.length && !hasHome) {
+        if (!located.length && !hasHome && !hasDisc) {
             el.hidden = true;
             if (empty) empty.style.display = '';
             return;
@@ -872,6 +905,7 @@ class ReticulumDashboard {
             return;
         }
         this._updateTelemetryMarkers(located);
+        this._updateDiscoveredMarkers();
         // Also true the first time an already-built map's container goes
         // from hidden -> visible again (e.g. telemetry emptied out and
         // came back) -- same stale-size risk as above.
@@ -907,12 +941,20 @@ class ReticulumDashboard {
                 tileLayer = L.tileLayer(url, tileOpts).addTo(this._teleMap);
             }
         });
+        // Discovered interfaces below the telemetry peers, so a peer pin on
+        // top of a repeater stays clickable.
+        this._discMarkers = L.layerGroup().addTo(this._teleMap);
         this._teleMarkers = L.layerGroup().addTo(this._teleMap);
         this._renderHomeMarker(); // in case home loaded before the map existed
         this._updateTelemetryMarkers(located);
+        this._updateDiscoveredMarkers();
         // No peers to fit a view to -- start centered on home instead of
-        // Leaflet's own default (world view), if we have one.
-        if (!located.length) this._centerOnHome();
+        // Leaflet's own default (world view), if we have one; with neither,
+        // frame the discovered repeaters.
+        if (!located.length) {
+            if (this._homeLat != null && this._homeLon != null) this._centerOnHome();
+            else this._fitDiscoveredBounds();
+        }
         // Belt-and-braces: re-measure once more on the following frame in
         // case the very first read still landed on a transitional layout
         // (e.g. the .dashboard__main grid columns hadn't settled their
@@ -978,6 +1020,105 @@ class ReticulumDashboard {
             bounds.push([t.latitude, t.longitude]);
         });
         this._fitTelemetryBounds();
+    }
+
+    // --- Discovered interfaces layer ---------------------------------------
+
+    _loadDiscFilters() {
+        // Both on by default: the backbone carries discovery announces from
+        // the whole network, so "nearby LoRa repeaters that are alive" is the
+        // useful first view.
+        const f = { rnodeOnly: true, hideStale: true };
+        try {
+            const v = JSON.parse(localStorage.getItem('meshpoint.rtd.discFilters') || '{}');
+            if (typeof v.rnodeOnly === 'boolean') f.rnodeOnly = v.rnodeOnly;
+            if (typeof v.hideStale === 'boolean') f.hideStale = v.hideStale;
+        } catch (_) {}
+        return f;
+    }
+
+    _saveDiscFilters() {
+        try { localStorage.setItem('meshpoint.rtd.discFilters', JSON.stringify(this._discFilters)); } catch (_) {}
+    }
+
+    _discVisible() {
+        if (!this._discovered.enabled) return [];
+        return this._discovered.interfaces.filter((d) =>
+            d.latitude != null && d.longitude != null
+            && (!this._discFilters.rnodeOnly || d.type === 'RNodeInterface')
+            && (!this._discFilters.hideStale || d.status !== 'stale'));
+    }
+
+    /** Rebuilt only when the visible set changed, so the 20 s refresh
+     * doesn't close a popup someone is reading. */
+    _updateDiscoveredMarkers() {
+        if (!this._discMarkers) return;
+        const visible = this._discVisible();
+        const sig = JSON.stringify(visible.map((d) => [d.transport_id, d.name, d.latitude, d.longitude, d.status, d.last_heard]));
+        if (sig === this._discSig) return;
+        this._discSig = sig;
+        this._discMarkers.clearLayers();
+        visible.forEach((d) => {
+            const cls = 'rtd-disc-marker'
+                + (d.type === 'RNodeInterface' ? '' : ' rtd-disc-marker--net')
+                + (d.status === 'stale' ? ' rtd-disc-marker--stale' : '');
+            const icon = L.divIcon({
+                className: cls,
+                html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+                    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    + '<path d="M12 12v10"/><path d="M8 22h8"/><circle cx="12" cy="9" r="2"/>'
+                    + '<path d="M7.8 4.8a6 6 0 0 0 0 8.4"/><path d="M16.2 4.8a6 6 0 0 1 0 8.4"/></svg>',
+                iconSize: [22, 22],
+                iconAnchor: [11, 11],
+            });
+            L.marker([d.latitude, d.longitude], { icon, zIndexOffset: -100 })
+                .bindPopup(() => this._discPopupHtml(d))
+                .addTo(this._discMarkers);
+        });
+    }
+
+    _discPopupHtml(d) {
+        const tag = (t, cls = '') => `<span class="rt-tele-popup__tag ${cls}">${this._esc(t)}</span>`;
+        const tags = [];
+        tags.push(tag(d.type === 'RNodeInterface' ? 'RNode' : d.type.replace(/Interface$/, '')));
+        if (d.type === 'RNodeInterface' && d.frequency) {
+            tags.push(tag(`${(d.frequency / 1e6).toFixed(3)} MHz`));
+            if (d.sf) tags.push(tag(`SF${d.sf}`));
+            if (d.bandwidth) tags.push(tag(`${d.bandwidth / 1000} kHz`));
+            if (d.cr) tags.push(tag(`CR${d.cr}`));
+        }
+        if (d.hops != null) tags.push(tag(`${d.hops} hop${d.hops === 1 ? '' : 's'}`));
+        tags.push(tag(`heard ${this._ago(d.last_heard)}`,
+            d.status === 'stale' ? 'rt-tele-popup__tag--closed' : d.status === 'available' ? 'rt-tele-popup__tag--open' : ''));
+        if (d.heard_count) tags.push(tag(`${d.heard_count + 1}× heard`));
+        if (d.height) tags.push(tag(`${Math.round(d.height)} m`));
+        if (d.software) tags.push(tag([d.software, d.version].filter(Boolean).join(' ')));
+        if (d.transport) tags.push(tag('transport'));
+        if (d.reachable_on) tags.push(tag(`${d.reachable_on}${d.port ? ':' + d.port : ''}`));
+        return `
+            <div class="rt-tele-popup">
+                <div class="rt-tele-popup__head">
+                    <span class="rt-tele-popup__name">${this._esc(d.name)}</span>
+                </div>
+                <div class="rt-tele-popup__tags">${tags.join('')}</div>
+            </div>`;
+    }
+
+    _fitDiscoveredBounds() {
+        if (!this._teleMap) return;
+        const b = this._discVisible().map((d) => [d.latitude, d.longitude]);
+        if (!b.length) return;
+        if (b.length === 1) this._teleMap.setView(b[0], 12);
+        else this._teleMap.fitBounds(b, { padding: [30, 30], maxZoom: 13 });
+    }
+
+    _ago(unixS) {
+        if (!unixS) return '--';
+        const s = Math.max(0, Date.now() / 1000 - unixS);
+        if (s < 90) return 'just now';
+        if (s < 5400) return `${Math.round(s / 60)} min ago`;
+        if (s < 129600) return `${Math.round(s / 3600)} h ago`;
+        return `${Math.round(s / 86400)} d ago`;
     }
 
     /** Auto-frames the view on every marker refresh (not a button --
