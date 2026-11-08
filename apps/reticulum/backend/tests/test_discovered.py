@@ -37,6 +37,21 @@ def _rnode(**over) -> dict:
     return info
 
 
+class TestDestinationsOf(unittest.TestCase):
+    def test_known_identity(self) -> None:
+        # Reference values computed with RNS.Destination.hash() (RNS 1.5.7)
+        # for an identity whose hash is 00..0f.
+        got = d.destinations_of(bytes(range(16)).hex())
+        self.assertEqual(got, {
+            "lxmf": "a953c22cba1cff60cbaf4d3c75ecf35a",
+            "nomadnet": "2559e601e79041e4289105d63fd1c83d",
+        })
+
+    def test_bad_network_id_gives_nothing(self) -> None:
+        for bad in (None, "", "zz", "abcd"):
+            self.assertEqual(d.destinations_of(bad), {})
+
+
 class TestReadDiscovered(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

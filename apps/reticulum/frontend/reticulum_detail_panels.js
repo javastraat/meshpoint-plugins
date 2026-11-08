@@ -269,8 +269,71 @@ class ReticulumPeerDrawer {
             drawer.classList.add('nd-drawer--open');
         });
 
+        this._extras = { disc: null, tele: null };
         this._renderSections(null);  // identity + recent activity immediately, routing/signal once fetched
         this._fetchLink(peer.destination_hash, token);
+        this._fetchExtras(peer.destination_hash, token);
+    }
+
+    /** Location / radio settings from a discovery announce (GET
+     * /api/reticulum/discovered, matched on the lxmf/nomadnet addresses the
+     * backend derives from the announcing identity -- works for ScotMesh
+     * repeaters, which use one identity for everything) and the latest
+     * telemetry this peer sent us (GET /api/reticulum/telemetry/peers).
+     * Either may be missing; neither blocks the drawer. Filled into the
+     * [data-rt-extras] slot only, so a contact form being typed in isn't
+     * re-rendered under the user's hands. */
+    async _fetchExtras(destinationHash, token) {
+        const want = String(destinationHash || '').toLowerCase();
+        const get = async (url) => {
+            try {
+                const r = await fetch(url, { credentials: 'same-origin' });
+                return r.ok ? await r.json() : null;
+            } catch (_) { return null; }
+        };
+        const [disc, tele] = await Promise.all([
+            get('/api/reticulum/discovered'), get('/api/reticulum/telemetry/peers'),
+        ]);
+        if (token !== this._openToken || !this._drawer) return;
+        const ifaces = (disc && Array.isArray(disc.interfaces)) ? disc.interfaces : [];
+        this._extras = {
+            disc: ifaces.find((d) => d.lxmf === want || d.nomadnet === want) || null,
+            tele: (Array.isArray(tele) ? tele : []).find((t) => String(t.destination_hash || '').toLowerCase() === want) || null,
+        };
+        this._fillExtras();
+    }
+
+    _fillExtras() {
+        const slot = this._drawer?.querySelector('[data-rt-extras]');
+        if (!slot) return;
+        slot.innerHTML = '';
+        const { disc, tele } = this._extras || {};
+        const osm = (lat, lon) => `<a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}" target="_blank" rel="noopener">${Number(lat).toFixed(5)}, ${Number(lon).toFixed(5)}</a>`;
+        if (disc) {
+            const isRNode = disc.type === 'RNodeInterface';
+            const status = { available: 'available', unknown: 'not heard for a day', stale: 'stale (3+ days)' }[disc.status] || disc.status;
+            slot.appendChild(_rtSection('Location & radio (announced)', [
+                { label: 'Location', value: osm(disc.latitude, disc.longitude) },
+                { label: 'Height', value: disc.height ? `${Math.round(disc.height)} m` : null },
+                { label: 'Frequency', value: isRNode && disc.frequency ? `${(disc.frequency / 1e6).toFixed(3)} MHz` : null },
+                { label: 'Bandwidth', value: isRNode && disc.bandwidth ? `${disc.bandwidth / 1000} kHz` : null },
+                { label: 'SF / CR', value: isRNode && disc.sf ? `SF${disc.sf} / CR${disc.cr ?? '?'}` : null },
+                { label: 'Interface', value: _rtEsc(isRNode ? 'RNode' : disc.type) },
+                { label: 'Software', value: disc.software ? _rtEsc([disc.software, disc.version].filter(Boolean).join(' ')) : null },
+                { label: 'Transport', value: disc.transport ? 'Yes' : 'No' },
+                { label: 'Last heard', value: disc.last_heard ? _rtEsc(`${_rtFullTime(disc.last_heard * 1000)} (${status})`) : null },
+            ], true));
+        }
+        if (tele) {
+            const hasLoc = tele.latitude != null && tele.longitude != null;
+            slot.appendChild(_rtSection('Telemetry', [
+                { label: 'Temperature', value: tele.temperature_c != null ? `${_rtEsc(tele.temperature_c)}°C` : null },
+                ..._rtInfoRows(tele.info, tele.name).map((r) => ({ label: r.key, value: _rtEsc(r.val) })),
+                { label: 'Location', value: hasLoc ? osm(tele.latitude, tele.longitude) : null },
+                { label: 'Altitude', value: tele.altitude != null ? `${Math.round(tele.altitude)} m` : null },
+                { label: 'Received', value: tele.received_at ? _rtEsc(_rtFullTime(tele.received_at * 1000)) : null },
+            ], true));
+        }
     }
 
     async _fetchLink(destinationHash, token) {
@@ -381,6 +444,11 @@ class ReticulumPeerDrawer {
                 ], true));
             }
         }
+
+        const extras = document.createElement('div');
+        extras.setAttribute('data-rt-extras', '');
+        body.appendChild(extras);
+        this._fillExtras();
 
         const activitySection = _rtSection('Recent Activity', [], true);
         const activityContent = activitySection.querySelector('.nd-section__content');

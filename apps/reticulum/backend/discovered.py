@@ -24,6 +24,7 @@ FastAPI-free; RNS is imported lazily so the tests can inject a decoder.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -39,6 +40,29 @@ GONE_AFTER_S = 7 * 24 * 60 * 60
 
 _CACHE_TTL_S = 30.0
 _cache: dict = {"key": None, "at": 0.0, "items": []}
+
+
+def _dest_hash(identity_hash: bytes, full_name: str) -> str:
+    """RNS.Destination.hash() for a SINGLE destination, without RNS:
+    sha256(sha256(name)[:10] + identity hash)[:16]."""
+    name_hash = hashlib.sha256(full_name.encode("utf-8")).digest()[:10]
+    return hashlib.sha256(name_hash + identity_hash).digest()[:16].hex()
+
+
+def destinations_of(network_id: Optional[str]) -> dict:
+    """The LXMF and NomadNet addresses of the identity that sent the
+    discovery announce. A ScotMesh repeater uses one identity for its
+    discovery announce, LXMF and NomadNet, so these are its real addresses
+    and the peer drawer can find its location and radio settings. rnsd
+    announces with its own transport identity, unrelated to a meshpoint's
+    LXMF identity, so for a meshpoint these match nothing (harmless)."""
+    try:
+        ih = bytes.fromhex(network_id or "")
+    except ValueError:
+        return {}
+    if len(ih) != 16:
+        return {}
+    return {"lxmf": _dest_hash(ih, "lxmf.delivery"), "nomadnet": _dest_hash(ih, "nomadnetwork.node")}
 
 
 def storage_dir(config_dir: str) -> str:
@@ -95,6 +119,7 @@ def _entry(info: dict, now: float) -> Optional[dict]:
         "heard_count": int(info["heard_count"]) if isinstance(info.get("heard_count"), int) else None,
         "status": _status(age),
     }
+    out.update(destinations_of(out["network_id"]))
     if out["type"] == "RNodeInterface":
         for key in ("frequency", "bandwidth", "sf", "cr"):
             out[key] = int(info[key]) if isinstance(info.get(key), int) else None

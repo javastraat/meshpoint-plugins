@@ -133,8 +133,15 @@ files as a side effect, so it isn't used), keeps only whitelisted fields
 drops entries without a location, and marks each available (< 24 h),
 unknown (< 3 d) or stale (< 7 d), like RNS. `GET /api/reticulum/discovered`
 returns `{enabled, interfaces}` (30 s cache); the `reachable_on`/`port` of
-TCP/backbone nodes only for admins. The Reticulum Dashboard plugin draws
-them on its map. A repeater shows up only if it sends these announces
+TCP/backbone nodes only for admins. Each entry also carries the `lxmf` and
+`nomadnet` addresses of the identity that sent it (`network_id`, computed
+like `RNS.Destination.hash()`): a ScotMesh repeater uses one identity for
+discovery, LXMF and NomadNet, so the peer drawer
+(`frontend/reticulum_detail_panels.js`) finds its location and radio
+settings from its LXMF/NomadNet address and shows them, next to any
+telemetry that peer sent. rnsd announces with its own transport identity,
+so a meshpoint's entry matches none of its addresses. The Reticulum
+Dashboard plugin draws them on its map. A repeater shows up only if it sends these announces
 (the ScotMesh firmware's rmap option); ordinary LXMF/NomadNet announces
 carry no location.
 
