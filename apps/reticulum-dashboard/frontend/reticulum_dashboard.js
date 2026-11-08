@@ -462,7 +462,7 @@ class ReticulumDashboard {
                     <section class="dashboard__map">
                         <div class="panel">
                             <div class="panel__header">
-                                Telemetry Map
+                                Map
                                 <div class="panel__header-actions">
                                     <span id="rtd-disc-filters" class="rtd-disc-filters" hidden>
                                         <label title="Only LoRa radios (repeaters, meshpoints with an RNode), no internet nodes"><input type="checkbox" data-disc-filter="rnodeOnly"> RNode only</label>
