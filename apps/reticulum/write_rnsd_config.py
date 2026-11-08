@@ -68,9 +68,12 @@ _TEMPLATE = """\
 
 # [reticulum] lines for the discover_interfaces setting. Autoconnect is
 # written out explicitly so a future RNS default can't start opening
-# interfaces to whatever the network announces.
+# interfaces to whatever the network announces. It's a NUMBER in RNS (the
+# maximum of auto-connected interfaces, 0 = off), read with as_int --
+# "No" makes RNS.Reticulum() raise and neither rnsd nor meshpoint's
+# Reticulum service starts.
 _DISCOVERY_BLOCK = """  discover_interfaces = Yes
-  autoconnect_discovered_interfaces = No
+  autoconnect_discovered_interfaces = 0
 """
 
 _RNODE_TEMPLATE = """

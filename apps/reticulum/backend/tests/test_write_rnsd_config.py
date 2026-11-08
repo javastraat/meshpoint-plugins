@@ -196,7 +196,15 @@ class TestDiscoverInterfaces(unittest.TestCase):
         reticulum = rendered.split("[logging]")[0]
         self.assertIn("[reticulum]", reticulum)
         self.assertIn("  discover_interfaces = Yes\n", reticulum)
-        self.assertIn("  autoconnect_discovered_interfaces = No\n", reticulum)
+        self.assertIn("  autoconnect_discovered_interfaces = 0\n", reticulum)
+
+    def test_every_line_parses_the_way_rns_reads_it(self) -> None:
+        # RNS reads discover_interfaces with as_bool and
+        # autoconnect_discovered_interfaces with as_int -- "No" for the
+        # latter crashed RNS.Reticulum() on the Pi (2026-11-08).
+        opts = dict(line.strip().split(" = ") for line in w._DISCOVERY_BLOCK.strip().splitlines())
+        self.assertIn(opts["discover_interfaces"].lower(), ("yes", "true", "on", "1"))
+        self.assertEqual(int(opts["autoconnect_discovered_interfaces"]), 0)
 
 
 if __name__ == "__main__":  # pragma: no cover

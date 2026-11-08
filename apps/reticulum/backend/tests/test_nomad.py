@@ -225,6 +225,43 @@ def _fake_link(status=_FakeLinkStatus.ACTIVE, inactive_for=0):
     return link
 
 
+class TestAvailable(unittest.TestCase):
+    """An RNS instance whose config failed to load has no transport
+    identity -- browsing then must say "not running", not raise a 500 from
+    RNS.Transport.request_path (seen 2026-11-08: a bad rnsd config line)."""
+
+    def setUp(self) -> None:
+        self._original_rns = nomad.RNS
+
+    def tearDown(self) -> None:
+        nomad.RNS = self._original_rns
+
+    def _fake(self, identity):
+        class _Reticulum:
+            @staticmethod
+            def get_instance():
+                return object()
+
+        class _Transport:
+            pass
+
+        _Transport.identity = identity
+
+        class _RNS:
+            Reticulum = _Reticulum
+            Transport = _Transport
+
+        return _RNS
+
+    def test_instance_without_transport_identity_is_not_available(self) -> None:
+        nomad.RNS = self._fake(None)
+        self.assertFalse(nomad.available())
+
+    def test_instance_with_transport_identity_is_available(self) -> None:
+        nomad.RNS = self._fake(object())
+        self.assertTrue(nomad.available())
+
+
 class TestSweepStaleLinks(unittest.TestCase):
     def setUp(self) -> None:
         self._original_rns = nomad.RNS

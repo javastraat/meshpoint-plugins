@@ -121,7 +121,7 @@ map again after roughly 7 days without an announce once disabled.
 
 Settings tab → **Show discovered repeaters on the dashboard map**
 (`discover_interfaces`, off by default) writes `discover_interfaces = Yes`
-and `autoconnect_discovered_interfaces = No` into rnsd's `[reticulum]`
+and `autoconnect_discovered_interfaces = 0` into rnsd's `[reticulum]`
 section. rnsd then validates other nodes' discovery announces (the same
 `rnstransport.discovery.interface` announces as above, stamp value 16) and
 keeps one msgpack file per interface under

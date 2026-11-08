@@ -96,11 +96,14 @@ class NomadResult:
 
 def available() -> bool:
     """True once RNS is importable AND a Reticulum instance exists in this
-    process (i.e. the reticulum plugin's LxmfService has started)."""
+    process (i.e. the reticulum plugin's LxmfService has started). The
+    transport identity is checked too: RNS.Reticulum() registers its
+    instance before reading the config, so a config it chokes on leaves an
+    instance with no identity, and every path request would then raise."""
     if RNS is None:
         return False
     try:
-        return RNS.Reticulum.get_instance() is not None
+        return RNS.Reticulum.get_instance() is not None and RNS.Transport.identity is not None
     except Exception:  # noqa: BLE001 -- old RNS without get_instance(); treat as unavailable
         return False
 
