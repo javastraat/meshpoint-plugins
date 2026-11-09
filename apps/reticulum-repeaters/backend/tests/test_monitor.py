@@ -136,6 +136,13 @@ class MonitorTest(unittest.TestCase):
         self.assertEqual(got.get("poll"), 1)
         self.assertEqual(got.get("hist"), 30)                   # 24 + 6, two pages
 
+    def test_radio_is_asked_right_after_the_index(self):
+        # Its airtime is a short window: asked later it mostly measures our
+        # own replies to this poll (36.8 % seen on the P1 vs 2-4 % normally).
+        fetch, calls, _ = fake_repeater()
+        run(self._mon(fetch).add(P1))
+        self.assertEqual([p for p, _ in calls][:2], ["/api", "/api/radio"])
+
     def test_board_without_sensors_never_asks_env_or_hist(self):
         fetch, calls, _ = fake_repeater(env=False)
         snap = run(self._mon(fetch).add(P1))

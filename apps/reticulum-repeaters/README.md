@@ -26,12 +26,14 @@ auto-detected -- and shows per repeater:
 
 | Requests | When |
 |---|---|
-| `/api/all`, `/api/radio`, `/api/health`, `/api/env` | every `interval_min` (default 15) |
+| `/api/radio`, `/api/all`, `/api/health`, `/api/env` | every `interval_min` (default 15) |
 | `/api/nbrs`, `/api/paths`, `/api/links` | every `lists_interval_min` (default 60) |
 | `/api`, `/api/sys`, `/api/pos` | once a day |
 | `/api/hist` (the repeater's own 7-day hourly history) | only when the repeater is added |
 
-Each reply fits one LoRa packet (~1 s at SF8/125 kHz); with the defaults it's
+`/api/radio` is asked first, right after `/api`: its airtime figure covers a
+short recent window, so asked later it mostly measured this poll's own
+replies (36.8 % seen on the P1 against 2-4 % normally). Each reply fits one LoRa packet (~1 s at SF8/125 kHz); with the defaults it's
 well under 1 % airtime. `/api` lists which endpoints the build has, so a board
 without sensors or history (V4) is never asked `/api/env` / `/api/hist`
 (those would just time out). If the first request fails, the rest of that

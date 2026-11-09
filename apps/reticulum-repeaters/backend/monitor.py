@@ -38,7 +38,9 @@ from .store import RepeaterStore
 
 logger = logging.getLogger(__name__)
 
-STATS = ("all", "radio", "health", "env")
+STATS = ("radio", "all", "health", "env")   # radio first: its airtime is a short recent
+                                             # window, so after our own replies it would
+                                             # mostly measure this poll
 LISTS = ("nbrs", "paths", "links")
 INFO = ("sys", "pos")
 INFO_EVERY_S = 86400
@@ -72,7 +74,7 @@ async def nomad_fetch(dest: str, path: str, data: Optional[dict] = None) -> tupl
 
 def flatten(snap: dict, ts: float) -> dict:
     """One rr_samples row from a snapshot's all/radio/health/env replies."""
-    a, r, h, e = (snap.get(k) or {} for k in STATS)
+    a, r, h, e = (snap.get(k) or {} for k in ("all", "radio", "health", "env"))
 
     def num(d, k):
         v = d.get(k)
@@ -225,7 +227,7 @@ class RepeaterMonitor:
                 errors.append(f"api: {err or 'not a ScotMesh repeater'}")
         have = set(snap.get("endpoints") or [])
 
-        for ep in [e for e in INFO + STATS if e in what and e in have]:
+        for ep in [e for e in STATS + INFO if e in what and e in have]:
             if errors and not got_any:
                 break                           # node unreachable, don't hammer it
             ok, data, err = await self._fetch(h, f"/api/{ep}", None)
