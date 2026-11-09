@@ -31,3 +31,21 @@
 .rr-table tr + tr td { border-top: 1px solid var(--border, #2a2a2a); }
 
 .rr-trends2 { margin-top: 0.6rem; }
+
+/* Overview: one row per repeater, click to show its cards below. */
+.rr-overview-wrap { overflow-x: auto; margin-bottom: 1rem; }
+.rr-ov { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.rr-ov th {
+    text-align: left; font-weight: 500; font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-muted, #888); padding: 0.3rem 0.6rem;
+}
+.rr-ov td { padding: 0.45rem 0.6rem; border-top: 1px solid var(--border, #2a2a2a); white-space: nowrap; font-family: var(--font-mono, monospace); }
+.rr-ov__row { cursor: pointer; }
+.rr-ov__row:hover { background: var(--overlay-weak, rgba(255, 255, 255, 0.05)); }
+.rr-ov__row--sel { background: var(--overlay-weak, rgba(255, 255, 255, 0.06)); box-shadow: inset 3px 0 0 var(--accent-cyan, #06b6d4); }
+.rr-ov__name { font-family: inherit; font-weight: 600; }
+.rr-ov__restart { color: var(--accent-amber, #f59e0b); }
+.rr-lamp { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.rr-lamp--ok { background: var(--accent-green, #00e5a0); }
+.rr-lamp--bad { background: var(--accent-red, #ef4444); }
+.rr-lamp--busy { background: var(--accent-amber, #f59e0b); }

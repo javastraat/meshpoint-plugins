@@ -21,6 +21,7 @@ class ReticulumRepeatersPage {
         this._isAdmin = window.meshpointIdentity?.role !== 'viewer';
         this._data = { repeaters: [], settings: {} };
         this._charts = {};
+        this._selected = this._loadSelected();
         this._onWs = () => this._load();
     }
 
@@ -41,6 +42,7 @@ class ReticulumRepeatersPage {
                     </div>
                     <div class="panel__body">
                         <div data-rr-pane="repeaters">
+                            <div class="rr-overview-wrap" data-rr-overview></div>
                             <div class="rp-grid" data-rr-grid></div>
                             <p class="lw-empty" data-rr-empty style="display:none"></p>
                         </div>
@@ -108,8 +110,10 @@ class ReticulumRepeatersPage {
         const grid = this._root.querySelector('[data-rr-grid]');
         const empty = this._root.querySelector('[data-rr-empty]');
         const reps = this._data.repeaters;
+        const overview = this._root.querySelector('[data-rr-overview]');
         if (!reps.length) {
             grid.innerHTML = '';
+            overview.innerHTML = '';
             empty.style.display = '';
             empty.innerHTML = this._isAdmin
                 ? 'No repeaters yet. <button type="button" class="lw-link-btn" data-rr-goto-settings>Add one in Settings</button>.'
@@ -117,10 +121,50 @@ class ReticulumRepeatersPage {
             return;
         }
         empty.style.display = 'none';
+        // Overview of all, details of one: the selected repeater (kept per
+        // browser), else the first. One block is 2-3 screens tall, so with
+        // several repeaters stacking them all made the page hard to use.
+        const sel = reps.find((r) => r.hash === this._selected) || reps[0];
+        overview.innerHTML = this._overviewHtml(reps, sel.hash);
         Object.values(this._charts).forEach((c) => c.destroy());
         this._charts = {};
-        grid.innerHTML = reps.map((r) => this._card(r)).join('');
-        reps.forEach((r) => this._renderTrends(r.hash, r.snapshot?.polled_at));
+        grid.innerHTML = this._card(sel);
+        this._renderTrends(sel.hash, sel.snapshot?.polled_at);
+    }
+
+    _overviewHtml(reps, selHash) {
+        const now = Date.now() / 1000;
+        const rows = reps.map((r) => {
+            const s = r.snapshot || {};
+            const a = s.all || {}, ra = s.radio || {}, h = s.health || {};
+            const lamp = s.polling ? 'rr-lamp--busy' : s.ok ? 'rr-lamp--ok' : s.polled_at ? 'rr-lamp--bad' : 'rr-lamp--busy';
+            const recent = s.restart && now - s.restart.at < 86400;
+            const name = r.name || s.sys?.name || r.hash.slice(0, 12);
+            return `
+                <tr class="rr-ov__row${r.hash === selHash ? ' rr-ov__row--sel' : ''}" data-rr-select="${this._esc(r.hash)}"
+                    title="${this._esc(s.error || r.hash)}">
+                    <td><span class="rr-lamp ${lamp}"></span></td>
+                    <td class="rr-ov__name">${this._esc(name)}</td>
+                    <td>${a.voltage != null ? `${a.voltage.toFixed(2)} V · ${this._esc(a.percent)}%${a.charging ? ' ▲' : ''}` : '--'}</td>
+                    <td>${ra.noise != null ? `${this._esc(ra.noise)} dBm` : '--'}</td>
+                    <td>${a.neighbours != null ? this._esc(a.neighbours) : '--'}</td>
+                    <td class="${recent ? 'rr-ov__restart' : ''}">${h.reboots != null ? this._esc(h.reboots) : '--'}${recent ? ' ⚠' : ''}</td>
+                    <td>${s.polling ? 'Fetching…' : s.polled_at ? this._ago(s.polled_at) : '--'}</td>
+                </tr>`;
+        }).join('');
+        return `<table class="rr-ov">
+            <tr><th></th><th>Repeater</th><th>Battery</th><th>Noise</th><th>Neighbours</th><th>Restarts</th><th>Polled</th></tr>
+            ${rows}</table>`;
+    }
+
+    _loadSelected() {
+        try { return localStorage.getItem('meshpoint.rr.selected') || ''; } catch (_) { return ''; }
+    }
+
+    _select(hash) {
+        this._selected = hash;
+        try { localStorage.setItem('meshpoint.rr.selected', hash); } catch (_) {}
+        this._renderGrid();
     }
 
     _card(r) {
@@ -365,6 +409,8 @@ class ReticulumRepeatersPage {
     async _onClick(e) {
         const t = e.target;
         if (t.closest('[data-rr-goto-settings]')) { this._switch('settings'); return; }
+        const pick = t.closest('[data-rr-select]');
+        if (pick) { this._select(pick.dataset.rrSelect); return; }
         const refresh = t.closest('[data-rr-refresh]');
         if (refresh) {
             refresh.disabled = true;
@@ -383,8 +429,22 @@ class ReticulumRepeatersPage {
         }
         const remove = t.closest('[data-rr-remove]');
         if (remove) {
-            if (!confirm('Remove this repeater and its stored history?')) return;
-            await fetch(`/api/reticulum-repeaters/repeaters/${remove.dataset.rrRemove}`, { method: 'DELETE', credentials: 'same-origin' });
+            const hash = remove.dataset.rrRemove;
+            const rep = this._data.repeaters.find((r) => r.hash === hash) || {};
+            const opts = {
+                label: `Remove ${rep.name || 'repeater'}`,
+                command: hash,
+                description: 'Stops polling this repeater and deletes everything stored for it: '
+                    + 'its latest data and its whole history (Trends). This cannot be undone; '
+                    + 'adding it again starts over from the 7 days the repeater keeps itself.',
+            };
+            // meshpoint's shared in-app danger confirmation (as on the
+            // Channels card); the browser's own dialog only if it's missing.
+            const ok = window.confirmModal
+                ? await window.confirmModal(opts)
+                : confirm(`${opts.label}?\n\n${opts.description}`);
+            if (!ok) return;
+            await fetch(`/api/reticulum-repeaters/repeaters/${hash}`, { method: 'DELETE', credentials: 'same-origin' });
             await this._load();
             this._renderSettings(false);
             this._loadCandidates();

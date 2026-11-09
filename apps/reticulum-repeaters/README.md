@@ -6,7 +6,11 @@ the built-in MeshCore Repeaters page.
 
 A ScotMesh repeater answers JSON requests on its NomadNet address without an
 identity. This plugin polls the ones **you add** -- nothing is scanned or
-auto-detected -- and shows per repeater:
+auto-detected. The page starts with an **overview table**, one row per
+repeater (status lamp, battery, noise floor, neighbours, restarts with a ⚠
+for a day after a restart, last poll); click a row to show that repeater's
+full cards below (the choice is kept per browser, the first one by default).
+Per repeater:
 
 - **Status:** battery (V, %, charging), uptime, last reset reason, restart
   count, packets rx/tx, links, routes, neighbours, last poll; a warning for a
