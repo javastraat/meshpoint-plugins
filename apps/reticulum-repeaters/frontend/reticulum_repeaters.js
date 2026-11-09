@@ -252,7 +252,7 @@ class ReticulumRepeatersPage {
                 const names = this._nameMap(s);
                 return this._listHtml('Neighbours', s.nbrs, names) + this._listHtml('Routes', s.paths, names)
                     + this._listHtml('Links', s.links, names);
-            })());
+            })(), 'rr-card--lists');
 
         const trends = `
             <div class="rp-card rp-card--trends">

@@ -53,3 +53,13 @@
 /* A name looked up for a dest / via hash (repeater's neighbour names,
    meshpoint's peer roster). */
 .rr-name { color: var(--text-secondary, #aaa); font-family: var(--font-sans, inherit); }
+
+/* With names next to the hashes the route table is wider than one third of
+   the row: the lists card takes two columns (the third is usually empty
+   next to it), and scrolls sideways if it still doesn't fit. Single column
+   below core's 1100px breakpoint, like the other cards. */
+.rr-card--lists { grid-column: span 2; }
+.rr-card--lists .rp-card__rows { overflow-x: auto; }
+@media (max-width: 1100px) {
+    .rr-card--lists { grid-column: auto; }
+}
