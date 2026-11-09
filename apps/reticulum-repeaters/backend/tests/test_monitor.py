@@ -143,6 +143,29 @@ class MonitorTest(unittest.TestCase):
         run(self._mon(fetch).add(P1))
         self.assertEqual([p for p, _ in calls][:2], ["/api", "/api/radio"])
 
+    def test_lists_only_poll_counts_as_ok(self):
+        # Lists (60 min) and stats (15 min) drift apart, so a tick can have
+        # only the lists due. That used to skip them and mark the repeater
+        # not reporting with no error (red dot, "Reporting 0 / 1").
+        fetch, calls, _ = fake_repeater()
+        mon = self._mon(fetch)
+        run(mon.add(P1))
+        calls.clear()
+        snap = run(mon.poll(P1, set(m.LISTS)))
+        self.assertTrue(snap["ok"], snap["error"])
+        self.assertIn("/api/nbrs", [p for p, _ in calls])
+
+    def test_lists_only_poll_unreachable_stops_after_one_request(self):
+        fetch, calls, _ = fake_repeater()
+        mon = self._mon(fetch)
+        run(mon.add(P1))
+        down, calls2, _ = fake_repeater(down=True)
+        mon._fetch = down
+        snap = run(mon.poll(P1, set(m.LISTS)))
+        self.assertFalse(snap["ok"])
+        self.assertEqual(len(calls2), 1)
+        self.assertTrue(snap["error"])
+
     def test_board_without_sensors_never_asks_env_or_hist(self):
         fetch, calls, _ = fake_repeater(env=False)
         snap = run(self._mon(fetch).add(P1))

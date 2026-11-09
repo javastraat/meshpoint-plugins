@@ -266,11 +266,17 @@ class RepeaterMonitor:
             else:
                 errors.append(f"{ep}: {err}")
 
-        if got_any and any(e in what for e in LISTS):
+        # Lists are due on their own interval, so a poll can be lists only
+        # (nothing fetched above yet): run them unless the node already
+        # proved unreachable in this poll.
+        if (got_any or not errors) and any(e in what for e in LISTS):
             for ep in [e for e in LISTS if e in have]:
                 rows, total = await self._fetch_list(h, ep, errors)
                 if rows is not None:
+                    got_any = True
                     snap[ep] = {"total": total, "rows": rows, "cols": snap.get(f"_{ep}_cols")}
+                elif not got_any:
+                    break                       # first request of the poll failed: unreachable
 
         if got_any and "hist" in what and "hist" in have:
             await self._backfill(h, now, errors)

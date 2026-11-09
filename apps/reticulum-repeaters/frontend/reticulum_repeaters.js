@@ -137,7 +137,7 @@ class ReticulumRepeatersPage {
         const rows = reps.map((r) => {
             const s = r.snapshot || {};
             const a = s.all || {}, ra = s.radio || {}, h = s.health || {};
-            const lamp = s.polling ? 'rr-lamp--busy' : s.ok ? 'rr-lamp--ok' : s.polled_at ? 'rr-lamp--bad' : 'rr-lamp--busy';
+            const lamp = this._lampClass(s);
             const recent = s.restart && now - s.restart.at < 86400;
             const name = r.name || s.sys?.name || r.hash.slice(0, 12);
             return `
@@ -155,6 +155,14 @@ class ReticulumRepeatersPage {
         return `<table class="rr-ov">
             <tr><th></th><th>Repeater</th><th>Battery</th><th>Noise</th><th>Neighbours</th><th>Restarts</th><th>Polled</th></tr>
             ${rows}</table>`;
+    }
+
+    /** One lamp for the overview row and the card: green = last poll OK,
+     * red = it failed (the error is on the card / row tooltip), amber =
+     * fetching or not polled yet. */
+    _lampClass(s) {
+        if (s.polling || !s.polled_at) return 'rr-lamp--busy';
+        return s.ok ? 'rr-lamp--ok' : 'rr-lamp--bad';
     }
 
     _loadSelected() {
@@ -193,7 +201,7 @@ class ReticulumRepeatersPage {
             <div class="rp-card ${stale ? 'rp-card--stale' : ''}">
                 <div class="rp-card__head">
                     <span class="rp-card__name">${this._esc(title)}</span>
-                    <span class="rp-card__lamp ${s.ok ? 'rp-ok' : 'rp-stale'}" title="${this._esc(s.ok ? 'Reporting' : (s.error || 'not reporting'))}"></span>
+                    <span class="rr-lamp ${this._lampClass(s)}" title="${this._esc(s.ok ? 'Reporting' : (s.error || 'not reporting'))}"></span>
                 </div>
                 <div class="rp-card__id">${this._esc(r.hash)}</div>
                 ${restart}
