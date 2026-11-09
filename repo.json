@@ -294,6 +294,23 @@
       "requires": "reticulum"
     },
     {
+      "id": "reticulum-repeaters",
+      "kind": "app",
+      "path": "apps/reticulum-repeaters",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "service",
+        "routes",
+        "sidebar"
+      ],
+      "description": "Monitor your own ScotMesh microReticulum repeaters over NomadNet: battery, radio (noise, RSSI/SNR, airtime), health (RAM, link pool, restarts), sensors, neighbours and routes, with trends. Only repeaters you add are ever polled. Requires the reticulum plugin.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://github.com/javastraat/meshpoint-plugins",
+      "has_setup": false,
+      "requires": "reticulum"
+    },
+    {
       "id": "reticulum-scraper",
       "kind": "app",
       "path": "apps/reticulum-scraper",

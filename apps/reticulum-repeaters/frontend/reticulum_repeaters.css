@@ -1,0 +1,26 @@
+/* Reticulum Repeaters -- the cards themselves are core's repeaters.css
+   (.rp-*, loaded globally); this file only adds what that page doesn't
+   have: the refresh button row, restart/error lines, the neighbours/routes
+   tables and the second (radio & memory) trends chart. */
+
+.rr-actions { margin-top: 0.6rem; }
+.rr-refresh[disabled] { opacity: 0.6; cursor: progress; }
+
+.rr-alert,
+.rr-error {
+    margin: 0.4rem 0;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+}
+.rr-alert { color: var(--accent-amber, #f59e0b); background: rgba(245, 158, 11, 0.1); }
+.rr-error { color: var(--accent-red, #ef4444); background: rgba(239, 68, 68, 0.08); word-break: break-word; }
+
+.rr-list + .rr-list { margin-top: 0.6rem; }
+.rr-list__label { font-size: 0.75rem; color: var(--text-secondary, #aaa); margin-bottom: 0.2rem; }
+.rr-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; font-family: var(--font-mono, monospace); }
+.rr-table th { text-align: left; color: var(--text-muted, #888); font-weight: 500; padding: 0.1rem 0.4rem 0.1rem 0; }
+.rr-table td { padding: 0.1rem 0.4rem 0.1rem 0; color: var(--text-primary, #eee); white-space: nowrap; }
+.rr-table tr + tr td { border-top: 1px solid var(--border, #2a2a2a); }
+
+.rr-trends2 { margin-top: 0.6rem; }

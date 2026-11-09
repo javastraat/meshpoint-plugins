@@ -1,0 +1,28 @@
+name = "reticulum-repeaters"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["service", "routes", "sidebar"]
+                                    #   service  RepeaterMonitor: polls the
+                                    #            repeaters you added over
+                                    #            NomadNet (their /api/*)
+                                    #   routes   /api/reticulum-repeaters/*
+                                    #   sidebar  the Reticulum Repeaters page
+                                    #            (Repeaters / Settings tabs)
+requires = "reticulum"  # polls through the reticulum plugin's NomadNet
+                         # client (its RNS attach); enforced like
+                         # reticulum-dashboard's: can't be enabled without it
+
+[frontend]
+scripts = ["frontend/reticulum_repeaters.js"]
+styles = ["frontend/reticulum_repeaters.css"]
+
+[sidebar]
+route = "reticulum-repeaters"
+label = "Reticulum Repeaters"
+category = "radio"    # next to the built-in MeshCore Repeaters page
+icon = "antenna"
+
+[meta]
+description = "Monitor your own ScotMesh microReticulum repeaters over NomadNet: battery, radio (noise, RSSI/SNR, airtime), health (RAM, link pool, restarts), sensors, neighbours and routes, with trends. Only repeaters you add are ever polled. Requires the reticulum plugin."
+homepage = "https://github.com/javastraat/meshpoint-plugins"
+author = "Einstein PD2EMC"
