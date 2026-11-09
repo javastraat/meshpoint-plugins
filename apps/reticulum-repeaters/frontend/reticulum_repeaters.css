@@ -3,6 +3,13 @@
    have: the refresh button row, restart/error lines, the neighbours/routes
    tables and the second (radio & memory) trends chart. */
 
+/* Core's .section is overflow:hidden; every page that should scroll gets
+   its own rule in core CSS (lorawan.css, repeaters.css). A plugin page
+   isn't in those lists, so it promotes its own section here. */
+.section[data-section="reticulum-repeaters"] {
+    overflow-y: auto;
+}
+
 .rr-actions { margin-top: 0.6rem; }
 .rr-refresh[disabled] { opacity: 0.6; cursor: progress; }
 
