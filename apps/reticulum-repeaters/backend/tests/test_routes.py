@@ -89,6 +89,14 @@ class RoutesTest(unittest.TestCase):
         self.assertNotIn("_nbrs_cols", snap)
         self.assertEqual(body["settings"]["interval_min"], 15)
 
+    def test_list_hashes_collects_dest_and_via(self):
+        snap = {"paths": {"cols": ["dest", "hops", "age_s", "via"],
+                          "rows": [["DB5AEE50", 4, 6346, "6270bb29"], ["fac4f252", 1, 164, "37c51c69"]]},
+                "nbrs": {"cols": ["dest", "age_s", "name"], "rows": [["3b9e9e51", 1248, None]]},
+                "links": {"cols": ["link", "st", "via"], "rows": [["ab3c8908", "a", None]]}}
+        self.assertEqual(self.routes._list_hashes(snap),
+                         {"db5aee50", "6270bb29", "fac4f252", "37c51c69", "3b9e9e51"})
+
     def test_viewer_can_read_but_not_change(self):
         self.role = self.VIEWER
         self.assertEqual(self.client.get("/api/reticulum-repeaters/repeaters").status_code, 200)

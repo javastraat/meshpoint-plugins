@@ -125,6 +125,33 @@ class RepeaterStore:
             rows = rows[::step] + ([rows[-1]] if (len(rows) - 1) % step else [])
         return rows
 
+    async def peer_names(self, prefixes: set[str]) -> dict[str, str]:
+        """Names from the reticulum plugin's peer roster (``reticulum_peers``,
+        built from announces) for hash prefixes as a repeater's lists send
+        them (8 hex with s=1). A prefix matching peers with different names
+        gets none; a missing table (reticulum never ran) gives {}."""
+        by_len: dict[int, list[str]] = {}
+        for p in prefixes:
+            p = (p or "").lower()
+            if 4 <= len(p) <= 32 and all(c in "0123456789abcdef" for c in p):
+                by_len.setdefault(len(p), []).append(p)
+        found: dict[str, set[str]] = {}
+        for n, group in by_len.items():
+            for i in range(0, len(group), 200):
+                chunk = group[i:i + 200]
+                try:
+                    rows = await self._db.fetch_all(
+                        f"SELECT substr(destination_hash, 1, {n}) AS p, display_name FROM reticulum_peers "
+                        f"WHERE substr(destination_hash, 1, {n}) IN ({', '.join('?' for _ in chunk)}) "
+                        "AND display_name IS NOT NULL AND display_name != ''",
+                        tuple(chunk),
+                    )
+                except Exception:  # noqa: BLE001 -- no roster table: no names
+                    return {}
+                for r in rows:
+                    found.setdefault(r["p"], set()).add(r["display_name"])
+        return {p: next(iter(names)) for p, names in found.items() if len(names) == 1}
+
     async def prune(self) -> None:
         await self._db.execute("DELETE FROM rr_samples WHERE ts < ?", (time.time() - KEEP_DAYS * 86400,))
         await self._db.commit()

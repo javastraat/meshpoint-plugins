@@ -248,7 +248,11 @@ class ReticulumRepeatersPage {
 
         const lists = card('Neighbours & routes',
             s.at?.lists ? `updated ${this._ago(s.at.lists)}` : '',
-            this._listHtml('Neighbours', s.nbrs) + this._listHtml('Routes', s.paths) + this._listHtml('Links', s.links));
+            (() => {
+                const names = this._nameMap(s);
+                return this._listHtml('Neighbours', s.nbrs, names) + this._listHtml('Routes', s.paths, names)
+                    + this._listHtml('Links', s.links, names);
+            })());
 
         const trends = `
             <div class="rp-card rp-card--trends">
@@ -262,12 +266,49 @@ class ReticulumRepeatersPage {
         return `<div class="rp-repeater">${main}${radio}${health}${sensors}${lists}${trends}</div>`;
     }
 
-    _listHtml(label, list) {
+    /** hash prefix -> name for the dest / via cells: the repeater's own
+     * neighbour names first (a route's "via" is always one of its
+     * neighbours), then the meshpoint's peer roster (the backend's
+     * "names", announced names -- a local lookup, no airtime). */
+    _nameMap(s) {
+        const map = { ...(this._data.names || {}) };
+        const n = s.nbrs;
+        if (n && Array.isArray(n.cols) && Array.isArray(n.rows)) {
+            const di = n.cols.indexOf('dest'), ni = n.cols.indexOf('name');
+            if (di >= 0 && ni >= 0) {
+                n.rows.forEach((r) => {
+                    const name = r[ni];
+                    if (name && name !== '--' && typeof r[di] === 'string') map[r[di].toLowerCase()] = name;
+                });
+            }
+        }
+        return map;
+    }
+
+    _listHtml(label, list, names = {}) {
         if (!list || !Array.isArray(list.rows)) return '';
         const cols = Array.isArray(list.cols) ? list.cols : [];
         const head = cols.length ? `<tr>${cols.map((c) => `<th>${this._esc(c)}</th>`).join('')}</tr>` : '';
-        const body = list.rows.slice(0, 15).map((row) =>
-            `<tr>${(Array.isArray(row) ? row : [row]).map((v) => `<td>${this._esc(v == null ? '--' : v)}</td>`).join('')}</tr>`).join('');
+        const hasNameCol = cols.includes('name');
+        const cell = (c, v, row) => {
+            if (v == null || v === '--') {
+                // A neighbour the repeater has no name for: try the roster.
+                if (c === 'name') {
+                    const d = row[cols.indexOf('dest')];
+                    const nm = typeof d === 'string' ? names[d.toLowerCase()] : null;
+                    if (nm) return `<td class="rr-name">${this._esc(nm)}</td>`;
+                }
+                return '<td>--</td>';
+            }
+            if ((c === 'via' || (c === 'dest' && !hasNameCol)) && typeof v === 'string' && names[v.toLowerCase()]) {
+                return `<td>${this._esc(v)} <span class="rr-name">${this._esc(names[v.toLowerCase()])}</span></td>`;
+            }
+            return `<td>${this._esc(v)}</td>`;
+        };
+        const body = list.rows.slice(0, 15).map((row) => {
+            const r = Array.isArray(row) ? row : [row];
+            return `<tr>${r.map((v, i) => cell(cols[i], v, r)).join('')}</tr>`;
+        }).join('');
         const more = list.total > list.rows.length || list.rows.length > 15 ? ` (showing ${Math.min(15, list.rows.length)} of ${list.total})` : '';
         return `<div class="rr-list"><div class="rr-list__label">${this._esc(label)} · ${this._esc(list.total)}${this._esc(more)}</div>
             <table class="rr-table">${head}${body}</table></div>`;

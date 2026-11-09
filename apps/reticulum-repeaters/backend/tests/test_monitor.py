@@ -251,6 +251,41 @@ class ConfigStorageTest(unittest.TestCase):
         self.assertEqual((cfg["polling_enabled"], cfg["interval_min"], cfg["lists_interval_min"]), (False, 20, 90))
 
 
+class PeerNamesTest(unittest.TestCase):
+    """Names next to route hashes come from the reticulum plugin's peer
+    roster, matched on the 8-character prefixes a repeater sends."""
+
+    def setUp(self):
+        self.db = FakeDB()
+        self.store = RepeaterStore(self.db)
+
+    def _roster(self, rows):
+        self.db.c.execute("CREATE TABLE reticulum_peers (destination_hash TEXT PRIMARY KEY, display_name TEXT, "
+                          "aspect TEXT, first_seen TEXT, last_seen TEXT)")
+        for h, n in rows:
+            self.db.c.execute("INSERT INTO reticulum_peers VALUES (?, ?, 'lxmf.delivery', '', '')", (h, n))
+
+    def test_prefix_match(self):
+        self._roster([("db5aee50b1203b96aa8a77d55323e6d9", "TechInc NL"), ("abcdef01" + "0" * 24, "Other")])
+        self.assertEqual(run(self.store.peer_names({"db5aee50", "12345678"})), {"db5aee50": "TechInc NL"})
+
+    def test_ambiguous_prefix_gets_no_name(self):
+        self._roster([("db5aee50" + "1" * 24, "A"), ("db5aee50" + "2" * 24, "B")])
+        self.assertEqual(run(self.store.peer_names({"db5aee50"})), {})
+
+    def test_same_name_twice_is_fine_and_blank_names_skipped(self):
+        self._roster([("db5aee50" + "1" * 24, "TechInc NL"), ("db5aee50" + "2" * 24, "TechInc NL"),
+                      ("37c51c69" + "0" * 24, "")])
+        self.assertEqual(run(self.store.peer_names({"db5aee50", "37c51c69"})), {"db5aee50": "TechInc NL"})
+
+    def test_no_roster_table(self):
+        self.assertEqual(run(self.store.peer_names({"db5aee50"})), {})
+
+    def test_junk_prefixes_ignored(self):
+        self._roster([("db5aee50" + "1" * 24, "TechInc NL")])
+        self.assertEqual(run(self.store.peer_names({"--", "xyz", "", "db5aee50'; DROP"})), {})
+
+
 class PureTest(unittest.TestCase):
     def test_hist_timestamps(self):
         page = {"last_s": 600, "cols": ["h", "pct", "mv", "chg", "t", "hum", "hpa", "mcu", "nbrs", "paths", "boot"],

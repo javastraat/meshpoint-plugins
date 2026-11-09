@@ -49,3 +49,7 @@
 .rr-lamp--ok { background: var(--accent-green, #00e5a0); }
 .rr-lamp--bad { background: var(--accent-red, #ef4444); }
 .rr-lamp--busy { background: var(--accent-amber, #f59e0b); }
+
+/* A name looked up for a dest / via hash (repeater's neighbour names,
+   meshpoint's peer roster). */
+.rr-name { color: var(--text-secondary, #aaa); font-family: var(--font-sans, inherit); }

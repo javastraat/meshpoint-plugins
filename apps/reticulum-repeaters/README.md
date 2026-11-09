@@ -23,6 +23,11 @@ Per repeater:
 - **Sensors** (P1): temperature, humidity, pressure, altitude, MCU
   temperature, power monitors.
 - **Neighbours & routes:** the repeater's own lists (up to 45 rows each).
+  Hashes get a name where one is known, looked up locally (no airtime): a
+  route's `via` from the repeater's own neighbour names, `dest` from the
+  meshpoint's Reticulum peer roster (announced names, matched on the
+  8-character prefix; a prefix shared by peers with different names gets
+  none) and the meshpoint's own address.
 - **Trends:** battery/voltage/temperature/humidity/pressure (core's shared
   chart) and noise floor / RSSI / link-pool fragmentation.
 

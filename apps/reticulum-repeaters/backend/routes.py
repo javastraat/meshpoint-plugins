@@ -47,6 +47,47 @@ def _hash(h: str) -> str:
     return h
 
 
+def _list_hashes(snap: dict) -> set[str]:
+    """Every dest / via value in a snapshot's neighbour, route and link lists."""
+    out: set[str] = set()
+    for key in ("nbrs", "paths", "links"):
+        lst = snap.get(key) or {}
+        cols = lst.get("cols") or []
+        idx = [i for i, c in enumerate(cols) if c in ("dest", "via")]
+        for row in lst.get("rows") or []:
+            for i in idx:
+                if isinstance(row, list) and i < len(row) and isinstance(row[i], str):
+                    out.add(row[i].lower())
+    return out
+
+
+def _own_names() -> dict[str, str]:
+    """This meshpoint's own LXMF address isn't in its own roster."""
+    routes = sys.modules.get("meshpoint_plugin_reticulum.routes")
+    svc = getattr(routes, "_service", None) if routes else None
+    try:
+        own = "".join(c for c in str(svc.own_address or "") if c in "0123456789abcdef")
+        name = getattr(svc, "_display_name", "") or "meshpoint"
+    except Exception:  # noqa: BLE001
+        return {}
+    return {own: f"{name} (this meshpoint)"} if len(own) == 32 else {}
+
+
+async def _names(mon: RepeaterMonitor, snaps: list[dict]) -> dict[str, str]:
+    """hash prefix -> name, for the page to put next to the dest / via
+    hashes in the lists: the meshpoint's peer roster (announced names) and
+    its own address. A local lookup -- nothing goes on the air."""
+    prefixes = set().union(*(_list_hashes(s) for s in snaps)) if snaps else set()
+    if not prefixes:
+        return {}
+    names = await mon._store.peer_names(prefixes)
+    for full, name in _own_names().items():
+        for p in prefixes:
+            if full.startswith(p):
+                names[p] = name
+    return names
+
+
 @router.get("/repeaters")
 async def list_repeaters(_claims: SessionClaims = Depends(require_auth)):
     mon = _mon()
@@ -54,7 +95,11 @@ async def list_repeaters(_claims: SessionClaims = Depends(require_auth)):
     for r in state.repeaters():
         snap = {k: v for k, v in (mon.latest.get(r["hash"]) or {}).items() if not k.startswith("_")}
         out.append({**r, "snapshot": snap})
-    return {"repeaters": out, "settings": {k: v for k, v in state.to_dict().items() if k != "repeaters"}}
+    return {
+        "repeaters": out,
+        "names": await _names(mon, [r["snapshot"] for r in out]),
+        "settings": {k: v for k, v in state.to_dict().items() if k != "repeaters"},
+    }
 
 
 @router.get("/repeaters/{h}/history")
