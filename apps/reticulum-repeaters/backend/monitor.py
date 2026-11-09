@@ -133,8 +133,32 @@ class RepeaterMonitor:
     async def start(self) -> None:
         await self._store.ensure_schema()
         self.latest = await self._store.load_latest()
+        await self._load_config()
         self._task = asyncio.create_task(self._loop())
         logger.info("Reticulum repeaters: monitoring %d repeater(s)", len(state.repeaters()))
+
+    async def _load_config(self) -> None:
+        """rr_config wins. The first time (nothing stored yet) the local.yaml
+        seed is kept, plus every repeater there's still stored data for --
+        so a list that core wiped from local.yaml before this table existed
+        comes back by itself. From then on every change is written here."""
+        stored = await self._store.load_config()
+        if stored is not None:
+            state.load(stored)
+        else:
+            for h, snap in self.latest.items():
+                state.init({**state.to_dict(), "repeaters": state.repeaters() + [
+                    {"hash": h, "name": (snap.get("sys") or {}).get("name") or ""}]})
+            await self._store.save_config(state.to_dict())
+
+        def done(t: asyncio.Task) -> None:
+            if not t.cancelled() and t.exception() is not None:
+                logger.error("Reticulum repeaters: saving settings failed: %s", t.exception())
+
+        def save(cfg: dict) -> None:
+            asyncio.ensure_future(self._store.save_config(cfg)).add_done_callback(done)
+
+        state.set_saver(save)
 
     async def stop(self) -> None:
         task, self._task = self._task, None

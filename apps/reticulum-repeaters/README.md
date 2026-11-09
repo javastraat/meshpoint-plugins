@@ -47,8 +47,14 @@ at most once a minute per repeater. Both run in the background; the card shows
 
 ## Settings
 
-Settings tab on the page (admins only), saved to `local.yaml`, applied on the
-poller's next tick without a restart:
+Settings tab on the page (admins only), applied on the poller's next tick
+without a restart. The repeater list and poll settings are stored in the
+plugin's own `rr_config` table, **not** in `local.yaml`: meshpoint core
+rewrites a plugin's `local.yaml` section from its startup copy when the
+plugin is updated through Plugin sources or switched on/off, and that wiped
+the list (2026-11-09). `local.yaml` keeps only what core owns (`enabled`,
+`source`). A `local.yaml` section like the one below is still read once, as a
+seed, the first time the table is empty:
 
 ```yaml
 plugins:
@@ -61,14 +67,18 @@ plugins:
       - {hash: <NomadNet address>, name: "NL-AMS-PD2EMC P1"}
 ```
 
-The name is filled in from the repeater's `/api/sys` after the first poll.
+That first time, every repeater the plugin still has stored data for
+(`rr_latest`) is added back too, so a list lost before `rr_config` existed
+returns by itself. The name is filled in from the repeater's `/api/sys` after
+the first poll.
 
 ## Data
 
-Two tables in meshpoint's own database, created on start: `rr_latest` (the
-last full snapshot per repeater, so the page has data right after a restart)
-and `rr_samples` (one row per stats poll plus the backfilled history, kept 60
-days). Removing a repeater deletes both.
+Three tables in meshpoint's own database, created on start: `rr_config`
+(settings and repeater list, see above), `rr_latest` (the last full snapshot
+per repeater, so the page has data right after a restart) and `rr_samples`
+(one row per stats poll plus the backfilled history, kept 60 days). Removing a
+repeater deletes its snapshot and samples.
 
 ## API
 
@@ -94,7 +104,7 @@ attach and link cache as the Browse tab).
 ```
 plugin.toml
 backend/__init__.py     register(): routes + the RepeaterMonitor service
-backend/state.py        config (plugins.reticulum-repeaters)
+backend/state.py        config (stored in rr_config via the monitor)
 backend/monitor.py      polling tiers, history backfill, restart detection
 backend/store.py        rr_latest / rr_samples
 backend/routes.py       /api/reticulum-repeaters/*

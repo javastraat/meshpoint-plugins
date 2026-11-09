@@ -200,6 +200,57 @@ class MonitorTest(unittest.TestCase):
         self.assertNotIn(P1, mon.latest)
 
 
+class ConfigStorageTest(unittest.TestCase):
+    """The list lives in rr_config: meshpoint core rewrote the plugin's
+    local.yaml section on a plugin update and wiped it (2026-11-09)."""
+
+    def setUp(self):
+        self.db = FakeDB()
+        self.store = RepeaterStore(self.db)
+        run(self.store.ensure_schema())
+
+    def tearDown(self):
+        state.set_saver(None)
+        state.init({})
+
+    def _start(self, mon):
+        async def go():
+            await mon.start()
+            await mon.stop()
+        run(go())
+
+    def test_first_start_recovers_repeaters_from_stored_data(self):
+        # The wiped case: local.yaml has no list, but the P1's data is there.
+        run(self.store.save_latest(P1, {"sys": {"name": "NL-AMS-PD2EMC P1"}, "ok": True}))
+        state.init({})
+        mon = m.RepeaterMonitor(self.store, fetch=fake_repeater()[0])
+        self._start(mon)
+        self.assertEqual(state.repeaters(), [{"hash": P1, "name": "NL-AMS-PD2EMC P1"}])
+        self.assertEqual(run(self.store.load_config())["repeaters"][0]["hash"], P1)
+
+    def test_stored_config_wins_over_local_yaml(self):
+        run(self.store.save_config({"interval_min": 30, "repeaters": [{"hash": V4, "name": "bench"}]}))
+        state.init({"interval_min": 15, "repeaters": []})        # what core left in local.yaml
+        self._start(m.RepeaterMonitor(self.store, fetch=fake_repeater()[0]))
+        self.assertEqual(state.interval_s(), 1800)
+        self.assertEqual([r["hash"] for r in state.repeaters()], [V4])
+
+    def test_changes_are_written_to_the_table(self):
+        state.init({})
+        mon = m.RepeaterMonitor(self.store, fetch=fake_repeater()[0])
+
+        async def go():
+            await mon.start()
+            state.add_repeater(P1, "P1")
+            state.set_settings(False, 20, 90)
+            await asyncio.sleep(0.01)                            # let the scheduled saves run
+            await mon.stop()
+        run(go())
+        cfg = run(self.store.load_config())
+        self.assertEqual([r["hash"] for r in cfg["repeaters"]], [P1])
+        self.assertEqual((cfg["polling_enabled"], cfg["interval_min"], cfg["lists_interval_min"]), (False, 20, 90))
+
+
 class PureTest(unittest.TestCase):
     def test_hist_timestamps(self):
         page = {"last_s": 600, "cols": ["h", "pct", "mv", "chg", "t", "hum", "hpa", "mcu", "nbrs", "paths", "boot"],

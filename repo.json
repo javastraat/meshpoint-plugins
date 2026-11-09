@@ -297,7 +297,7 @@
       "id": "reticulum-repeaters",
       "kind": "app",
       "path": "apps/reticulum-repeaters",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "meshpoint_api": 1,
       "provides": [
         "service",

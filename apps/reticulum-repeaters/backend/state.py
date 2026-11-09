@@ -1,5 +1,11 @@
-"""Plugin config, seeded from ``plugins.reticulum-repeaters.*`` at
-``register()`` time and written back by the Settings tab.
+"""Plugin config: the repeater list and poll settings.
+
+Stored in the plugin's own ``rr_config`` table (see store.py for why not
+local.yaml). ``init()`` at ``register()`` takes ``plugins.reticulum-
+repeaters.*`` from local.yaml only as a seed; ``RepeaterMonitor.start()``
+then loads the table (``load()``) and installs the async saver every
+change goes through (``set_saver()``). A local.yaml like the one below
+is still read once, the first time, and never written:
 
     plugins:
       reticulum-repeaters:
@@ -17,7 +23,7 @@ or auto-detected. Changes apply on the poller's next tick (no restart).
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Callable, Optional
 
 SECTION = "reticulum-repeaters"
 _HASH_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -30,6 +36,7 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 _config: dict[str, Any] = dict(_DEFAULTS)
+_saver: Optional[Callable[[dict], None]] = None
 
 
 def _clean_repeaters(raw) -> list[dict]:
@@ -46,6 +53,7 @@ def _clean_repeaters(raw) -> list[dict]:
 
 
 def init(config: dict) -> None:
+    """Seed from a config dict (local.yaml's section, or the stored one)."""
     global _config
     merged = dict(_DEFAULTS)
     for key in _DEFAULTS:
@@ -56,6 +64,16 @@ def init(config: dict) -> None:
     merged["lists_interval_min"] = _clamp(merged["lists_interval_min"], 15, 1440, 60)
     merged["polling_enabled"] = bool(merged["polling_enabled"])
     _config = merged
+
+
+def load(stored: dict) -> None:
+    """Replace the config with the stored one (``rr_config``)."""
+    init(stored)
+
+
+def set_saver(fn: Optional[Callable[[dict], None]]) -> None:
+    global _saver
+    _saver = fn
 
 
 def _clamp(v, lo: int, hi: int, default: int) -> int:
@@ -126,21 +144,7 @@ def remove_repeater(h: str) -> bool:
 
 
 def _persist() -> None:
-    """Write back to plugins.reticulum-repeaters, keeping whatever else is
-    in that section (the Settings -> Plugins "enabled" toggle)."""
-    try:
-        import yaml
-
-        from src.config import _get_local_yaml_path, save_section_to_yaml  # noqa: SLF001
-    except ImportError:  # tests / dev Mac without meshpoint core
-        return
-    path = _get_local_yaml_path()
-    current: dict = {}
-    if path.exists():
-        with open(path) as fh:
-            data = yaml.safe_load(fh) or {}
-        section = (data.get("plugins") or {}).get(SECTION)
-        if isinstance(section, dict):
-            current = dict(section)
-    current.update(to_dict())
-    save_section_to_yaml("plugins", {SECTION: current})
+    """Hand the config to the saver (an rr_config write, scheduled by the
+    monitor). Before the monitor has started there's nothing to save to."""
+    if _saver is not None:
+        _saver(to_dict())

@@ -4,6 +4,11 @@ in two plugin-owned tables created on start:
 * ``rr_latest`` -- one row per repeater: the last full snapshot (every
   /api/* reply plus poll status) as JSON, so the page has data straight
   after a meshpoint restart.
+* ``rr_config`` -- the plugin's settings and repeater list (one JSON row).
+  Kept here, not in local.yaml: meshpoint core rewrites a plugin's
+  local.yaml section from its startup copy when the plugin is updated
+  through Plugin sources or switched on/off, which wiped the list
+  (2026-11-09). ``enabled`` / ``source`` stay in local.yaml (core's).
 * ``rr_samples`` -- the history behind the Trends chart: one flat row per
   stats poll, plus the rows backfilled from the repeater's own /api/hist
   (``source = 'hist'``) when it's added. Pruned after ``KEEP_DAYS``.
@@ -28,6 +33,10 @@ SAMPLE_COLS = (
 )
 
 _SCHEMA = [
+    """CREATE TABLE IF NOT EXISTS rr_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )""",
     """CREATE TABLE IF NOT EXISTS rr_latest (
         repeater TEXT PRIMARY KEY,
         data TEXT NOT NULL
@@ -45,6 +54,24 @@ class RepeaterStore:
     async def ensure_schema(self) -> None:
         for sql in _SCHEMA:
             await self._db.execute(sql)
+        await self._db.commit()
+
+    async def load_config(self) -> Optional[dict]:
+        row = await self._db.fetch_one("SELECT value FROM rr_config WHERE key = 'config'")
+        if not row:
+            return None
+        try:
+            cfg = json.loads(row["value"])
+        except (TypeError, ValueError):
+            return None
+        return cfg if isinstance(cfg, dict) else None
+
+    async def save_config(self, cfg: dict) -> None:
+        await self._db.execute(
+            "INSERT INTO rr_config (key, value) VALUES ('config', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (json.dumps(cfg),),
+        )
         await self._db.commit()
 
     async def load_latest(self) -> dict[str, dict]:
