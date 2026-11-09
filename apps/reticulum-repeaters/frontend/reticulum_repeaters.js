@@ -360,6 +360,11 @@ class ReticulumRepeatersPage {
         ].filter((d) => d.data.length >= 2);
         if (!sets.length) return false;
         sets.forEach((d) => Object.assign(d, { borderWidth: 1.5, pointRadius: 0, tension: 0.2 }));
+        // Pin the time axis to the data: Chart.js rounds a linear axis to
+        // "nice" values, which on millisecond timestamps added up to ~1 h of
+        // empty axis after the last poll and made the lines look stopped.
+        const xs = sets.flatMap((d) => d.data.map((p) => p.x));
+        const xMin = Math.min(...xs), xMax = Math.max(...xs);
         const ink = (window.ChartTheme && window.ChartTheme.ink()) || { fg: '#94a3b8', grid: 'rgba(51,65,85,0.3)' };
         const fmt = (v) => new Date(v).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
         this._charts[`${hash}:2`] = new window.Chart(canvas, {
@@ -371,7 +376,8 @@ class ReticulumRepeatersPage {
                 plugins: { legend: { labels: { color: ink.fg, boxWidth: 10 } },
                     tooltip: { callbacks: { title: (items) => items.length ? fmt(items[0].parsed.x) : '' } } },
                 scales: {
-                    x: { type: 'linear', ticks: { color: ink.fg, maxTicksLimit: 6, callback: fmt }, grid: { color: ink.grid } },
+                    x: { type: 'linear', min: xMin, max: xMax, bounds: 'data',
+                        ticks: { color: ink.fg, maxTicksLimit: 6, callback: fmt }, grid: { color: ink.grid } },
                     db: { position: 'left', ticks: { color: ink.fg }, grid: { color: ink.grid } },
                     pct: { position: 'right', min: 0, max: 100, ticks: { color: ink.fg }, grid: { display: false } },
                 },
