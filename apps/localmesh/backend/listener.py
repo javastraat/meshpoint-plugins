@@ -121,6 +121,7 @@ class LocalMeshSerialSource(CaptureSource):
                 "channels": dict(self.channels),
                 "sent": [dict(x) for x in self.sent],
                 "own_member": self.info.member if self.info else None,
+                "net_name": self.net_name,
             }
 
     def signal(self, rssi: float, snr: float) -> SignalMetrics:

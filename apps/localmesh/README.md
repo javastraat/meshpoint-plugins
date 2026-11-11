@@ -7,16 +7,17 @@ What it does. By itself it only listens and asks the receiver what it knows (sta
 list, neighbours). It transmits only from the Send tab, by an admin, within the receiver's own airtime budget.
 
 - **Packet log:** every packet the receiver hears, under protocol `localmesh`, with its type (channel, direct, advert,
-  status, ...), the sender (member number, `server`, or `repeater <node>`), counter, hops, previous hop, path, signal
+  status, ...), the sender (member number, `server`, or `repeater <node>`), counter, hops left, previous hop, path, signal
   and the receiver's decision (forward, deliver, replay, blocked, ...). The contents stay encrypted.
 - **Topbar chip:** LocalMesh, connected or not, node number and battery. Click it for the LocalMesh page.
 - **LocalMesh page** (sidebar, Networks): a card per receiver at the top, then tabs:
   - **Members:** everyone the receiver knows of (its member list, adverts and the packets it heard): name, member
-    number, last heard, packets, hops, signal, position (OpenStreetMap link), blocked or national.
+    number, last heard, packets, hops left, signal, position (OpenStreetMap link), blocked or national; the
+    receiver itself is marked "this Meshpoint".
   - **Messages:** channel messages the receiver has the key for, and direct messages to the receiver. At connect the
     plugin fetches the board's last 32 messages, so they survive a Meshpoint restart. The time is the board's when its
     clock is set, otherwise when Meshpoint received the message.
-  - **Activity:** every packet heard, newest first: type, sender, counter, hops, path, signal and the receiver's
+  - **Activity:** every packet heard, newest first: type, sender, counter, hops left, path, signal and the receiver's
     decision (green passed on or delivered, amber dropped as normal mesh traffic, red refused).
   - **Send** (admin): a message to a channel the receiver has the key for, or a direct message to a member (also from
     a member's side panel), with a byte counter (a channel message carries the receiver's name in front, in the same
@@ -28,6 +29,9 @@ list, neighbours). It transmits only from the Send tab, by an admin, within the 
     heard/rejected/sent, last signal, noise floor, airtime used; its channels and its neighbours (repeaters heard
     directly).
   - **Settings** (admin): the receiver list, with a picker of the connected USB devices.
+  Hops in LocalMesh count down: a packet starts with the network's maximum (4) and every repeater takes one off, so
+  4 means it came straight from the sender. The "Name: " the sender's board puts in front of a channel message is
+  left out of the text (the name is under From).
   Members, Messages and Activity have a search box; click a row for everything about it: a member opens the
   side panel (like a Meshtastic node or a Reticulum peer: status, last heard, signal, position, its recent messages
   and packets); a message or packet opens a popup (the full message, or the decision explained, the path with the

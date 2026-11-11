@@ -48,7 +48,7 @@ def members(receivers: Receivers) -> list[dict]:
     def entry(member: int) -> dict:
         return out.setdefault(member, {
             "member": member, "name": "", "lat": None, "lon": None, "blocked": False, "national": False,
-            "listed": False, "count": 0, "last_heard": None, "hops": None, "rssi": None, "snr": None, "via": None,
+            "listed": False, "own": False, "own_receiver": None, "count": 0, "last_heard": None, "hops": None, "rssi": None, "snr": None, "via": None,
             "type": None, "receivers": [],
         })
 
@@ -78,6 +78,12 @@ def members(receivers: Receivers) -> list[dict]:
             if e["last_heard"] is None or h["last_heard"] >= e["last_heard"]:
                 e.update(last_heard=h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"],
                          type=h["type"])
+    for label, d in receivers:   # the receiver itself is a member too: "this Meshpoint", with its own name
+        own = d.get("own_member")
+        if own:
+            e = entry(own)
+            e.update(own=True, own_receiver=label)
+            e["name"] = e["name"] or d.get("net_name") or ""
     for e in out.values():
         e["name"] = e["name"] or names.get(e["member"], "")
     return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["member"]))
@@ -97,8 +103,13 @@ def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
                 continue
             seen.add(key)
             direct = m["channel"] == p.CHANNEL_DIRECT
+            sender = names.get(m["member"], "")
+            text = m["text"]
+            prefix = _NAME_PREFIX.match(text)
+            if not direct and prefix and sender and prefix.group(1).strip() == sender:
+                text = text[prefix.end():]   # "Einstein: hoi" -> "hoi": the name is already under From
             out.append({
-                **m, "receiver": label, "direct": direct, "sender": names.get(m["member"], ""),
+                **m, "text": text, "receiver": label, "direct": direct, "sender": sender,
                 "channel_name": f"direct to {label or 'receiver'}" if direct
                 else d["channels"].get(m["channel"]) or f"channel {m['channel']}",
                 "sort_time": m["time"] or m["received"],
@@ -109,7 +120,7 @@ def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
                 "index": None, "channel": x["channel"], "member": d.get("own_member"), "counter": x["counter"],
                 "time": x["time"], "received": x["time"], "hops": None, "via": None, "rssi": None, "snr": None,
                 "text": x["text"], "receiver": label, "direct": x["direct"], "outgoing": True, "status": x["status"],
-                "airtime_ms": x["airtime_ms"], "to": to, "sender": f"Meshpoint ({label or 'receiver'})",
+                "airtime_ms": x["airtime_ms"], "to": to, "sender": d.get("net_name") or f"Meshpoint ({label or 'receiver'})",
                 "channel_name": (f"direct to {names.get(to) or to}" if x["direct"]
                                  else d["channels"].get(x["channel"]) or f"channel {x['channel']}"),
                 "sort_time": x["time"],

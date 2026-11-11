@@ -29,11 +29,11 @@ const LM_SEARCH_TABS = ['members', 'messages', 'activity'];
 // columns per list: [header, width class from localmesh.css ('' takes the rest), right-aligned]
 const LM_COLUMNS = {
     members: [['Last heard', 'lm-ago'], ['Name', ''], ['Member', 'lm-num'], ['Packets', 'lm-num', true],
-        ['Hops', 'lm-hops', true], ['Signal', 'lm-signal'], ['Position', 'lm-pos'], ['Status', 'lm-type']],
+        ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal'], ['Position', 'lm-pos'], ['Status', 'lm-type']],
     messages: [['Time', 'lm-time'], ['Channel', 'lm-channel'], ['From', 'lm-from'], ['Text', ''],
-        ['Hops', 'lm-hops', true], ['Signal', 'lm-signal']],
+        ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal']],
     activity: [['Time', 'lm-time'], ['Type', 'lm-type'], ['From', 'lm-from'], ['Counter', 'lm-num', true],
-        ['Hops', 'lm-hops', true], ['Path', ''], ['Signal', 'lm-signal'], ['Decision', 'lm-badge']],
+        ['Hops left', 'lm-hops', true], ['Path', ''], ['Signal', 'lm-signal'], ['Decision', 'lm-badge']],
     neighbors: [['Node', 'lm-num'], ['Signal', 'lm-signal'], ['Last heard', ''], ['Packets', 'lm-num', true]],
 };
 
@@ -303,6 +303,7 @@ class LocalMeshPanel {
             ? `<a href="https://www.openstreetmap.org/?mlat=${m.lat}&mlon=${m.lon}#map=15/${m.lat}/${m.lon}"
                   target="_blank" rel="noopener">${m.lat.toFixed(4)}, ${m.lon.toFixed(4)}</a>` : '--';
         const status = m.blocked ? '<span class="lw-badge lw-badge--undecrypted">blocked</span>'
+            : m.own ? '<span class="lw-badge lw-badge--data">this Meshpoint</span>'
             : m.national ? '<span class="lw-badge lw-badge--data">national</span>' : '';
         return `<tr>
             <td>${LocalMeshPanel.ago(m.last_heard)}</td>
@@ -319,9 +320,7 @@ class LocalMeshPanel {
     static messageRow(m) {
         const esc = LocalMeshPanel.esc;
         let from = m.sender ? `${esc(m.sender)} (${m.member})` : String(m.member);
-        if (m.outgoing) {   // sent from the Send tab
-            from = `${esc(m.sender)} <span class="lw-badge lw-badge--${LM_SENT_BADGE[m.status] || 'data'}">${LM_SENT_TEXT[m.status] || esc(m.status)}</span>`;
-        }
+        if (m.outgoing) from = esc(m.sender);   // sent from the Send tab; its status goes in the Signal column
         const channel = m.direct ? `<span class="lw-badge lw-badge--data">${esc(m.channel_name)}</span>`
             : esc(m.channel_name);
         return `<tr>
@@ -330,7 +329,9 @@ class LocalMeshPanel {
             <td>${from}</td>
             <td style="white-space: pre-wrap; overflow-wrap: anywhere">${esc(m.text)}</td>
             <td class="lw-r">${m.hops ?? '--'}</td>
-            <td>${LocalMeshPanel.signal(m.rssi, m.snr)}</td>
+            <td>${m.outgoing
+                ? `<span class="lw-badge lw-badge--${LM_SENT_BADGE[m.status] || 'data'}">${LM_SENT_TEXT[m.status] || esc(m.status)}</span>`
+                : LocalMeshPanel.signal(m.rssi, m.snr)}</td>
         </tr>`;
     }
 
@@ -363,7 +364,9 @@ class LocalMeshPanel {
             <section class="pdm-layer"><div class="pdm-layer__label">${label}</div>
             <div class="pdm-layer__rows">${rows}</div></section>` : '');
         const when = (t) => (t ? esc(new Date(t * 1000).toLocaleString()) : null);
-        const radio = (x) => row('Hops', x.hops) + row('Previous hop', x.via ? `node ${x.via}` : (x.hops === 0 ? 'direct' : null))
+        // hops in a LocalMesh packet count down: the network's maximum at the sender, one less per repeater
+        const radio = (x) => row('Hops left', x.hops == null ? null : `${x.hops} (counts down by one at every repeater)`)
+            + row('Previous hop', x.via ? `node ${x.via}` : null)
             + row('Signal', LocalMeshPanel.signal(x.rssi, x.snr));
         let title; let body;
         if (tab === 'messages' && r.outgoing) {

@@ -105,6 +105,7 @@ class LocalMeshMemberDrawer {
             ['Name', esc(m.name)],
             ['Member', String(m.member)],
             ['Status', status],
+            ['This Meshpoint', m.own ? `yes, receiver ${esc(m.own_receiver || '')}` : null],
             ['National', m.national ? 'yes (may send national floods)' : null],
             ['On member list', m.listed ? 'yes' : 'no (only heard)'],
         ], expanded('Member', true)));
@@ -117,8 +118,8 @@ class LocalMeshMemberDrawer {
         ], expanded('Last heard', true)));
 
         body.appendChild(LocalMeshMemberDrawer.section('Signal', m.last_heard ? [
-            ['Hops', m.hops == null ? null : String(m.hops)],
-            ['Previous hop', m.via ? `node ${m.via}` : (m.hops === 0 ? 'direct' : null)],
+            ['Hops left', m.hops == null ? null : `${m.hops} (counts down by one at every repeater)`],
+            ['Previous hop', m.via ? `node ${m.via}` : null],
             ['RSSI', m.rssi == null ? null : `${m.rssi} dBm`],
             ['SNR', m.snr == null ? null : `${m.snr} dB`],
         ] : [], expanded('Signal', true)));
@@ -135,7 +136,7 @@ class LocalMeshMemberDrawer {
 
         body.appendChild(LocalMeshMemberDrawer.section('Recent packets', activity === null ? loading
             : activity.map((x) => [P.clock(x.time),
-                `${esc(x.type)} #${x.counter} · ${x.hops} hops · `
+                `${esc(x.type)} #${x.counter} · ${x.hops} hops left · `
                 + `<span class="lw-badge lw-badge--${LM_DECISION_BADGE[x.decision] || 'rejoin'}">${esc(x.decision.replace(/_/g, ' '))}</span>`]),
         expanded('Recent packets', false)));
     }

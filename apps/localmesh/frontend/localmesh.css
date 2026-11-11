@@ -13,9 +13,9 @@
 
 /* column widths (the core table is table-layout: fixed); the column without a width takes the rest */
 .lm-table col.lm-time    { width: 96px; }
-.lm-table col.lm-ago     { width: 110px; }
+.lm-table col.lm-ago     { width: 130px; }
 .lm-table col.lm-num     { width: 84px; }
-.lm-table col.lm-hops    { width: 64px; }
+.lm-table col.lm-hops    { width: 84px; }
 .lm-table col.lm-signal  { width: 150px; }
 .lm-table col.lm-type    { width: 110px; }
 .lm-table col.lm-from    { width: 170px; }

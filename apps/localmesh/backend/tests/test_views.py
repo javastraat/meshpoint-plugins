@@ -37,6 +37,10 @@ class TestMembers(unittest.TestCase):
         self.assertTrue(m4["listed"]); self.assertEqual(m4["receivers"], ["base"])
         self.assertTrue(out[1]["blocked"]); self.assertIsNone(out[1]["last_heard"])
 
+    def test_the_receiver_itself(self) -> None:
+        out = views.members([("base", data(own_member=3, net_name="Einstein Meshpoint", members={3: {"id": 3, "flags": 0}}))])
+        self.assertEqual((out[0]["member"], out[0]["own"], out[0]["own_receiver"], out[0]["name"]), (3, True, "base", "Einstein Meshpoint"))
+
     def test_two_receivers_add_counts_and_keep_freshest(self) -> None:
         h = lambda count, t, rssi: {4: {"count": count, "last_heard": t, "type": "channel", "hops": 0, "via": 0,
                                         "rssi": rssi, "snr": 1.0}}
@@ -61,6 +65,24 @@ class TestMessages(unittest.TestCase):
         out = views.messages([("base", a)])
         self.assertEqual([(m["sender"], m["channel_name"]) for m in out], [("Einstein", "channel 0"), ("", "channel 0")])
         self.assertEqual(views.members([("base", a)])[0]["name"], "Einstein")
+
+    def test_name_prefix_is_stripped_only_when_it_is_the_name(self) -> None:
+        a = data(messages=[msg(4, 1, "Einstein: hoi"), msg(5, 2, "Note: no prefix here"),
+                           msg(4, 3, "Einstein: dm keeps it", channel=p.CHANNEL_DIRECT)],
+                 adverts={5: {"name": "Bob", "heard": 1.0}})
+        texts = {m["counter"]: (m["sender"], m["text"]) for m in views.messages([("", a)])}
+        self.assertEqual(texts[1], ("Einstein", "hoi"))
+        self.assertEqual(texts[2], ("Bob", "Note: no prefix here"))            # "Note" is not Bob's name
+        self.assertEqual(texts[3], ("Einstein", "Einstein: dm keeps it"))      # direct messages carry no prefix
+
+    def test_sent_messages_use_the_receiver_name(self) -> None:
+        sent = {"time": 5.0, "direct": True, "channel": p.CHANNEL_DIRECT, "to": 4, "text": "hoi", "counter": 9,
+                "airtime_ms": 80, "status": "delivered"}
+        a = data(sent=[sent], own_member=3, net_name="Einstein Meshpoint", adverts={4: {"name": "Einstein", "heard": 1.0}})
+        m = views.messages([("base", a)])[0]
+        self.assertEqual((m["sender"], m["channel_name"], m["outgoing"], m["status"]), ("Einstein Meshpoint", "direct to Einstein", True, "delivered"))
+        a["net_name"] = None
+        self.assertEqual(views.messages([("base", a)])[0]["sender"], "Meshpoint (base)")
 
     def test_advert_name_wins_over_text(self) -> None:
         a = data(messages=[msg(4, 1, "Bijnaam: hoi")], adverts={4: {"name": "Albert", "heard": 1.0}})
