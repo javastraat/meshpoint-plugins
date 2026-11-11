@@ -117,6 +117,24 @@
       "hook_host": "hello-world-github"
     },
     {
+      "id": "localmesh",
+      "kind": "app",
+      "path": "apps/localmesh",
+      "version": "0.2.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "capture",
+        "protocol",
+        "routes",
+        "sidebar",
+        "topbar"
+      ],
+      "description": "LocalMesh receiver (Heltec V4, companion firmware) on USB serial: every packet it hears in the packet log under protocol localmesh (type, member, hops, path, signal, decision), a topbar chip with connection, node and battery, and the LocalMesh page (Receiver and Settings tabs). Read-only. LocalMesh uses 62.5 kHz, which the SX1302 cannot receive.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://www.localmesh.nl",
+      "has_setup": false
+    },
+    {
       "id": "offline-map",
       "kind": "app",
       "path": "apps/offline-map",
