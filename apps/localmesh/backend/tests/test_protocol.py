@@ -102,6 +102,33 @@ class TestParsers(unittest.TestCase):
     def test_member_label(self) -> None:
         self.assertEqual([p.member_label(m) for m in (0, 4, 0xFF0000 | 100)], ["server", "4", "repeater 100"])
 
+    def test_channels(self) -> None:
+        self.assertEqual(p.parse_channels(bytes([2, 0, 1]) + s("Algemeen") + bytes([5, 0]) + s("Test")),
+                         {0: "Algemeen", 5: "Test"})
+        self.assertEqual(p.parse_channels(bytes([0])), {})
+
+    def test_channel_event(self) -> None:
+        ev = p.parse_channel_event(bytes([3, 1]) + s("Oud"))
+        self.assertEqual((ev.id, ev.removed, ev.name), (3, True, "Oud"))
+
+    def test_members_page(self) -> None:
+        raw = struct.pack("<HB", 7, 2) + struct.pack("<I", 4) + bytes(32) + bytes([0]) + struct.pack("<I", 120) \
+            + struct.pack("<I", 9) + bytes(range(32)) + bytes([p.MEMBER_BLOCKED | p.MEMBER_NATIONAL]) + struct.pack("<I", 0)
+        total, page = p.parse_members(raw)
+        self.assertEqual(total, 7)
+        self.assertEqual([(m.id, m.highest_counter, m.blocked) for m in page], [(4, 120, False), (9, 0, True)])
+        self.assertEqual(page[1].pub, bytes(range(32)).hex())
+
+    def test_neighbors(self) -> None:
+        n = p.parse_neighbors(bytes([1]) + struct.pack("<HbhII", 100, -6, -72, 15, 230))
+        self.assertEqual([(x.node, x.snr, x.rssi, x.ago_s, x.count) for x in n], [(100, -1.5, -72, 15, 230)])
+
+    def test_read_commands(self) -> None:
+        dec = p.SlipDecoder()
+        frames, _ = dec.feed(p.messages_get(4, 70000) + p.members_get(5, 10) + p.command(p.NEIGHBORS_GET, 6))
+        self.assertEqual(frames, [bytes([p.MESSAGES_GET, 4]) + struct.pack("<H", 70000 & 0xFFFF),
+                                  bytes([p.MEMBERS_GET, 5, 10, 0]), bytes([p.NEIGHBORS_GET, 6])])
+
     def test_decision_list_matches_firmware_count(self) -> None:
         self.assertEqual(len(p.DECISIONS), 19); self.assertEqual(p.DECISIONS[18], "out_of_region")
         self.assertEqual(len(p.PACKET_TYPES), 16)

@@ -3,17 +3,27 @@
 A [LocalMesh](https://www.localmesh.nl) receiver (Heltec V4 with LocalMesh companion firmware) on the Meshpoint's USB
 port. LocalMesh uses 62.5 kHz, which the SX1302 concentrator cannot receive, so a USB receiver is the only way in.
 
-What it does (read-only, it never sends or changes anything on the receiver):
+What it does. Read-only: it never transmits on the radio and never changes the receiver's settings; it only asks the
+receiver what it knows (status, channels, stored messages, member list, neighbours).
 
 - **Packet log:** every packet the receiver hears, under protocol `localmesh`, with its type (channel, direct, advert,
   status, ...), the sender (member number, `server`, or `repeater <node>`), counter, hops, previous hop, path, signal
   and the receiver's decision (forward, deliver, replay, blocked, ...). The contents stay encrypted.
-- **Topbar chip:** LocalMesh, connected or not, node number and battery.
+- **Topbar chip:** LocalMesh, connected or not, node number and battery. Click it for the LocalMesh page.
 - **LocalMesh page** (sidebar, Networks): a card per receiver at the top, then tabs:
+  - **Members:** everyone the receiver knows of (its member list, adverts and the packets it heard): name, member
+    number, last heard, packets, hops, signal, position (OpenStreetMap link), blocked or national.
+  - **Messages:** channel messages the receiver has the key for, and direct messages to the receiver. At connect the
+    plugin fetches the board's last 32 messages, so they survive a Meshpoint restart. The time is the board's when its
+    clock is set, otherwise when Meshpoint received the message.
+  - **Activity:** every packet heard, newest first: type, sender, counter, hops, path, signal and the receiver's
+    decision (green passed on or delivered, amber dropped as normal mesh traffic, red refused).
   - **Receiver:** node, member, role, firmware, board, radio settings, transmit power, battery, uptime, packets
-    heard/rejected/sent, last signal, noise floor, airtime used.
+    heard/rejected/sent, last signal, noise floor, airtime used; its channels and its neighbours (repeaters heard
+    directly).
   - **Settings** (admin): the receiver list, with a picker of the connected USB devices.
-  Members, Messages, Activity and Send follow. Messages and adverts are already kept in memory for them.
+  Members, Messages and Activity have a search box. The lists live in memory (300 messages and packets per receiver).
+  Send follows.
 
 ## Setup
 
@@ -40,10 +50,12 @@ pyserial is already on every Meshpoint (the core serial sources use it); no setu
 
 ## Layout
 
-- `backend/protocol.py`: companion protocol v1 (SLIP, frames, INFO/STATUS/RX_LOG/MESSAGE/ADVERT), stdlib only.
-- `backend/listener.py`: the serial capture source (thread, reconnects by itself).
+- `backend/protocol.py`: companion protocol v1 (SLIP, the read commands, INFO/STATUS/RX_LOG/MESSAGE/ADVERT and the
+  list replies), stdlib only.
+- `backend/listener.py`: the serial capture source (thread, reconnects by itself, one command at a time).
 - `backend/decode.py`: RX_LOG to a Meshpoint Packet.
-- `backend/routes.py`: `GET /api/localmesh/status`.
+- `backend/routes.py`: `GET /api/localmesh/status`, `/members`, `/messages`, `/activity`.
+- `backend/views.py`: the Members, Messages and Activity lists, merged over all receivers.
 - `backend/settings_routes.py`: `GET/PUT /api/localmesh/settings` (saving is admin-only and audited).
 - `backend/state.py`: the receiver list, saved to `plugins.localmesh` in `local.yaml`.
 - `frontend/localmesh_panel.js`: the page and its tabs; `localmesh_settings_tab.js`: the Settings tab.

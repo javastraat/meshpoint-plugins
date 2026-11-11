@@ -14,8 +14,8 @@ from typing import Optional
 
 PROTOCOL_VERSION = 1
 
-# commands (app -> receiver) this plugin sends
-HELLO, INFO, STATUS = 0x01, 0x02, 0x30
+# commands (app -> receiver) this plugin sends: all read-only
+HELLO, INFO, MEMBERS_GET, CHANNELS_GET, MESSAGES_GET, STATUS, NEIGHBORS_GET = 0x01, 0x02, 0x15, 0x18, 0x21, 0x30, 0x36
 # reply and events (receiver -> app)
 REPLY, MESSAGE, RX_LOG, STATUS_EVENT, DELIVERY, ADVERT, DELIVERY_FAILED, TRACE, CHANNEL_EVENT, TEXT = (
     0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x8F)
@@ -29,6 +29,8 @@ DECISIONS = ["forward", "deliver", "wrong_net", "not_member", "blocked", "replay
              "hops_exhausted", "neighbor_rejected", "unknown_type", "member_added", "member_blocked", "not_next_hop",
              "path_full", "duplicate", "looped", "admin_applied", "out_of_region"]
 CHANNEL_DIRECT = 255
+MEMBER_BLOCKED = 0x01   # member flags (firmware src/Members.h)
+MEMBER_NATIONAL = 0x02
 REPEATER_MEMBER_BASE = 0xFF0000   # member ids 0xFF0000 | node are a repeater's own status/announce packets
 
 SLIP_END, SLIP_ESC, SLIP_ESC_END, SLIP_ESC_ESC = 0xC0, 0xDB, 0xDC, 0xDD
@@ -96,6 +98,19 @@ def frame(type_: int, seq: int, payload: bytes = b"") -> bytes:
 def hello(seq: int, app_name: str = "Meshpoint LocalMesh plugin") -> bytes:
     name = app_name.encode()[:255]
     return slip_encode(frame(HELLO, seq, bytes([PROTOCOL_VERSION, len(name)]) + name))
+
+
+def command(type_: int, seq: int, payload: bytes = b"") -> bytes:
+    """One SLIP-framed command, ready to write to the port."""
+    return slip_encode(frame(type_, seq, payload))
+
+
+def messages_get(seq: int, from_index: int = 0) -> bytes:
+    return command(MESSAGES_GET, seq, struct.pack("<H", from_index & 0xFFFF))
+
+
+def members_get(seq: int, from_index: int = 0) -> bytes:
+    return command(MEMBERS_GET, seq, struct.pack("<H", from_index))
 
 
 class Reader:
@@ -202,3 +217,50 @@ def member_label(member: int) -> str:
     if member >= REPEATER_MEMBER_BASE:
         return f"repeater {member - REPEATER_MEMBER_BASE}"
     return str(member)
+
+
+def parse_channels(p: bytes) -> dict[int, str]:
+    """CHANNELS_GET reply: channel id -> name, for every channel the receiver holds a key for."""
+    r = Reader(p)
+    out = {}
+    for _ in range(r.u8()):
+        cid, _managed, name = r.u8(), r.u8(), r.str()
+        out[cid] = name
+    return out
+
+
+@dataclass
+class ChannelEvent:
+    id: int; removed: bool; name: str
+
+
+def parse_channel_event(p: bytes) -> ChannelEvent:
+    r = Reader(p)
+    return ChannelEvent(r.u8(), r.u8() != 0, r.str())
+
+
+@dataclass
+class MemberEntry:
+    id: int; pub: str; flags: int; highest_counter: int
+
+    @property
+    def blocked(self) -> bool:
+        return bool(self.flags & MEMBER_BLOCKED)
+
+
+def parse_members(p: bytes) -> tuple[int, list[MemberEntry]]:
+    """MEMBERS_GET reply: (total members on the receiver, this page of at most 5)."""
+    r = Reader(p)
+    total = r.u16()
+    return total, [MemberEntry(r.u32(), r.raw(32).hex(), r.u8(), r.u32()) for _ in range(r.u8())]
+
+
+@dataclass
+class Neighbor:
+    node: int; snr: float; rssi: int; ago_s: int; count: int
+
+
+def parse_neighbors(p: bytes) -> list[Neighbor]:
+    """NEIGHBORS_GET reply: the repeaters this receiver hears directly."""
+    r = Reader(p)
+    return [Neighbor(r.u16(), r.i8() / 4, r.i16(), r.u32(), r.u32()) for _ in range(r.u8())]

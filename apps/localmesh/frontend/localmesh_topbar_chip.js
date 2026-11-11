@@ -1,6 +1,7 @@
 /**
  * Topbar -- LocalMesh receiver chip(s): one badge per configured receiver, polling GET /api/localmesh/status.
  * Same visual language as the DAPNET chip (reuses the core .topbar-serial classes): brand, lamp, node, battery.
+ * Clicking it opens the LocalMesh page.
  * Hidden when no receiver is configured.
  */
 class LocalMeshTopbarChip {
@@ -30,12 +31,13 @@ class LocalMeshTopbarChip {
     _badge(dev) {
         const connected = Boolean(dev.connected);
         const info = dev.info || {}; const st = dev.status || {};
-        const root = document.createElement('span');
+        const root = document.createElement('a');   // a link to the LocalMesh page, like the other pills
         root.className = 'topbar-serial';
+        root.href = '#/localmesh';
         const node = info.node != null ? `node ${info.node}` : (dev.label || '----');
         root.title = `LocalMesh receiver ${node}${info.firmware ? ' · firmware ' + info.firmware : ''}`
             + `${st.rx_ok != null ? ' · heard ' + st.rx_ok + ', rejected ' + st.rx_rejected : ''}`;
-        root.setAttribute('aria-label', `LocalMesh ${node} ${connected ? 'connected' : 'offline'}`);
+        root.setAttribute('aria-label', `LocalMesh ${node} ${connected ? 'connected' : 'offline'} -- go to LocalMesh page`);
 
         const brand = document.createElement('span');
         brand.className = 'topbar-serial__brand';
