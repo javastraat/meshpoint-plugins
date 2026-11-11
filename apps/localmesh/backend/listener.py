@@ -7,8 +7,11 @@ the member list every 15 minutes. One command at a time, as the protocol asks.
 
 Every packet the receiver hears arrives as an RX_LOG event and goes into Meshpoint's packet pipeline and the Activity
 list; STATUS_EVENTs (every 30 s) keep the topbar chip current; MESSAGE, ADVERT and CHANNEL_EVENT feed the page.
-Read-only: this source only sends the read commands above; it never transmits on the radio and never changes the
-receiver's settings (not even its clock).
+
+By itself this source only sends the read commands above. It transmits only when the Send tab asks (an admin, through
+send_text / set_name / send_advert): those wait for the receiver's reply, go through the same one-at-a-time queue, and
+the receiver's own airtime budget still decides. DELIVERY / DELIVERY_FAILED and our own packets heard back (RX_LOG)
+update the status of what was sent.
 
 Same threading shape as the DAPNET plugin's source: pyserial blocks, so a background thread owns the serial port and
 hands results to asyncio with call_soon_threadsafe. Unlike DAPNET it reopens the port by itself when the cable comes
@@ -41,10 +44,20 @@ PLAUSIBLE_TIME = 1_600_000_000   # a board without a set clock reports small num
 
 # sequence number per command, so a reply is recognised by its number alone
 SEQ_HELLO, SEQ_STATUS, SEQ_CHANNELS, SEQ_MESSAGES, SEQ_MEMBERS, SEQ_NEIGHBORS = 1, 2, 3, 4, 5, 6
+SEQ_REQUEST_FIRST = 16   # 16..255: commands someone awaits (request())
+
+
+class CommandError(Exception):
+    """The receiver answered a command with an error code (protocol.ERR_*), or did not answer."""
+
+    def __init__(self, code: Optional[int]) -> None:
+        super().__init__(f"receiver error {code}" if code is not None else "receiver did not answer")
+        self.code = code
 
 
 class LocalMeshSerialSource(CaptureSource):
-    def __init__(self, serial_port: Optional[str] = None, serial_baud: int = 115200, label: str = "") -> None:
+    def __init__(self, serial_port: Optional[str] = None, serial_baud: int = 115200, label: str = "",
+                 name: Optional[str] = None) -> None:
         self._port = serial_port
         self._baud = serial_baud
         self._label = label
@@ -68,8 +81,12 @@ class LocalMeshSerialSource(CaptureSource):
         self._members_next: dict[int, dict] = {}
         self.channels: dict[int, str] = {}
         self.neighbors: list[dict] = []
-        # command queue (reader thread only)
+        self.sent: collections.deque = collections.deque(maxlen=100)   # what the Send tab sent, with its status
+        self.net_name = name   # the name on the network this plugin last set (the board does not report it); in the config
+        # command queue: the reader thread sends; request() adds from the event loop (deque append is thread-safe)
         self._pending: collections.deque = collections.deque()
+        self._futures: dict[int, asyncio.Future] = {}
+        self._next_seq = SEQ_REQUEST_FIRST
         self._waiting: Optional[tuple[int, float]] = None
         self._next_neighbors = self._next_members = 0.0
 
@@ -88,6 +105,7 @@ class LocalMeshSerialSource(CaptureSource):
             "info": asdict(self.info) if self.info else None,
             "status": asdict(self.status) if self.status else None,
             "last_heard": self.last_heard,
+            "net_name": self.net_name,
             "channels": {str(k): v for k, v in sorted(self.channels.items())},
             "neighbors": list(self.neighbors),
         }
@@ -101,6 +119,8 @@ class LocalMeshSerialSource(CaptureSource):
                 "heard": {k: dict(v) for k, v in self.heard.items()},
                 "members": {k: dict(v) for k, v in self.members.items()},
                 "channels": dict(self.channels),
+                "sent": [dict(x) for x in self.sent],
+                "own_member": self.info.member if self.info else None,
             }
 
     def signal(self, rssi: float, snr: float) -> SignalMetrics:
@@ -134,6 +154,9 @@ class LocalMeshSerialSource(CaptureSource):
 
     def _close(self) -> None:
         self._connected = False
+        if self._loop is not None:   # whoever waits for a reply gets "did not answer" instead of hanging
+            for seq in list(self._futures):
+                self._loop.call_soon_threadsafe(self._resolve, seq, None, b"")
         s, self._serial = self._serial, None
         if s is not None:
             try:
@@ -171,6 +194,63 @@ class LocalMeshSerialSource(CaptureSource):
                     return
                 time.sleep(1)
 
+    # --- commands someone waits for (the Send tab) ---
+
+    async def request(self, build, timeout: float = REPLY_TIMEOUT_S + 5) -> bytes:
+        """Queue the command build(seq) and wait for its reply payload. Raises CommandError on an error code or no
+        answer, ConnectionError when the receiver is not connected."""
+        if not self._connected or self._loop is None:
+            raise ConnectionError("receiver not connected")
+        seq = self._take_seq()
+        fut = self._loop.create_future()
+        self._futures[seq] = fut
+        self._queue_cmd(seq, build(seq))
+        try:
+            err, payload = await asyncio.wait_for(fut, timeout)
+        except asyncio.TimeoutError:
+            raise CommandError(None) from None
+        finally:
+            self._futures.pop(seq, None)
+        if err != p.ERR_OK:
+            raise CommandError(err)
+        return payload
+
+    def _take_seq(self) -> int:
+        for _ in range(256):
+            seq = self._next_seq
+            self._next_seq = seq + 1 if seq < 255 else SEQ_REQUEST_FIRST
+            if seq not in self._futures:
+                return seq
+        raise CommandError(None)   # 240 commands waiting: something is badly stuck
+
+    def _resolve(self, seq: int, err: Optional[int], payload: bytes) -> None:
+        fut = self._futures.get(seq)
+        if fut is not None and not fut.done():
+            fut.set_result((err, payload))
+
+    async def send_text(self, text: str, *, channel: Optional[int] = None, member: Optional[int] = None) -> dict:
+        """A channel message (channel=) or a direct message (member=). Returns the entry added to self.sent."""
+        if member is not None:
+            reply = await self.request(lambda seq: p.send_direct(seq, member, text))
+        else:
+            reply = await self.request(lambda seq: p.send_channel(seq, channel, text))
+        s = p.parse_sent(reply)
+        entry = {"time": time.time(), "direct": member is not None, "channel": p.CHANNEL_DIRECT if member is not None
+                 else channel, "to": member, "text": text, "counter": s.counter, "airtime_ms": s.airtime_ms,
+                 "status": "sent"}
+        with self._lock:
+            self.sent.append(entry)
+        return dict(entry)
+
+    async def set_name(self, name: str) -> None:
+        """The receiver's name on the network (stored in its flash). A changed name makes the board broadcast an
+        advert by itself 5 s later; it also goes in front of every channel message it sends."""
+        await self.request(lambda seq: p.advert_set(seq, name))
+        self.net_name = p.clip_utf8(name, p.NAME_MAX)
+
+    async def send_advert(self) -> p.Sent:
+        return p.parse_sent(await self.request(lambda seq: p.command(p.ADVERT_SEND, seq)))
+
     # --- commands: one at a time ---
 
     def _queue_cmd(self, seq: int, data: bytes) -> None:
@@ -201,7 +281,10 @@ class LocalMeshSerialSource(CaptureSource):
             if t == p.REPLY:
                 if self._waiting and self._waiting[0] == seq:
                     self._waiting = None
-                if payload and payload[0] == 0:   # error code 0 = ok
+                if seq in self._futures:   # someone awaits this one (request())
+                    if self._loop is not None and payload:
+                        self._loop.call_soon_threadsafe(self._resolve, seq, payload[0], payload[1:])
+                elif payload and payload[0] == p.ERR_OK:
                     self._reply(seq, payload[1:])
             elif t == p.STATUS_EVENT:
                 self.status = p.parse_status(payload)
@@ -218,6 +301,12 @@ class LocalMeshSerialSource(CaptureSource):
                 a = p.parse_advert(payload)
                 with self._lock:
                     self.adverts[a.member] = {**asdict(a), "heard": time.time()}
+            elif t == p.DELIVERY:
+                _by, counter = p.parse_delivery(payload)
+                self._sent_status(counter, True, "delivered")
+            elif t == p.DELIVERY_FAILED:
+                _member, counter, _tries = p.parse_delivery_failed(payload)
+                self._sent_status(counter, True, "failed")
             elif t == p.CHANNEL_EVENT:
                 ev = p.parse_channel_event(payload)
                 with self._lock:
@@ -251,7 +340,15 @@ class LocalMeshSerialSource(CaptureSource):
                 self._members_next = {}
         # SEQ_MESSAGES: the reply is only the total; the messages follow as MESSAGE events
 
+    def _sent_status(self, counter: int, direct: bool, status: str, only_from: Optional[str] = None) -> None:
+        with self._lock:
+            for e in self.sent:
+                if e["counter"] == counter and e["direct"] == direct and (only_from is None or e["status"] == only_from):
+                    e["status"] = status
+
     def _note_rx(self, log: p.RxLog, now: float) -> None:
+        if self.info and log.member == self.info.member:   # our own channel message, heard back from a repeater
+            self._sent_status(log.counter, False, "repeated", only_from="sent")
         entry = {**asdict(log), "sender": p.member_label(log.member), "time": now}
         with self._lock:
             self.activity.append(entry)

@@ -3,8 +3,8 @@
 A [LocalMesh](https://www.localmesh.nl) receiver (Heltec V4 with LocalMesh companion firmware) on the Meshpoint's USB
 port. LocalMesh uses 62.5 kHz, which the SX1302 concentrator cannot receive, so a USB receiver is the only way in.
 
-What it does. Read-only: it never transmits on the radio and never changes the receiver's settings; it only asks the
-receiver what it knows (status, channels, stored messages, member list, neighbours).
+What it does. By itself it only listens and asks the receiver what it knows (status, channels, stored messages, member
+list, neighbours). It transmits only from the Send tab, by an admin, within the receiver's own airtime budget.
 
 - **Packet log:** every packet the receiver hears, under protocol `localmesh`, with its type (channel, direct, advert,
   status, ...), the sender (member number, `server`, or `repeater <node>`), counter, hops, previous hop, path, signal
@@ -18,12 +18,22 @@ receiver what it knows (status, channels, stored messages, member list, neighbou
     clock is set, otherwise when Meshpoint received the message.
   - **Activity:** every packet heard, newest first: type, sender, counter, hops, path, signal and the receiver's
     decision (green passed on or delivered, amber dropped as normal mesh traffic, red refused).
+  - **Send** (admin): a message to a channel the receiver has the key for, or a direct message to a member (also from
+    a member's side panel), with a byte counter (a channel message carries the receiver's name in front, in the same
+    155 bytes; a direct message fits 149). The receiver's name on the network (it broadcasts it 5 s after a change,
+    and every 24 h) and "Broadcast name now". Recently sent, with status: sent, repeated (a repeater was heard
+    passing it on), delivered or not delivered (direct messages). Sent messages also show on the Messages tab.
+    Every send is in the audit log (where to and how many bytes, not the text).
   - **Receiver:** node, member, role, firmware, board, radio settings, transmit power, battery, uptime, packets
     heard/rejected/sent, last signal, noise floor, airtime used; its channels and its neighbours (repeaters heard
     directly).
   - **Settings** (admin): the receiver list, with a picker of the connected USB devices.
-  Members, Messages and Activity have a search box. The lists live in memory (300 messages and packets per receiver).
-  Send follows.
+  Members, Messages and Activity have a search box; click a row for everything about it: a member opens the
+  side panel (like a Meshtastic node or a Reticulum peer: status, last heard, signal, position, its recent messages
+  and packets); a message or packet opens a popup (the full message, or the decision explained, the path with the
+  SNR per hop, routed or flood). A member without an
+  advert gets the name in front of their messages ("Einstein: ..."), as the app sends it. The lists live in memory (300 messages and packets per receiver).
+  The name set on the Send tab is kept with the receiver in `local.yaml` (the board does not report it).
 
 ## Setup
 
@@ -56,9 +66,12 @@ pyserial is already on every Meshpoint (the core serial sources use it); no setu
 - `backend/decode.py`: RX_LOG to a Meshpoint Packet.
 - `backend/routes.py`: `GET /api/localmesh/status`, `/members`, `/messages`, `/activity`.
 - `backend/views.py`: the Members, Messages and Activity lists, merged over all receivers.
+- `backend/send_routes.py`: `POST /api/localmesh/send`, `PUT /api/localmesh/name`, `POST /api/localmesh/advert` (admin,
+  audited): the only routes that transmit.
 - `backend/settings_routes.py`: `GET/PUT /api/localmesh/settings` (saving is admin-only and audited).
 - `backend/state.py`: the receiver list, saved to `plugins.localmesh` in `local.yaml`.
-- `frontend/localmesh_panel.js`: the page and its tabs; `localmesh_settings_tab.js`: the Settings tab.
-- `frontend/localmesh_topbar_chip.js`: the chip.
+- `frontend/localmesh_panel.js`: the page and its tabs; `localmesh_settings_tab.js`: the Settings tab;
+  `localmesh_member_drawer.js`: the member side panel; `localmesh_send_tab.js`: the Send tab.
+- `frontend/localmesh_topbar_chip.js`: the chip; `localmesh.css`: scrolling, column widths, clickable rows.
 
 The protocol is documented in the LocalMesh firmware repo, `docs/protocol-en.md`.

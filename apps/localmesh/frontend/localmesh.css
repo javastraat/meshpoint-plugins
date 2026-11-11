@@ -1,0 +1,26 @@
+/* LocalMesh page. Everything else comes from the core's lorawan.css (lw-*), configuration.css (cfg-*) and
+   packet_detail_modal.css (pdm-*, the detail popup). */
+
+/* the core's .section has overflow:hidden; lorawan.css lists the pages that scroll, a plugin page adds itself */
+.section[data-section="localmesh"] {
+    overflow-y: auto;
+}
+
+/* lorawan.css right-aligns only the header (th.lw-r); numbers in the cells line up under it */
+.lm-table td.lw-r { text-align: right; }
+
+.lm-table tbody tr[data-lm-row] { cursor: pointer; }
+
+/* column widths (the core table is table-layout: fixed); the column without a width takes the rest */
+.lm-table col.lm-time    { width: 96px; }
+.lm-table col.lm-ago     { width: 110px; }
+.lm-table col.lm-num     { width: 84px; }
+.lm-table col.lm-hops    { width: 64px; }
+.lm-table col.lm-signal  { width: 150px; }
+.lm-table col.lm-type    { width: 110px; }
+.lm-table col.lm-from    { width: 170px; }
+.lm-table col.lm-channel { width: 150px; }
+.lm-table col.lm-pos     { width: 170px; }
+.lm-table col.lm-badge   { width: 150px; }
+
+.lm-subtitle { margin-top: 16px; }

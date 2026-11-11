@@ -55,6 +55,17 @@ class TestMessages(unittest.TestCase):
         self.assertEqual(out[1]["channel_name"], "channel 7")        # attic has no name for it
         self.assertEqual((out[2]["channel_name"], out[2]["sender"]), ("Algemeen", "Albert"))
 
+    def test_unnamed_channel_and_name_from_text(self) -> None:
+        a = data(messages=[msg(4, 1, "Einstein: I am OK"), msg(5, 2, "no name here")], channels={0: ""},
+                 heard={4: {"count": 1, "last_heard": 1.0, "type": "channel", "hops": 0, "via": 0, "rssi": -50, "snr": 1}})
+        out = views.messages([("base", a)])
+        self.assertEqual([(m["sender"], m["channel_name"]) for m in out], [("Einstein", "channel 0"), ("", "channel 0")])
+        self.assertEqual(views.members([("base", a)])[0]["name"], "Einstein")
+
+    def test_advert_name_wins_over_text(self) -> None:
+        a = data(messages=[msg(4, 1, "Bijnaam: hoi")], adverts={4: {"name": "Albert", "heard": 1.0}})
+        self.assertEqual(views.messages([("", a)])[0]["sender"], "Albert")
+
     def test_limit(self) -> None:
         a = data(messages=[msg(4, i, str(i), received=float(i)) for i in range(10)])
         self.assertEqual([m["text"] for m in views.messages([("", a)], limit=3)], ["9", "8", "7"])

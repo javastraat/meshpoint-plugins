@@ -14,8 +14,10 @@ from typing import Optional
 
 PROTOCOL_VERSION = 1
 
-# commands (app -> receiver) this plugin sends: all read-only
+# commands (app -> receiver) this plugin sends; read-only ones
 HELLO, INFO, MEMBERS_GET, CHANNELS_GET, MESSAGES_GET, STATUS, NEIGHBORS_GET = 0x01, 0x02, 0x15, 0x18, 0x21, 0x30, 0x36
+# and the ones that transmit (the Send tab, admin only)
+ADVERT_SET, SEND, SEND_DIRECT, ADVERT_SEND = 0x16, 0x20, 0x22, 0x23
 # reply and events (receiver -> app)
 REPLY, MESSAGE, RX_LOG, STATUS_EVENT, DELIVERY, ADVERT, DELIVERY_FAILED, TRACE, CHANNEL_EVENT, TEXT = (
     0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x8F)
@@ -29,6 +31,14 @@ DECISIONS = ["forward", "deliver", "wrong_net", "not_member", "blocked", "replay
              "hops_exhausted", "neighbor_rejected", "unknown_type", "member_added", "member_blocked", "not_next_hop",
              "path_full", "duplicate", "looped", "admin_applied", "out_of_region"]
 CHANNEL_DIRECT = 255
+# reply error codes
+ERR_OK, ERR_UNKNOWN, ERR_ARGUMENT, ERR_STATE, ERR_RADIO = 0, 1, 2, 3, 4
+# text limits in bytes (firmware Packet.h / Core.h, packet format v4): a channel message carries the receiver's own
+# name in front ("Name: "), inside the same 155 bytes; a direct message does not
+CHANNEL_TEXT_MAX = 155   # MAX_PAYLOAD 160 - channel byte - 4-byte MAC
+DIRECT_TEXT_MAX = 149    # MAX_PAYLOAD 160 - 7-byte direct head - 4-byte MAC
+NAME_MAX = 32
+
 MEMBER_BLOCKED = 0x01   # member flags (firmware src/Members.h)
 MEMBER_NATIONAL = 0x02
 REPEATER_MEMBER_BASE = 0xFF0000   # member ids 0xFF0000 | node are a repeater's own status/announce packets
@@ -111,6 +121,57 @@ def messages_get(seq: int, from_index: int = 0) -> bytes:
 
 def members_get(seq: int, from_index: int = 0) -> bytes:
     return command(MEMBERS_GET, seq, struct.pack("<H", from_index))
+
+
+def channel_text_max(name: str) -> int:
+    """How many bytes of text fit in a channel message from a receiver called ``name``."""
+    return CHANNEL_TEXT_MAX - (len(name.encode()) + 2 if name else 0)
+
+
+def clip_utf8(text: str, max_bytes: int) -> str:
+    """Cut to max_bytes without splitting a character (like the firmware's utf8_trim)."""
+    b = text.encode()
+    if len(b) <= max_bytes:
+        return text
+    return b[:max_bytes].decode("utf-8", "ignore")
+
+
+def send_channel(seq: int, channel: int, text: str) -> bytes:
+    t = text.encode()
+    return command(SEND, seq, bytes([channel, len(t)]) + t)
+
+
+def send_direct(seq: int, member: int, text: str) -> bytes:
+    t = text.encode()
+    return command(SEND_DIRECT, seq, struct.pack("<IB", member, len(t)) + t)
+
+
+def advert_set(seq: int, name: str, lat: int = 0, lon: int = 0, flags: int = 0) -> bytes:
+    n = clip_utf8(name, NAME_MAX).encode()
+    return command(ADVERT_SET, seq, struct.pack("<Bii", flags, lat, lon) + bytes([len(n)]) + n)
+
+
+@dataclass
+class Sent:
+    counter: int; airtime_ms: int
+
+
+def parse_sent(p: bytes) -> Sent:
+    """Reply to SEND / SEND_DIRECT / ADVERT_SEND: the packet's counter and its airtime."""
+    r = Reader(p)
+    return Sent(r.u32(), r.u16())
+
+
+def parse_delivery(p: bytes) -> tuple[int, int]:
+    """DELIVERY: (by member, counter of our direct message)."""
+    r = Reader(p)
+    return r.u32(), r.u32()
+
+
+def parse_delivery_failed(p: bytes) -> tuple[int, int, int]:
+    """DELIVERY_FAILED: (member, counter of our direct message, attempts)."""
+    r = Reader(p)
+    return r.u32(), r.u32(), r.u8()
 
 
 class Reader:

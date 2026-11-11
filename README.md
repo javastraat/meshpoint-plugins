@@ -58,7 +58,7 @@ view — a stale or edited catalog can't smuggle anything in.
 | `adsb` | app | Live ADS-B air traffic tracking with a map |
 | `dab` | app | DAB/DAB+ digital radio |
 | `dapnet` | app | DAPNET/POCSAG amateur-radio paging via a companion board over USB serial |
-| `localmesh` | app | LocalMesh via a receiver (Heltec V4) over USB serial -- packet log, topbar chip, LocalMesh page (Members, Messages, Activity, Receiver, Settings) |
+| `localmesh` | app | LocalMesh via a receiver (Heltec V4) over USB serial -- packet log, topbar chip, LocalMesh page (Members, Messages, Activity, Send, Receiver, Settings) |
 | `reticulum` | app | Native Reticulum/LXMF messaging -- peer roster, Peers/Messages/Send/Settings page |
 | `reticulum-call` | app | Voice calls over Reticulum -- adds a Call tab to the Reticulum page |
 | `reticulum-browser` | app | Full multi-tab NomadNet browser for Reticulum |

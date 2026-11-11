@@ -6,6 +6,7 @@ tested without a board or FastAPI. Newest first everywhere.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 from . import protocol as p
@@ -18,8 +19,18 @@ def _is_member(member: int) -> bool:
     return 0 < member < p.REPEATER_MEMBER_BASE
 
 
+# the app puts the sender's name in front of a channel message: "Einstein: I am OK"
+_NAME_PREFIX = re.compile(r"^([^:\n]{1,32}): ")
+
+
 def _names(receivers: list) -> dict[int, str]:
+    """Member -> name: from an advert, else from the "Name: " in front of their latest message."""
     names: dict[int, str] = {}
+    for _label, d in receivers:
+        for m in d["messages"]:
+            found = _NAME_PREFIX.match(m["text"])
+            if found and 0 < m["member"] < p.REPEATER_MEMBER_BASE:
+                names[m["member"]] = found.group(1).strip()
     for _label, d in receivers:
         for member, a in d["adverts"].items():
             if a.get("name"):
@@ -31,6 +42,7 @@ def members(receivers: Receivers) -> list[dict]:
     """Every member a receiver knows of: from its member list, from adverts (name, position) and from what it heard
     (count, last heard, hops, signal). With more receivers the freshest observation wins and counts add up."""
     receivers = list(receivers)
+    names = _names(receivers)
     out: dict[int, dict] = {}
 
     def entry(member: int) -> dict:
@@ -66,11 +78,14 @@ def members(receivers: Receivers) -> list[dict]:
             if e["last_heard"] is None or h["last_heard"] >= e["last_heard"]:
                 e.update(last_heard=h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"],
                          type=h["type"])
+    for e in out.values():
+        e["name"] = e["name"] or names.get(e["member"], "")
     return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["member"]))
 
 
 def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
-    """Channel messages and direct messages to a receiver, once each (two receivers can both get a channel message)."""
+    """Channel messages and direct messages to a receiver, once each (two receivers can both get a channel message),
+    and what the Send tab sent (``outgoing``, with its ``status``: sent, repeated, delivered or failed)."""
     receivers = list(receivers)
     names = _names(receivers)
     seen: set = set()
@@ -85,8 +100,19 @@ def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
             out.append({
                 **m, "receiver": label, "direct": direct, "sender": names.get(m["member"], ""),
                 "channel_name": f"direct to {label or 'receiver'}" if direct
-                else d["channels"].get(m["channel"], f"channel {m['channel']}"),
+                else d["channels"].get(m["channel"]) or f"channel {m['channel']}",
                 "sort_time": m["time"] or m["received"],
+            })
+        for x in d.get("sent", []):   # what the Send tab sent through this receiver
+            to = x["to"]
+            out.append({
+                "index": None, "channel": x["channel"], "member": d.get("own_member"), "counter": x["counter"],
+                "time": x["time"], "received": x["time"], "hops": None, "via": None, "rssi": None, "snr": None,
+                "text": x["text"], "receiver": label, "direct": x["direct"], "outgoing": True, "status": x["status"],
+                "airtime_ms": x["airtime_ms"], "to": to, "sender": f"Meshpoint ({label or 'receiver'})",
+                "channel_name": (f"direct to {names.get(to) or to}" if x["direct"]
+                                 else d["channels"].get(x["channel"]) or f"channel {x['channel']}"),
+                "sort_time": x["time"],
             })
     out.sort(key=lambda m: -m["sort_time"])
     return out[:limit]

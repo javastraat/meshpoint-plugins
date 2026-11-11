@@ -129,6 +129,26 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(frames, [bytes([p.MESSAGES_GET, 4]) + struct.pack("<H", 70000 & 0xFFFF),
                                   bytes([p.MEMBERS_GET, 5, 10, 0]), bytes([p.NEIGHBORS_GET, 6])])
 
+    def test_send_frames(self) -> None:
+        dec = p.SlipDecoder()
+        frames, _ = dec.feed(p.send_channel(16, 0, "hé") + p.send_direct(17, 4, "hoi") + p.advert_set(18, "x" * 40)
+                             + p.command(p.ADVERT_SEND, 19))
+        self.assertEqual(frames[0], bytes([p.SEND, 16, 0, 3]) + "hé".encode())
+        self.assertEqual(frames[1], bytes([p.SEND_DIRECT, 17]) + struct.pack("<IB", 4, 3) + b"hoi")
+        self.assertEqual(frames[2], bytes([p.ADVERT_SET, 18]) + struct.pack("<Bii", 0, 0, 0) + bytes([32]) + b"x" * 32)
+        self.assertEqual(frames[3], bytes([p.ADVERT_SEND, 19]))
+
+    def test_limits_and_clip(self) -> None:
+        self.assertEqual(p.channel_text_max(""), 155)
+        self.assertEqual(p.channel_text_max("Meshpoint"), 155 - 11)
+        self.assertEqual(p.clip_utf8("ééé", 5), "éé")          # never half a character
+        self.assertEqual(p.clip_utf8("abc", 5), "abc")
+
+    def test_sent_and_delivery(self) -> None:
+        self.assertEqual(p.parse_sent(struct.pack("<IH", 42, 120)), p.Sent(42, 120))
+        self.assertEqual(p.parse_delivery(struct.pack("<II", 4, 42)), (4, 42))
+        self.assertEqual(p.parse_delivery_failed(struct.pack("<IIB", 4, 42, 3)), (4, 42, 3))
+
     def test_decision_list_matches_firmware_count(self) -> None:
         self.assertEqual(len(p.DECISIONS), 19); self.assertEqual(p.DECISIONS[18], "out_of_region")
         self.assertEqual(len(p.PACKET_TYPES), 16)

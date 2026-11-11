@@ -37,6 +37,14 @@ def set_devices(devices: list[dict]) -> None:
     _persist()
 
 
+def set_name(label: str, name: str) -> None:
+    """Remember the name the Send tab gave a receiver (the board itself does not report it), and persist."""
+    for d in _devices:
+        if d.get("label", "") == label:
+            d["name"] = name
+    _persist()
+
+
 def _current_saved_config() -> dict:
     """plugins.localmesh as it is on disk now, not as it was at init(): save_section_to_yaml merges one level deep, so
     writing only our own keys would otherwise undo a later Settings -> Plugins enable/disable (same as dapnet)."""

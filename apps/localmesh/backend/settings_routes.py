@@ -66,6 +66,10 @@ async def update_localmesh_settings(
     audit: AuditLogWriter = Depends(get_audit_writer),
 ) -> dict:
     devices = validate_devices(req.devices)
+    names = {d.get("label", ""): d["name"] for d in state.devices() if d.get("name")}
+    for d in devices:   # the name on the network (set on the Send tab) stays with its receiver
+        if d["label"] in names:
+            d["name"] = names[d["label"]]
     with audit.timed_action(user=_claims.subject, action="localmesh.settings_update", params={}):
         state.set_devices(devices)
     return {"saved": True, "restart_required": True, "devices": state.devices()}
