@@ -17,7 +17,7 @@ styles = ["frontend/localmesh.css"]
 route = "localmesh"
 label = "LocalMesh"
 category = "networks"
-icon = "antenna"
+icon = "zap"         # the bolt of the LocalMesh logo (plugins pick from the core's icon list)
 
 [meta]
 description = "LocalMesh receiver (Heltec V4, companion firmware) on USB serial: every packet it hears in the packet log under protocol localmesh (type, member, hops, path, signal, decision), a topbar chip with connection, node and frequency, and the LocalMesh page (Members, Messages, Activity, Send, Receiver and Settings tabs). Sends only from the Send tab (admin). LocalMesh uses 62.5 kHz, which the SX1302 cannot receive."
