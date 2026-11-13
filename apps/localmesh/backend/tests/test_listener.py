@@ -109,5 +109,26 @@ class TestListener(unittest.TestCase):
         self.assertEqual(self.src.snapshot()["neighbors"], [{"node": 100, "snr": 2.0, "rssi": -60, "ago_s": 3, "count": 50}])
 
 
+    def _info(self, name: bytes = b"") -> bytes:
+        return (bytes([1]) + s("0.10.3") + s("Heltec V4") + bytes([1]) + struct.pack("<HHI", 100, 7, 4) + bytes(32)
+                + bytes([1]) + struct.pack("<f", 869.556) + bytes([7]) + struct.pack("<f", 62.5) + bytes([5])
+                + struct.pack("<b", 21) + struct.pack("<I", 123456) + name)
+
+    def test_name_from_board(self) -> None:
+        """Firmware 13-11 tells its name in INFO: it replaces the copy from the config (lost on an uninstall)."""
+        src = l.LocalMeshSerialSource(serial_port="/dev/null", label="base", name="old copy")
+        src._serial = self.port
+        src._handle(reply(l.SEQ_HELLO, self._info(s("Meshpoint attic"))))
+        snap = src.snapshot()
+        self.assertEqual((snap["net_name"], snap["name_from_board"]), ("Meshpoint attic", True))
+
+    def test_name_kept_with_older_firmware(self) -> None:
+        """Older firmware sends no name: the copy this Meshpoint last set stays."""
+        src = l.LocalMeshSerialSource(serial_port="/dev/null", label="base", name="old copy")
+        src._serial = self.port
+        src._handle(reply(l.SEQ_HELLO, self._info()))
+        snap = src.snapshot()
+        self.assertEqual((snap["net_name"], snap["name_from_board"]), ("old copy", False))
+
 if __name__ == "__main__":
     unittest.main()

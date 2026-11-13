@@ -82,7 +82,10 @@ class LocalMeshSerialSource(CaptureSource):
         self.channels: dict[int, str] = {}
         self.neighbors: list[dict] = []
         self.sent: collections.deque = collections.deque(maxlen=100)   # what the Send tab sent, with its status
-        self.net_name = name   # the name on the network this plugin last set (the board does not report it); in the config
+        # The name on the network. Firmware 13-11 reports it in INFO (the board is the truth then, name_from_board); with
+        # older firmware it is the copy this plugin last set, kept in the config (lost when the plugin is uninstalled).
+        self.net_name = name
+        self.name_from_board = False
         # command queue: the reader thread sends; request() adds from the event loop (deque append is thread-safe)
         self._pending: collections.deque = collections.deque()
         self._futures: dict[int, asyncio.Future] = {}
@@ -106,6 +109,7 @@ class LocalMeshSerialSource(CaptureSource):
             "status": asdict(self.status) if self.status else None,
             "last_heard": self.last_heard,
             "net_name": self.net_name,
+            "name_from_board": self.name_from_board,
             "channels": {str(k): v for k, v in sorted(self.channels.items())},
             "neighbors": list(self.neighbors),
         }
@@ -321,6 +325,9 @@ class LocalMeshSerialSource(CaptureSource):
     def _reply(self, seq: int, payload: bytes) -> None:
         if seq == SEQ_HELLO:
             self.info = p.parse_info(payload)
+            if self.info.name is not None:
+                self.net_name = self.info.name
+                self.name_from_board = True
         elif seq == SEQ_STATUS:
             self.status = p.parse_status(payload)
         elif seq == SEQ_CHANNELS:

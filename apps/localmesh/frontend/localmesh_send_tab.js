@@ -138,8 +138,11 @@ class LocalMeshSendTab {
         const d = this._device();
         const name = this._el.querySelector('[data-lm-name]');
         if (document.activeElement !== name) name.value = (d && d.net_name) || '';
-        this._el.querySelector('[data-lm-name-hint]').textContent = d && d.net_name
-            ? '' : 'Not set from this Meshpoint yet (the board does not tell its name).';
+        // Firmware 13-11 tells its own name (name_from_board); older firmware: only what this Meshpoint last set.
+        this._el.querySelector('[data-lm-name-hint]').textContent = !d ? ''
+            : d.name_from_board ? (d.net_name ? 'As stored on the board.' : 'No name set on the board yet.')
+            : d.net_name ? 'As last set from this Meshpoint (this firmware does not tell its name).'
+            : 'Not set from this Meshpoint yet (this firmware does not tell its name).';
         this._fillTargets();
     }
 

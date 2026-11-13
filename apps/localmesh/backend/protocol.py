@@ -204,6 +204,7 @@ class Reader:
 class Info:
     protocol: int; firmware: str; board: str; role: str; node: int; net_id: int; member: int; pub: str
     serverpub_set: bool; freq_mhz: float; sf: int; bw_khz: float; cr: int; power_dbm: int
+    name: Optional[str] = None   # the board's name on the network (firmware 13-11; None = older firmware, "" = none set)
 
 
 def parse_info(p: bytes) -> Info:
@@ -211,8 +212,13 @@ def parse_info(p: bytes) -> Info:
     proto, fw, board = r.u8(), r.str(), r.str()
     role = r.u8()
     node, net, member, pub = r.u16(), r.u16(), r.u32(), r.raw(32).hex()
-    return Info(proto, fw, board, ROLES[role] if role < len(ROLES) else str(role), node, net, member, pub,
-                r.u8() != 0, round(r.f32(), 3), r.u8(), round(r.f32(), 1), r.u8(), r.i8())
+    i = Info(proto, fw, board, ROLES[role] if role < len(ROLES) else str(role), node, net, member, pub,
+             r.u8() != 0, round(r.f32(), 3), r.u8(), round(r.f32(), 1), r.u8(), r.i8())
+    if r.remaining >= 4:
+        r.u32()                      # free heap
+        if r.remaining >= 1:
+            i.name = r.str()         # 13-11: the board tells its own name
+    return i
 
 
 @dataclass

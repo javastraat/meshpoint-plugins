@@ -53,6 +53,15 @@ class TestParsers(unittest.TestCase):
         self.assertEqual((i.firmware, i.board, i.role, i.node, i.net_id, i.member), ("0.4.2", "Heltec V4", "companion", 100, 7, 4))
         self.assertEqual(i.pub, pub.hex()); self.assertTrue(i.serverpub_set)
         self.assertEqual((i.freq_mhz, i.sf, i.bw_khz, i.cr, i.power_dbm), (869.556, 7, 62.5, 5, 21))
+        self.assertIsNone(i.name)   # firmware before 13-11 does not send its name
+
+    def test_info_name(self) -> None:
+        """Firmware 13-11 adds the board's name on the network at the end of INFO (empty when none)."""
+        base = (bytes([1]) + s("0.10.3") + s("Heltec V4") + bytes([1]) + struct.pack("<HHI", 100, 7, 4) + bytes(32)
+                + bytes([1]) + struct.pack("<f", 869.556) + bytes([7]) + struct.pack("<f", 62.5) + bytes([5])
+                + struct.pack("<b", 21) + struct.pack("<I", 123456))
+        self.assertEqual(p.parse_info(base + s("Meshpoint attic")).name, "Meshpoint attic")
+        self.assertEqual(p.parse_info(base + s("")).name, "")
 
     def _status_base(self, battery: int) -> bytes:
         return bytes([battery]) + struct.pack("<IIIII", 1200, 360000, 50, 3, 9) + struct.pack("<hb", -88, 26)

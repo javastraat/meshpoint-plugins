@@ -40,7 +40,8 @@ list, neighbours). It transmits only from the Send tab, by an admin, within the 
   and packets); a message or packet opens a popup (the full message, or the decision explained, the path with the
   SNR per hop, routed or flood). A member without an
   advert gets the name in front of their messages ("Einstein: ..."), as the app sends it. The lists live in memory (300 messages and packets per receiver).
-  The name set on the Send tab is kept with the receiver in `local.yaml` (the board does not report it).
+  The receiver's name: firmware from 13-11 reports it itself (in INFO), so it survives an uninstall of this plugin.
+  With older firmware the name set on the Send tab is kept with the receiver in `local.yaml` (lost on an uninstall).
 
 ## Setup
 
