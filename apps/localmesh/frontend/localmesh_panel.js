@@ -2,7 +2,7 @@
  * LocalMesh page (sidebar, Networks).
  *
  * Same layout as the DAPNET and Reticulum pages and the same core CSS (lw-* from lorawan.css, cfg-* from
- * configuration.css): a summary card per receiver at the top, then tabs (LM_TABS). Viewers see the read-only tabs;
+ * configuration.css): five cards at the top (status, members, neighbours, messages 24h, airtime), then tabs (LM_TABS). Viewers see the read-only tabs;
  * Settings (and later Send) are admin-only, like on the other pages. The open tab is remembered per browser.
  *
  *  - Members:  everyone a receiver knows of (member list, adverts, packets heard)   GET /api/localmesh/members
@@ -252,12 +252,17 @@ class LocalMeshPanel {
     }
 
     async _refresh() {
-        const devices = await this._get('/api/localmesh/status');
+        // Members and messages every time too: the cards count them, whichever tab is open.
+        const [devices, members, messages] = await Promise.all([this._get('/api/localmesh/status'),
+            this._get('/api/localmesh/members'), this._get('/api/localmesh/messages')]);
         if (Array.isArray(devices)) this._devices = devices;
+        if (Array.isArray(members)) this._lists.members = members;
+        if (Array.isArray(messages)) this._lists.messages = messages;
         if (this._sendTab) this._sendTab.update(this._devices);
         this._renderCards();
         this._renderReceivers();
-        if (LM_SEARCH_TABS.includes(this._tab)) await this._loadList(this._tab);
+        if (this._tab === 'activity') await this._loadList('activity');
+        else if (LM_SEARCH_TABS.includes(this._tab)) this._renderList();
     }
 
     async _loadList(tab) {
@@ -446,20 +451,51 @@ class LocalMeshPanel {
                 </div>`;
             return;
         }
-        el.innerHTML = this._devices.map((d) => {
-            const i = d.info || {}; const s = d.status || {};
-            const bits = [];
-            if (i.node != null) bits.push(`node ${i.node}`);
-            if (s.battery != null) bits.push(`${s.battery} %`);
-            if (s.rx_ok != null) bits.push(`${s.rx_ok} heard`);
-            return `
-                <div class="stat-card">
-                    <div class="stat-card__label">${d.connected ? '🟢' : '⚪'} ${LocalMeshPanel.esc(d.label || 'receiver')}</div>
-                    <div class="stat-card__value" style="font-size: 0.95rem">
-                        ${bits.length ? bits.join(' · ') : (d.connected ? 'Connected' : 'Not connected')}
-                    </div>
-                </div>`;
-        }).join('');
+        // Five cards as on the Reticulum and Meshtastic pages (13-11): status, members, neighbours, messages, airtime.
+        // More than one receiver: added up, airtime the busiest; the battery is on the Receiver tab.
+        const esc = LocalMeshPanel.esc;
+        const devs = this._devices;
+        const day = Date.now() / 1000 - 86400;
+        const card = (label, value, sub, title) => `
+            <div class="stat-card"${title ? ` title="${esc(title)}"` : ''}>
+                <div class="stat-card__label">${label}</div>
+                <div class="stat-card__value">${value}</div>
+                ${sub ? `<div class="stat-card__sub">${sub}</div>` : ''}
+            </div>`;
+
+        const online = devs.filter((d) => d.connected);
+        const nodes = devs.map((d) => (d.info && d.info.node != null ? `node ${d.info.node}` : esc(d.label || 'receiver')));
+        const heard = devs.reduce((n, d) => n + ((d.status && d.status.rx_ok) || 0), 0);
+        const rejected = devs.reduce((n, d) => n + ((d.status && d.status.rx_rejected) || 0), 0);
+        const status = card('Status',
+            online.length === devs.length ? 'Running' : online.length ? `${online.length} of ${devs.length} online` : 'Offline',
+            nodes.join(' · '), `heard ${heard} · rejected ${rejected}`);
+
+        const members = this._lists.members || [];
+        const listed = members.filter((m) => m.listed).length;
+        const active = members.filter((m) => m.listed && m.last_heard && m.last_heard >= day).length; // of those on the list
+        const membersCard = card('Members', `${active} / ${listed}`, 'heard 24h / on the list');
+
+        const neigh = devs.flatMap((d) => d.neighbors || []);
+        const neighNodes = [...new Set(neigh.map((n) => n.node))];
+        const neighCard = card('Neighbours', `${neighNodes.length}`, 'heard directly',
+            neigh.map((n) => `node ${n.node}: ${n.rssi} dBm / ${n.snr} dB`).join('\n'));
+
+        const msgs = (this._lists.messages || []).filter((m) => (m.sort_time || m.time) >= day);
+        const direct = msgs.filter((m) => m.direct).length;
+        const msgCard = card('Messages (24h)', `${msgs.length}`, `${msgs.length - direct} channel · ${direct} private`);
+
+        // A companion's budget is its own transmit time this hour (budget_ms of budget_limit, 30 s); the busiest wins.
+        const air = devs.filter((d) => d.status && d.status.budget_limit)
+            .map((d) => ({ d, used: d.status.budget_ms, limit: d.status.budget_limit }))
+            .sort((a, b) => b.used / b.limit - a.used / a.limit);
+        const airCard = air.length
+            ? card('Airtime (hour)', `${Math.round((100 * air[0].used) / air[0].limit)} %`,
+                `${(air[0].used / 1000).toFixed(1)} s of ${Math.round(air[0].limit / 1000)} s`,
+                air.map((a) => `${esc(a.d.label || 'receiver')}: ${(a.used / 1000).toFixed(1)} s of ${Math.round(a.limit / 1000)} s`).join('\n'))
+            : card('Airtime (hour)', '--', 'no budget reported');
+
+        el.innerHTML = status + membersCard + neighCard + msgCard + airCard;
     }
 
     _renderReceivers() {

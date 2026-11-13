@@ -11,7 +11,9 @@ list, neighbours). It transmits only from the Send tab, by an admin, within the 
   and the receiver's decision (forward, deliver, replay, blocked, ...). The contents stay encrypted.
 - **Topbar chip:** in LocalMesh orange: connected or not, node number and frequency (battery in the tooltip). Click it
   for the LocalMesh page.
-- **LocalMesh page** (sidebar, Networks): a card per receiver at the top, then tabs:
+- **LocalMesh page** (sidebar, Networks): five cards at the top, like the Reticulum and Meshtastic pages: Status
+  (running/offline, node), Members (heard in 24 h / on the list), Neighbours (heard directly), Messages (24 h, channel
+  and private) and Airtime (the receiver's transmit budget this hour). Then tabs:
   - **Members:** everyone the receiver knows of (its member list, adverts and the packets it heard): name, member
     number, last heard, packets, hops left, signal, position (OpenStreetMap link), blocked or national; the
     receiver itself is marked "this Meshpoint".
