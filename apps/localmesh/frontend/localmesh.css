@@ -24,3 +24,29 @@
 .lm-table col.lm-badge   { width: 150px; }
 
 .lm-subtitle { margin-top: 16px; }
+
+/* Topbar pill (13-11): its own colour, as the core does for Reticulum (.topbar-reticulum in topbar.css). Orange
+   #FF6B35 is LocalMesh's brand colour (website/app logo gradient); the brand red is taken by "offline". */
+.topbar-localmesh {
+    border-color: rgba(255, 107, 53, 0.45);
+    background: rgba(255, 107, 53, 0.08);
+    box-shadow:
+        0 0 14px rgba(255, 107, 53, 0.22),
+        inset 0 0 18px rgba(255, 107, 53, 0.05);
+}
+
+.topbar-localmesh .topbar-serial__brand {
+    color: #ff6b35;
+    text-shadow: 0 0 8px rgba(255, 107, 53, 0.4);
+    border-right-color: rgba(255, 107, 53, 0.28);
+}
+
+.topbar-localmesh .topbar-serial__freq {
+    color: #ff6b35;
+}
+
+.topbar-localmesh:not(.topbar-serial--offline):not(.topbar-serial--reconnecting):focus-visible {
+    outline: none;
+    border-color: rgba(255, 107, 53, 0.9);
+    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.35);
+}

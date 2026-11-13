@@ -1,6 +1,7 @@
 /**
  * Topbar -- LocalMesh receiver chip(s): one badge per configured receiver, polling GET /api/localmesh/status.
- * Same visual language as the DAPNET chip (reuses the core .topbar-serial classes): brand, lamp, node, battery.
+ * Same visual language as the other pills (reuses the core .topbar-serial classes): brand, lamp, node, frequency,
+ * in LocalMesh orange (.topbar-localmesh in localmesh.css). The battery is in the tooltip.
  * Clicking it opens the LocalMesh page.
  * Hidden when no receiver is configured.
  */
@@ -32,10 +33,11 @@ class LocalMeshTopbarChip {
         const connected = Boolean(dev.connected);
         const info = dev.info || {}; const st = dev.status || {};
         const root = document.createElement('a');   // a link to the LocalMesh page, like the other pills
-        root.className = 'topbar-serial';
+        root.className = 'topbar-serial topbar-localmesh';
         root.href = '#/localmesh';
         const node = info.node != null ? `node ${info.node}` : (dev.label || '----');
         root.title = `LocalMesh receiver ${node}${info.firmware ? ' · firmware ' + info.firmware : ''}`
+            + `${st.battery != null ? ' · battery ' + st.battery + ' %' : ''}`
             + `${st.rx_ok != null ? ' · heard ' + st.rx_ok + ', rejected ' + st.rx_rejected : ''}`;
         root.setAttribute('aria-label', `LocalMesh ${node} ${connected ? 'connected' : 'offline'} -- go to LocalMesh page`);
 
@@ -58,16 +60,16 @@ class LocalMeshTopbarChip {
         call.textContent = node;
         root.appendChild(call);
 
-        if (st.battery != null) {
+        if (info.freq_mhz != null) {
             const sep = document.createElement('span');
             sep.className = 'topbar-serial__sep';
             sep.setAttribute('aria-hidden', 'true');
             sep.textContent = '·';
             root.appendChild(sep);
-            const bat = document.createElement('span');
-            bat.className = 'topbar-serial__freq';
-            bat.textContent = `${st.battery} %`;
-            root.appendChild(bat);
+            const freq = document.createElement('span');
+            freq.className = 'topbar-serial__freq';
+            freq.textContent = `${info.freq_mhz.toFixed(3)} MHz`;   // as the Meshtastic and Reticulum pills
+            root.appendChild(freq);
         }
         root.classList.toggle('topbar-serial--offline', !connected);
         return root;

@@ -9,7 +9,8 @@ list, neighbours). It transmits only from the Send tab, by an admin, within the 
 - **Packet log:** every packet the receiver hears, under protocol `localmesh`, with its type (channel, direct, advert,
   status, ...), the sender (member number, `server`, or `repeater <node>`), counter, hops left, previous hop, path, signal
   and the receiver's decision (forward, deliver, replay, blocked, ...). The contents stay encrypted.
-- **Topbar chip:** LocalMesh, connected or not, node number and battery. Click it for the LocalMesh page.
+- **Topbar chip:** in LocalMesh orange: connected or not, node number and frequency (battery in the tooltip). Click it
+  for the LocalMesh page.
 - **LocalMesh page** (sidebar, Networks): a card per receiver at the top, then tabs:
   - **Members:** everyone the receiver knows of (its member list, adverts and the packets it heard): name, member
     number, last heard, packets, hops left, signal, position (OpenStreetMap link), blocked or national; the
