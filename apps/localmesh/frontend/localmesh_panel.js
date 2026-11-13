@@ -71,7 +71,21 @@ const LM_DECISION_TEXT = {
     out_of_region: 'Outside this region: not passed on.',
 };
 
+// 13-11: a repeater's announcement or status packet is signed with the network key, which only repeaters and the
+// server have. A receiver (companion) cannot check it, so its firmware says "not member" (the repeater's sender number is
+// not on the member list) and does nothing with it. That is normal, not an error: show it as repeater info.
+const LM_REPEATER_INFO = { label: 'repeater info', badge: 'data',
+    text: 'A repeater\'s announcement or status, signed with the network key that only repeaters and the server have. '
+        + 'A receiver cannot check it and does nothing with it: normal, not an error.' };
+
 class LocalMeshPanel {
+    /** Label, badge colour and meaning of a packet's decision (repeater info for what a receiver cannot check). */
+    static decisionOf(a) {
+        if (a.decision === 'not_member' && (a.type === 'announce' || a.type === 'status')) return LM_REPEATER_INFO;
+        return { label: (a.decision || '').replace(/_/g, ' '), badge: LM_DECISION_BADGE[a.decision] || 'rejoin',
+            text: LM_DECISION_TEXT[a.decision] || '' };
+    }
+
     constructor() {
         this._root = null;
         this._timer = null;
@@ -298,7 +312,7 @@ class LocalMeshPanel {
     static searchText(tab, r) {
         const parts = tab === 'members' ? [r.name, r.member]
             : tab === 'messages' ? [r.sender, r.member, r.channel_name, r.text]
-                : [r.name, r.sender, r.type, r.decision, r.counter];
+                : [r.name, r.sender, r.type, r.decision, LocalMeshPanel.decisionOf(r).label, r.counter];
         return parts.join(' ').toLowerCase();
     }
 
@@ -344,7 +358,7 @@ class LocalMeshPanel {
         const esc = LocalMeshPanel.esc;
         const from = a.name ? `${esc(a.name)} (${esc(a.sender)})` : esc(a.sender);
         const path = (a.path || []).map((h) => h.node).join(' → ') || (a.via ? `via ${a.via}` : 'direct');
-        const badge = LM_DECISION_BADGE[a.decision] || 'rejoin';
+        const dec = LocalMeshPanel.decisionOf(a);
         return `<tr>
             <td>${LocalMeshPanel.clock(a.time)}</td>
             <td>${esc(a.type)}</td>
@@ -353,7 +367,7 @@ class LocalMeshPanel {
             <td class="lw-r">${a.hops}</td>
             <td>${esc(path)}</td>
             <td>${LocalMeshPanel.signal(a.rssi, a.snr)}</td>
-            <td><span class="lw-badge lw-badge--${badge}">${esc(a.decision.replace(/_/g, ' '))}</span></td>
+            <td><span class="lw-badge lw-badge--${dec.badge}">${esc(dec.label)}</span></td>
         </tr>`;
     }
 
@@ -395,12 +409,13 @@ class LocalMeshPanel {
                     + row('Received by Meshpoint', when(r.received)) + row('Receiver', esc(r.receiver)))
                 + layer('Radio', radio(r));
         } else if (tab === 'activity') {
-            const bad = LM_DECISION_BADGE[r.decision] === 'undecrypted';
-            const good = LM_DECISION_BADGE[r.decision] === 'join';
+            const dec = LocalMeshPanel.decisionOf(r);
+            const bad = dec.badge === 'undecrypted';
+            const good = dec.badge === 'join';
             title = `${esc(r.type)} packet from ${esc(r.name || r.sender)}`;
             const path = (r.path || []).map((h) => `node ${h.node} (SNR ${h.snr} dB)`).join(' → ');
-            body = layer('Decision', row('Decision', esc(r.decision.replace(/_/g, ' ')), bad ? 'bad' : good ? 'good' : '')
-                    + row('Meaning', esc(LM_DECISION_TEXT[r.decision] || '')))
+            body = layer('Decision', row('Decision', esc(dec.label), bad ? 'bad' : good ? 'good' : '')
+                    + row('Meaning', esc(dec.text)))
                 + layer('Packet', row('Type', esc(r.type)) + row('Sender', esc(r.sender)) + row('Name', esc(r.name))
                     + row('Counter', r.counter) + row('Heard', when(r.time)) + row('Receiver', esc(r.receiver)))
                 + layer('Route', row('Routed', r.routed ? 'yes (follows a learned path)' : 'no (flood)')
