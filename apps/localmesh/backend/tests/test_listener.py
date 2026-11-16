@@ -68,6 +68,21 @@ class TestListener(unittest.TestCase):
         self.assertEqual(self.sent(), [p.CHANNELS_GET, p.STATUS])
         self.assertEqual(self.src.channels, {})
 
+    def test_hello_again_every_minute(self) -> None:
+        """The board stops pushing events (messages, RX_LOG) over USB once it thinks the host went away (firmware 0.10.4+,
+        a USB pause of a few ms is enough) and only starts again on HELLO: say it again with the neighbours request."""
+        self.src._next_neighbors = 0.0
+        self.src._tick(0.0)
+        self.assertEqual(self.sent(), [p.HELLO])
+        self.src._handle(reply(l.SEQ_HELLO, b""))                   # an empty INFO is ignored, the queue moves on
+        self.src._tick(0.5)
+        self.assertEqual(self.sent(), [p.HELLO, p.NEIGHBORS_GET])
+        self.src._handle(reply(l.SEQ_NEIGHBORS, bytes([0])))
+        self.src._tick(30.0)
+        self.assertEqual(self.sent(), [p.HELLO, p.NEIGHBORS_GET])   # nothing new within the minute
+        self.src._tick(l.NEIGHBORS_EVERY_S + 0.1)
+        self.assertEqual(self.sent()[-1], p.HELLO)
+
     def test_member_list_is_fetched_page_by_page(self) -> None:
         self.src._next_members = 0.0
         self.src._tick(0.0)

@@ -265,6 +265,10 @@ class LocalMeshSerialSource(CaptureSource):
         """Queue the periodic requests, and send the next command once the previous one is answered (or timed out)."""
         if now >= self._next_neighbors:
             self._next_neighbors = now + NEIGHBORS_EVERY_S
+            # HELLO again first: firmware 0.10.4+ stops pushing events (messages, RX_LOG) over USB once it thinks the host
+            # went away (a USB pause of a few ms on the Pi is enough) and only starts again on HELLO. Commands keep
+            # working meanwhile, so without this the page silently stops receiving. The reply is INFO, as at connect.
+            self._queue_cmd(SEQ_HELLO, p.hello(seq=SEQ_HELLO))
             self._queue_cmd(SEQ_NEIGHBORS, p.command(p.NEIGHBORS_GET, SEQ_NEIGHBORS))
         if now >= self._next_members:
             self._next_members = now + MEMBERS_EVERY_S
