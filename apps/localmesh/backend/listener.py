@@ -86,6 +86,11 @@ class LocalMeshSerialSource(CaptureSource):
         # older firmware it is the copy this plugin last set, kept in the config (lost when the plugin is uninstalled).
         self.net_name = name
         self.name_from_board = False
+        # Set by backend/__init__.py's wire() once the shared core database is
+        # available (build() runs before it). None until then, and in any test
+        # that never sets it -- every write through it below is a best-effort
+        # no-op without it, same "fails open" shape as the rest of this file.
+        self.message_repo = None
         # command queue: the reader thread sends; request() adds from the event loop (deque append is thread-safe)
         self._pending: collections.deque = collections.deque()
         self._futures: dict[int, asyncio.Future] = {}
@@ -245,7 +250,36 @@ class LocalMeshSerialSource(CaptureSource):
                  "status": "sent"}
         with self._lock:
             self.sent.append(entry)
+        await self._save_sent(entry)
         return dict(entry)
+
+    async def _save_sent(self, entry: dict) -> None:
+        """Mirror into the core Messages page's shared store (protocol="localmesh"), same node_id
+        scheme as _save_received_async: "localmesh:<member>" for a direct message, so the thread
+        matches the one that message's own replies arrive under; "broadcast:localmesh:<channel>"
+        for a channel message, the same convention _resolve_node_id() in core's messages.py already
+        uses for meshtastic/meshcore. Called from send_text(), already on the event loop (unlike the
+        receive path below, there's no background-thread marshaling to do here) -- best-effort, a
+        storage hiccup here never fails the send itself, which has already succeeded by this point.
+        """
+        if self.message_repo is None:
+            return
+        if entry["direct"]:
+            node_id = f"localmesh:{entry['to']}"
+            name = (self.adverts.get(entry["to"]) or {}).get("name") or p.member_label(entry["to"])
+            channel = 0
+        else:
+            node_id = f"broadcast:localmesh:{entry['channel']}"
+            name = self.channels.get(entry["channel"]) or f"channel {entry['channel']}"
+            channel = entry["channel"]
+        try:
+            await self.message_repo.save_sent(
+                text=entry["text"], node_id=node_id, node_name=name, protocol="localmesh",
+                channel=channel, status="sent",
+            )
+        except Exception:
+            logger.debug("%s: could not mirror a sent message into the core Messages store",
+                         self.name, exc_info=True)
 
     async def set_name(self, name: str) -> None:
         """The receiver's name on the network (stored in its flash). A changed name makes the board broadcast an
@@ -380,6 +414,34 @@ class LocalMeshSerialSource(CaptureSource):
             self._message_keys.add(key)
             self.messages.append({**asdict(m), "received": now,
                                   "time": m.time if m.time >= PLAUSIBLE_TIME else None})
+        # Mirror into the core Messages page's shared store too (protocol="localmesh"), so LocalMesh
+        # conversations show up there alongside Reticulum/Meshtastic/MeshCore -- same deduplicate-
+        # once reasoning as self.messages above, just a second destination for the same event. This
+        # runs on the background reader thread (_handle()'s caller), not the event loop -- same
+        # thread-marshaling this file already does for RX_LOG's own _enqueue() a few lines up.
+        if self._loop is not None and self.message_repo is not None:
+            direct = m.channel == p.CHANNEL_DIRECT
+            node_id = f"localmesh:{m.member}" if direct else f"broadcast:localmesh:{m.channel}"
+            name = (self.adverts.get(m.member) or {}).get("name") or p.member_label(m.member)
+            self._loop.call_soon_threadsafe(
+                self._schedule_save_received, m.text, node_id, name, m.channel if not direct else 0, m.rssi, m.snr)
+
+    def _schedule_save_received(self, text, node_id, node_name, channel, rssi, snr) -> None:
+        """call_soon_threadsafe can only schedule a plain callback, not await a coroutine directly --
+        this is that callback, run on the event loop, whose only job is to hand the actual async
+        repo write off to the loop as its own task."""
+        asyncio.ensure_future(self._save_received_async(text, node_id, node_name, channel, rssi, snr))
+
+    async def _save_received_async(self, text, node_id, node_name, channel, rssi, snr) -> None:
+        if self.message_repo is None:
+            return
+        try:
+            await self.message_repo.save_received(
+                text=text, node_id=node_id, node_name=node_name, protocol="localmesh",
+                channel=channel, rssi=rssi, snr=snr,
+            )
+        except Exception:
+            logger.debug("%s: could not mirror a message into the core Messages store", self.name, exc_info=True)
 
     def _enqueue(self, payload: bytes, rssi: int, snr: float) -> None:
         try:

@@ -120,7 +120,7 @@
       "id": "localmesh",
       "kind": "app",
       "path": "apps/localmesh",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "meshpoint_api": 1,
       "provides": [
         "capture",

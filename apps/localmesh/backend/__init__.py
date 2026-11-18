@@ -28,6 +28,19 @@ def register(reg) -> None:
         )
 
     def wire(sources, pipeline) -> None:
+        # Same shared core message store Reticulum's own plugin writes into
+        # (see ~/Software/meshpoint-plugins/apps/reticulum/backend/__init__.py's
+        # own MessageRepository(context.pipeline.database) construction) --
+        # lets LocalMesh conversations show up in the core Messages page
+        # alongside Reticulum/Meshtastic/MeshCore, for free, via the
+        # already-generic GET /api/messages/conversations. build() runs
+        # before pipeline exists, so this can't be constructed there --
+        # every source gets the one shared instance here instead.
+        from src.storage.message_repository import MessageRepository
+
+        message_repo = MessageRepository(pipeline.database)
+        for s in sources:
+            s.message_repo = message_repo
         routes.init_routes(sources)
         send_routes.init_routes(sources)
 

@@ -19,7 +19,10 @@ list, neighbours). It transmits only from the Send tab, by an admin, within the 
     receiver itself is marked "this Meshpoint".
   - **Messages:** channel messages the receiver has the key for, and direct messages to the receiver. At connect the
     plugin fetches the board's last 32 messages, so they survive a Meshpoint restart. The time is the board's when its
-    clock is set, otherwise when Meshpoint received the message.
+    clock is set, otherwise when Meshpoint received the message. Every message (sent or received) is also mirrored
+    into the core Messages page, next to Meshtastic/MeshCore/Reticulum conversations, filterable by the LM pill --
+    direct messages group under `localmesh:<member>`, channel messages under `broadcast:localmesh:<channel>`. Replying
+    from there posts straight back through this plugin's own `/api/localmesh/send`.
   - **Activity:** every packet heard, newest first: type, sender, counter, hops left, path, signal and the receiver's
     decision (green passed on or delivered, amber dropped as normal mesh traffic, red refused).
   - **Send** (admin): a message to a channel the receiver has the key for, or a direct message to a member (also from
