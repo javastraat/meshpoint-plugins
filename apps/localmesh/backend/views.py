@@ -2,6 +2,9 @@
 
 Pure functions over LocalMeshSerialSource.page_data() copies (one dict per receiver, plus its label), so they are
 tested without a board or FastAPI. Newest first everywhere.
+
+The one piece of actual module state touched is state.channel_name() -- a simple dict lookup with a safe "" default
+even before state.init() ever runs (module-level {}), so it doesn't disturb that test-without-a-board property.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ import re
 from typing import Any, Iterable
 
 from . import protocol as p
+from . import state
 
 Receivers = Iterable[tuple[str, dict[str, Any]]]   # (label, page_data())
 
@@ -21,6 +25,11 @@ def _is_member(member: int) -> bool:
 
 # the app puts the sender's name in front of a channel message: "Einstein: I am OK"
 _NAME_PREFIX = re.compile(r"^([^:\n]{1,32}): ")
+
+# some apps share a position as plain chat text rather than (or in addition to) an ADVERT_SET -- "📍 52.37018,4.85858",
+# after the name prefix above is stripped off. Anchored to the whole message so a stray pin emoji inside an
+# unrelated chat line doesn't get mistaken for a location share.
+_LOCATION = re.compile(r"^📍\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
 
 
 def _names(receivers: list) -> dict[int, str]:
@@ -44,6 +53,7 @@ def members(receivers: Receivers) -> list[dict]:
     receivers = list(receivers)
     names = _names(receivers)
     out: dict[int, dict] = {}
+    pos_time: dict[int, int] = {}   # member -> time of the freshest position seen, advert or text pin alike
 
     def entry(member: int) -> dict:
         return out.setdefault(member, {
@@ -51,6 +61,11 @@ def members(receivers: Receivers) -> list[dict]:
             "listed": False, "own": False, "own_receiver": None, "count": 0, "last_heard": None, "hops": None, "rssi": None, "snr": None, "via": None,
             "type": None, "receivers": [],
         })
+
+    def set_position(member: int, lat: float, lon: float, t: int) -> None:
+        if pos_time.get(member) is None or t >= pos_time[member]:
+            entry(member)["lat"], entry(member)["lon"] = lat, lon
+            pos_time[member] = t
 
     for label, d in receivers:
         for member, m in d["members"].items():
@@ -65,9 +80,18 @@ def members(receivers: Receivers) -> list[dict]:
             if a.get("name"):
                 e["name"] = a["name"]
             if a.get("lat") is not None:
-                e["lat"], e["lon"] = a["lat"], a["lon"]
+                set_position(member, a["lat"], a["lon"], a["heard"])
             if e["last_heard"] is None or a["heard"] > e["last_heard"]:
                 e.update(last_heard=a["heard"], hops=a["hops"], rssi=a["rssi"], via=a["via"], type="advert")
+        for m in d["messages"]:   # a position shared as plain chat text, e.g. "Einstein Tag: 📍 52.37018,4.85858"
+            member = m["member"]
+            if not _is_member(member):
+                continue
+            text = m["text"]
+            prefix = _NAME_PREFIX.match(text)
+            found = _LOCATION.match(text[prefix.end():] if prefix else text)
+            if found:
+                set_position(member, float(found.group(1)), float(found.group(2)), m["time"] or m["received"])
         for member, h in d["heard"].items():
             if not _is_member(member):
                 continue
@@ -111,7 +135,8 @@ def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
             out.append({
                 **m, "text": text, "receiver": label, "direct": direct, "sender": sender,
                 "channel_name": f"direct to {label or 'receiver'}" if direct
-                else d["channels"].get(m["channel"]) or f"channel {m['channel']}",
+                else (state.channel_name(m["channel"]) or d["channels"].get(m["channel"])
+                      or f"channel {m['channel']}"),
                 "sort_time": m["time"] or m["received"],
             })
         for x in d.get("sent", []):   # what the Send tab sent through this receiver
@@ -122,7 +147,8 @@ def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
                 "text": x["text"], "receiver": label, "direct": x["direct"], "outgoing": True, "status": x["status"],
                 "airtime_ms": x["airtime_ms"], "to": to, "sender": d.get("net_name") or f"Meshpoint ({label or 'receiver'})",
                 "channel_name": (f"direct to {names.get(to) or to}" if x["direct"]
-                                 else d["channels"].get(x["channel"]) or f"channel {x['channel']}"),
+                                 else (state.channel_name(x["channel"]) or d["channels"].get(x["channel"])
+                                       or f"channel {x['channel']}")),
                 "sort_time": x["time"],
             })
     out.sort(key=lambda m: -m["sort_time"])

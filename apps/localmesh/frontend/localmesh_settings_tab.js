@@ -10,6 +10,7 @@
 
 class LocalMeshSettingsTab {
     _MAX_DEVICES = 4;
+    _MAX_CHANNEL = 39;   // 0..39 -- up to 40 channels, matches settings_routes.py's own MAX_CHANNEL
 
     constructor(el) {
         this._el = el;
@@ -51,6 +52,28 @@ class LocalMeshSettingsTab {
                     </div>
                     <p class="cfg-status" data-lm-status aria-live="polite"></p>
                 </article>
+                <article class="cfg-card">
+                    <header class="cfg-card__head">
+                        <h3 class="cfg-card__title">Channel names</h3>
+                        <p class="cfg-card__hint">
+                            A receiver often never reports a name for a channel slot, so messages on it just show
+                            "channel N". Name the ones you use (up to ${this._MAX_CHANNEL + 1}, numbered 0-${this._MAX_CHANNEL})
+                            -- this overrides whatever the receiver itself reports, takes effect immediately, no
+                            restart needed. Rows for channels the receiver has already reported are pre-filled below;
+                            use "+ Add channel" for one it hasn't heard yet.
+                        </p>
+                    </header>
+                    <div class="cfg-companions" data-lm-channels></div>
+                    <div class="cfg-companions__add-row">
+                        <button class="terminal-button" type="button" data-lm-add-channel>+ Add channel</button>
+                    </div>
+                    <div class="cfg-card__actions">
+                        <button class="terminal-button terminal-button--primary" type="button" data-lm-save-channels>
+                            Save channel names
+                        </button>
+                    </div>
+                    <p class="cfg-status" data-lm-channels-status aria-live="polite"></p>
+                </article>
             </div>
         `;
         this._devicesEl = this._el.querySelector('[data-lm-devices]');
@@ -58,16 +81,129 @@ class LocalMeshSettingsTab {
         this._addBtn.addEventListener('click', () => this._addRow());
         this._el.querySelector('[data-lm-save]').addEventListener('click', () => this._save());
         this._el.querySelector('[data-lm-rescan]').addEventListener('click', (e) => this._rescan(e.currentTarget));
+
+        this._channelsEl = this._el.querySelector('[data-lm-channels]');
+        this._el.querySelector('[data-lm-add-channel]').addEventListener('click', () => this._addChannelRow());
+        this._el.querySelector('[data-lm-save-channels]').addEventListener('click', () => this._saveChannelNames());
     }
 
     async _load() {
-        const settings = await this._request('GET', '/api/localmesh/settings');
-        if (!settings) return;
-        this._devicesEl.innerHTML = '';
-        const devices = Array.isArray(settings.devices) && settings.devices.length
-            ? settings.devices : [{ label: '', serial_port: '' }];
-        devices.forEach((d) => this._addRow(d));
-        await this._refreshPorts();
+        const [settings, status] = await Promise.all([
+            this._request('GET', '/api/localmesh/settings'),
+            this._request('GET', '/api/localmesh/status'),
+        ]);
+        if (settings) {
+            this._devicesEl.innerHTML = '';
+            const devices = Array.isArray(settings.devices) && settings.devices.length
+                ? settings.devices : [{ label: '', serial_port: '' }];
+            devices.forEach((d) => this._addRow(d));
+            await this._refreshPorts();
+            this._loadChannelNames(settings.channel_names || {}, status || []);
+        }
+    }
+
+    /** Pre-fills one row per channel the receiver(s) have actually reported (GET /api/localmesh/status's own
+     * per-receiver `channels` map, same source the main page's Receiver tab reads), union'd with whatever already
+     * has a saved override -- so a channel with a name saved but not currently reported (receiver offline, or
+     * just hasn't re-sent CHANNELS_GET yet) doesn't silently lose its row. Sorted by channel number. */
+    _loadChannelNames(channelNames, statusList) {
+        this._channelsEl.innerHTML = '';
+        const reported = new Map();   // channel -> receiver-reported name (empty string if none)
+        (Array.isArray(statusList) ? statusList : []).forEach((s) => {
+            Object.entries(s.channels || {}).forEach(([ch, name]) => {
+                if (!reported.has(Number(ch))) reported.set(Number(ch), name || '');
+            });
+        });
+        const channels = new Set([...Object.keys(channelNames).map(Number), ...reported.keys()]);
+        if (!channels.size) {
+            this._addChannelRow();   // nothing known yet -- one empty row to get started
+            return;
+        }
+        [...channels].sort((a, b) => a - b).forEach((ch) => {
+            this._addChannelRow({ channel: ch, name: channelNames[ch] ?? channelNames[String(ch)] ?? '',
+                                  reportedName: reported.get(ch) || '' });
+        });
+    }
+
+    _addChannelRow(data = {}) {
+        if (this._channelsEl.children.length > this._MAX_CHANNEL) return;   // at most 40 rows at once -- plenty of slack to actually use all 0-39
+        const div = document.createElement('div');
+        div.className = 'cfg-companion';
+        const hint = data.reportedName ? `Receiver reports: "${this._esc(data.reportedName)}"` : 'Not reported by any receiver yet';
+        div.innerHTML = `
+            <div class="cfg-companion__header">
+                <label class="cfg-field" style="flex:0 0 90px">
+                    <span class="cfg-field__label">Channel</span>
+                    <input class="cfg-field__input" type="number" min="0" max="${this._MAX_CHANNEL}" step="1"
+                           value="${data.channel ?? ''}" data-lm-channel-num>
+                </label>
+                <label class="cfg-companion__label-wrap">
+                    <span class="cfg-field__label">Name</span>
+                    <input class="cfg-field__input" type="text" maxlength="32"
+                           placeholder="e.g. Algemeen" value="${this._esc(data.name || '')}" data-lm-channel-name>
+                </label>
+                <button class="cfg-companion__remove terminal-button terminal-button--danger"
+                        type="button" title="Remove this override">✕</button>
+            </div>
+            <span class="cfg-field__hint" data-lm-channel-hint>${hint}</span>
+        `;
+        div.querySelector('.cfg-companion__remove').addEventListener('click', () => div.remove());
+        this._channelsEl.appendChild(div);
+    }
+
+    /** Both save buttons PUT the *whole* settings object (devices + channel_names) -- omitting either one would
+     * silently wipe it server-side (settings_routes.py's update replaces, doesn't merge), so every save reads
+     * both cards' current DOM state regardless of which button was clicked. Returns null (and leaves the given
+     * status element showing the problem) if a channel row doesn't parse. */
+    _collectDevices() {
+        return [...this._devicesEl.querySelectorAll('.cfg-companion')]
+            .map((div) => ({
+                label: div.querySelector('[data-lm-label]').value.trim().toLowerCase(),
+                serial_port: div.querySelector('[data-lm-port]').value.trim(),
+            }))
+            .filter((d) => d.label || d.serial_port);   // an untouched empty row is not a receiver
+    }
+
+    _collectChannelNames(statusEl) {
+        const channel_names = {};
+        let bad = null;
+        this._channelsEl.querySelectorAll('.cfg-companion').forEach((div) => {
+            const raw = div.querySelector('[data-lm-channel-num]').value.trim();
+            const name = div.querySelector('[data-lm-channel-name]').value.trim();
+            if (!raw && !name) return;   // an untouched empty row
+            const ch = parseInt(raw, 10);
+            if (!raw || Number.isNaN(ch) || ch < 0 || ch > this._MAX_CHANNEL) {
+                bad = `channel number must be 0-${this._MAX_CHANNEL}`;
+                return;
+            }
+            if (name) channel_names[ch] = name;   // a row with a number but no name just means "no override" -- drop it
+        });
+        if (bad) {
+            statusEl.dataset.kind = 'error';
+            statusEl.textContent = bad;
+            return null;
+        }
+        return channel_names;
+    }
+
+    async _saveChannelNames() {
+        const status = this._el.querySelector('[data-lm-channels-status]');
+        status.dataset.kind = 'pending';
+        status.textContent = 'Saving…';
+        const channel_names = this._collectChannelNames(status);
+        if (channel_names === null) return;
+        const result = await this._request('PUT', '/api/localmesh/settings',
+            { devices: this._collectDevices(), channel_names });
+        if (result) {
+            status.dataset.kind = 'success';
+            status.textContent = result.restart_required
+                ? 'Saved. Restart the service from Settings → System to apply the receiver changes too.'
+                : 'Saved.';
+            await this._load();
+        } else {
+            status.dataset.kind = 'error';
+            status.textContent = 'Save failed.';
+        }
     }
 
     _addRow(data = {}) {
@@ -120,16 +256,20 @@ class LocalMeshSettingsTab {
         const status = this._el.querySelector('[data-lm-status]');
         status.dataset.kind = 'pending';
         status.textContent = 'Saving…';
-        const devices = [...this._devicesEl.querySelectorAll('.cfg-companion')]
-            .map((div) => ({
-                label: div.querySelector('[data-lm-label]').value.trim().toLowerCase(),
-                serial_port: div.querySelector('[data-lm-port]').value.trim(),
-            }))
-            .filter((d) => d.label || d.serial_port);   // an untouched empty row is not a receiver
-        const result = await this._request('PUT', '/api/localmesh/settings', { devices });
+        const channelStatus = this._el.querySelector('[data-lm-channels-status]');
+        const channel_names = this._collectChannelNames(channelStatus);
+        if (channel_names === null) {
+            status.dataset.kind = 'error';
+            status.textContent = 'Fix the channel names card below, then save again.';
+            return;
+        }
+        const result = await this._request('PUT', '/api/localmesh/settings',
+            { devices: this._collectDevices(), channel_names });
         if (result) {
             status.dataset.kind = 'success';
-            status.textContent = 'Saved. Restart the service from Settings → System to apply.';
+            status.textContent = result.restart_required
+                ? 'Saved. Restart the service from Settings → System to apply.'
+                : 'Saved.';
             await this._load();
         } else {
             status.dataset.kind = 'error';

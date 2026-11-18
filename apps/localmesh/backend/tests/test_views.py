@@ -47,6 +47,41 @@ class TestMembers(unittest.TestCase):
         out = views.members([("a", data(heard=h(2, 10.0, -90))), ("b", data(heard=h(3, 20.0, -60)))])
         self.assertEqual((out[0]["count"], out[0]["rssi"], out[0]["receivers"]), (5, -60, ["a", "b"]))
 
+    def test_text_pin_sets_position(self) -> None:
+        """A location shared as plain chat text ("Name: 📍 lat,lon") is treated the same as an advert position."""
+        base = data(messages=[msg(5, 1, "Einstein Tag: 📍 52.37018,4.85858", channel=1, received=100.0, time=100.0)])
+        out = views.members([("base", base)])
+        self.assertEqual((out[0]["lat"], out[0]["lon"]), (52.37018, 4.85858))
+
+    def test_text_pin_without_name_prefix(self) -> None:
+        base = data(messages=[msg(5, 1, "📍 1.0,2.0", channel=p.CHANNEL_DIRECT, received=100.0, time=100.0)])
+        out = views.members([("base", base)])
+        self.assertEqual((out[0]["lat"], out[0]["lon"]), (1.0, 2.0))
+
+    def test_text_pin_does_not_overwrite_a_newer_advert(self) -> None:
+        base = data(
+            adverts={5: {"member": 5, "name": "Einstein Tag", "lat": 10.0, "lon": 10.0, "hops": 1, "via": 0,
+                         "rssi": -10, "heard": 200.0}},
+            messages=[msg(5, 1, "📍 52.37018,4.85858", channel=1, received=100.0, time=100.0)],
+        )
+        out = views.members([("base", base)])
+        self.assertEqual((out[0]["lat"], out[0]["lon"]), (10.0, 10.0))
+
+    def test_text_pin_wins_over_an_older_advert(self) -> None:
+        base = data(
+            adverts={5: {"member": 5, "name": "Einstein Tag", "lat": 10.0, "lon": 10.0, "hops": 1, "via": 0,
+                         "rssi": -10, "heard": 50.0}},
+            messages=[msg(5, 1, "📍 52.37018,4.85858", channel=1, received=100.0, time=100.0)],
+        )
+        out = views.members([("base", base)])
+        self.assertEqual((out[0]["lat"], out[0]["lon"]), (52.37018, 4.85858))
+
+    def test_embedded_pin_emoji_is_not_mistaken_for_a_location(self) -> None:
+        base = data(messages=[msg(6, 1, "look at this 📍 thing", channel=1)],
+                    heard={6: {"count": 1, "last_heard": 100.0, "type": "channel", "hops": 1, "via": 0, "rssi": -1, "snr": 1.0}})
+        out = views.members([("base", base)])
+        self.assertIsNone(out[0]["lat"])
+
 
 class TestMessages(unittest.TestCase):
     def test_names_channels_order_and_dedup(self) -> None:

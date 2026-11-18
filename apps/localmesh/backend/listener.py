@@ -33,6 +33,7 @@ from src.models.packet import RawCapture
 from src.models.signal import SignalMetrics
 
 from . import protocol as p
+from . import state
 
 logger = logging.getLogger(__name__)
 
@@ -271,7 +272,12 @@ class LocalMeshSerialSource(CaptureSource):
             channel = 0
         else:
             node_id = f"broadcast:localmesh:{entry['channel']}"
-            name = self.channels.get(entry["channel"]) or f"channel {entry['channel']}"
+            # Meshpoint-side override (Settings tab) first, then whatever
+            # name the receiver itself reports for this channel slot, then
+            # the bare number -- same preference order as views.py's own
+            # messages()/channel_name field.
+            name = (state.channel_name(entry["channel"]) or self.channels.get(entry["channel"])
+                    or f"channel {entry['channel']}")
             channel = entry["channel"]
         try:
             await self.message_repo.save_sent(
