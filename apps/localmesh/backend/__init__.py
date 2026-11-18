@@ -38,9 +38,23 @@ def register(reg) -> None:
         # every source gets the one shared instance here instead.
         from src.storage.message_repository import MessageRepository
 
+        # The capture-source registration (add_capture_source, below) only
+        # hands wire() the pipeline, not a ServiceContext with its own
+        # ws_manager the way add_service() gives reticulum's plugin -- but
+        # ws_manager is a plain module-level singleton in src.api.server
+        # (`ws_manager = WebSocketManager()`), so it's just as reachable
+        # here via a direct import. Needed so a new/sent message can push
+        # a live "message_received"/"message_sent" WS event the same way
+        # core's own meshtastic/meshcore handler does (server.py's
+        # on_text_packet) -- without it, LocalMesh messages only showed up
+        # in the sidebar badge/notifier/open-thread after the next full
+        # page load, since nothing was pushing live.
+        from src.api.server import ws_manager
+
         message_repo = MessageRepository(pipeline.database)
         for s in sources:
             s.message_repo = message_repo
+            s.ws_manager = ws_manager
         routes.init_routes(sources)
         send_routes.init_routes(sources)
 

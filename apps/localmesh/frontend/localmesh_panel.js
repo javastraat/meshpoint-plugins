@@ -624,6 +624,37 @@ class LocalMeshPanel {
     static esc(s) {
         return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
+
+    /** Jump to the core Messages page with a live LocalMesh direct-message
+     * thread open -- same cross-page mechanism reticulum_panel.js's own
+     * composeMessageTo() uses (messaging.js already fully supports
+     * protocol: 'localmesh' threads via its own _sendLocalMeshMessage(),
+     * now that listener.py mirrors every LocalMesh message into the same
+     * shared store Reticulum/Meshtastic/MeshCore write into). node_id
+     * matches the scheme listener.py's _save_sent/_save_received_async
+     * write under ("localmesh:<member>"), so the thread this opens is the
+     * exact same one those messages already landed in.
+     *
+     * One canonical place for this rather than three copies of the same
+     * navigation: used by this page's own Members-tab row drawer, by
+     * localmesh-dashboard's member drawer, and by messaging_chat.js's own
+     * "click a LocalMesh conversation header" drawer -- all three just
+     * call window.LocalMeshPanel.composeMessageTo(member, name). */
+    static composeMessageTo(member, name) {
+        if (window.sidebar && window.sidebar._router) {
+            window.sidebar._router.navigate('messages');
+        } else if (location.hash !== '#/messages') {
+            location.hash = '#/messages';
+        }
+        setTimeout(() => {
+            window.messagingPanel?.openConversation({
+                node_id: `localmesh:${member}`,
+                node_name: name || `Member ${member}`,
+                protocol: 'localmesh',
+                is_broadcast: false,
+            });
+        }, 100);
+    }
 }
 
 window.LocalMeshPanel = LocalMeshPanel;

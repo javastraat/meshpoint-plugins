@@ -32,16 +32,17 @@
  * rendered rather than reacting to a push event.
  *
  * Deliberately smaller in scope than reticulum-dashboard: LocalMesh has
- * no NomadNet-style page browsing and no app-wide Messages-page
- * integration (direct messages only exist inside the localmesh plugin's
- * own Send tab, reached via its own page-internal tab switch -- see
- * localmesh_panel.js's messageMember()/LocalMeshSendTab.presetTo(), which
- * only that page's own component instance can call), so this page's
- * member drawer is read-only: no "Send message" action, unlike
- * reticulum-dashboard's peer drawer. Reuses window.LocalMeshMemberDrawer
- * and window.LocalMeshPanel's static formatting helpers
- * (esc/signal/decisionOf/clock/ago/showModal) directly -- localmesh is a
- * hard `requires` of this plugin, so its scripts are always loaded
+ * no NomadNet-style page browsing. It does now have a working "Send
+ * message" action though, same as reticulum-dashboard's own peer drawer --
+ * LocalMesh messages mirror into the same shared core message store
+ * Reticulum/Meshtastic/MeshCore already write into (see the localmesh
+ * plugin's own listener.py), so window.LocalMeshPanel.composeMessageTo()
+ * can jump straight to a live thread on the core Messages page the same
+ * way reticulum_panel.js's composeMessageTo() always could. Reuses
+ * window.LocalMeshMemberDrawer and window.LocalMeshPanel's static
+ * formatting/navigation helpers (esc/signal/decisionOf/clock/ago/
+ * showModal/composeMessageTo) directly -- localmesh is a hard `requires`
+ * of this plugin, so its scripts are always loaded
  * alongside this page's own, same reuse localmesh_panel.js's own code
  * already is.
  */
@@ -193,7 +194,17 @@ class LocalMeshDashboard {
             const row = e.target.closest('[data-member]');
             if (!row) return;
             const m = this._members.find((x) => String(x.member) === row.dataset.member);
-            if (m && this._drawer) this._drawer.open(m, {});
+            if (!m || !this._drawer) return;
+            // Now wired, since LocalMesh messages flow through the same
+            // shared store Reticulum's do (see localmesh plugin's own
+            // listener.py) -- window.LocalMeshPanel.composeMessageTo() is
+            // the one canonical place that navigation lives, same helper
+            // the main LocalMesh page's own drawer and messaging_chat.js's
+            // drawer both call too.
+            const onMessage = (window.LocalMeshPanel && !m.blocked)
+                ? (member) => window.LocalMeshPanel.composeMessageTo(member, m.name)
+                : undefined;
+            this._drawer.open(m, onMessage ? { onMessage } : {});
         });
         this._q('#lmd-ticker-tbody')?.addEventListener('click', (e) => {
             const tr = e.target.closest('tr[data-lmd-key]');
@@ -337,13 +348,27 @@ class LocalMeshDashboard {
             return;
         }
         const q = this._memberSearchQuery;
+        // Unfiltered this list is the *entire roster* (listed + ever
+        // heard) -- fine at 42 members, not at 2000: most "listed"
+        // members on a real network were never actually heard by this
+        // specific receiver, and a glanceable live view has no business
+        // showing them at all (same reasoning as reticulum-dashboard's
+        // own Peers list, which is implicitly "peers heard/announced",
+        // not "every theoretically possible peer"). Default view: only
+        // members actually heard at least once, newest first (already
+        // the API's own sort). A search query reaches the full roster
+        // though -- if you know a name/number to look for, you shouldn't
+        // need it to have been heard recently to find it.
         const filtered = q
             ? this._members.filter((m) =>
                 (m.name || '').toLowerCase().includes(q) || String(m.member).includes(q))
-            : this._members;
+            : this._members.filter((m) => m.last_heard != null);
         if (!filtered.length) {
             list.innerHTML = '';
-            if (empty) { empty.style.display = ''; empty.textContent = 'No members match that search.'; }
+            if (empty) {
+                empty.style.display = '';
+                empty.textContent = q ? 'No members match that search.' : 'No members heard yet.';
+            }
             return;
         }
         if (empty) empty.style.display = 'none';

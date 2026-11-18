@@ -120,7 +120,7 @@
       "id": "localmesh",
       "kind": "app",
       "path": "apps/localmesh",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "meshpoint_api": 1,
       "provides": [
         "capture",
@@ -138,7 +138,7 @@
       "id": "localmesh-dashboard",
       "kind": "app",
       "path": "apps/localmesh-dashboard",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "meshpoint_api": 1,
       "provides": [
         "sidebar"

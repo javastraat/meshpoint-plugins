@@ -91,6 +91,7 @@ class LocalMeshSerialSource(CaptureSource):
         # that never sets it -- every write through it below is a best-effort
         # no-op without it, same "fails open" shape as the rest of this file.
         self.message_repo = None
+        self.ws_manager = None   # also set in wire() -- see that file's own comment on why
         # command queue: the reader thread sends; request() adds from the event loop (deque append is thread-safe)
         self._pending: collections.deque = collections.deque()
         self._futures: dict[int, asyncio.Future] = {}
@@ -280,6 +281,20 @@ class LocalMeshSerialSource(CaptureSource):
         except Exception:
             logger.debug("%s: could not mirror a sent message into the core Messages store",
                          self.name, exc_info=True)
+            return
+        # Matches the reticulum plugin's own lxmf_service.py send paths --
+        # the sender's own browser tab already renders optimistically from
+        # the HTTP response (messaging.js's _sendLocalMeshMessage()), this
+        # is for a *second* session watching the same conversation to see
+        # it live too.
+        if self.ws_manager is not None:
+            try:
+                await self.ws_manager.broadcast("message_sent", {
+                    "text": entry["text"], "node_id": node_id, "node_name": name,
+                    "protocol": "localmesh", "direction": "sent",
+                })
+            except Exception:
+                logger.debug("%s: could not broadcast message_sent", self.name, exc_info=True)
 
     async def set_name(self, name: str) -> None:
         """The receiver's name on the network (stored in its flash). A changed name makes the board broadcast an
@@ -436,12 +451,32 @@ class LocalMeshSerialSource(CaptureSource):
         if self.message_repo is None:
             return
         try:
-            await self.message_repo.save_received(
+            _row_id, is_duplicate = await self.message_repo.save_received(
                 text=text, node_id=node_id, node_name=node_name, protocol="localmesh",
                 channel=channel, rssi=rssi, snr=snr,
             )
         except Exception:
             logger.debug("%s: could not mirror a message into the core Messages store", self.name, exc_info=True)
+            return
+        if is_duplicate or self.ws_manager is None:
+            return
+        # The *generic* event name, not a localmesh-specific one -- this is
+        # what actually drives a live sidebar badge/notifier-sound/open-
+        # thread append. (The reticulum plugin broadcasts its own
+        # "reticulum_message" event instead, which turns out not to be
+        # wired into message_notifier.js or messages_unread_badge.js at
+        # all -- both only listen for "message_received" -- so Reticulum's
+        # own live notifications have the same gap this fixes for
+        # LocalMesh, just not fixed here too.)
+        try:
+            await self.ws_manager.broadcast("message_received", {
+                "text": text, "node_id": node_id, "node_name": node_name,
+                "protocol": "localmesh", "direction": "received",
+                **({"rssi": rssi} if rssi is not None else {}),
+                **({"snr": snr} if snr is not None else {}),
+            })
+        except Exception:
+            logger.debug("%s: could not broadcast message_received", self.name, exc_info=True)
 
     def _enqueue(self, payload: bytes, rssi: int, snr: float) -> None:
         try:

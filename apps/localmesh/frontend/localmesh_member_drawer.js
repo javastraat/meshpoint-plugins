@@ -93,10 +93,20 @@ class LocalMeshMemberDrawer {
         const P = window.LocalMeshPanel;
         const when = (t) => (t ? `${esc(new Date(t * 1000).toLocaleString())} (${P.ago(t)})` : null);
         const body = this._drawer.querySelector('.nd-body');
+        // Captured once, before clearing -- a bug here previously re-checked
+        // body.children.length *after* each section's own appendChild, so
+        // only the very first section ("Member") ever saw its real content
+        // (that call always ran against an empty body) and every section
+        // after it saw a non-empty body built up by its own siblings,
+        // making it read `open` (which was correctly empty on a fresh
+        // open) instead of its own intended default. Net effect: every
+        // section but Member opened collapsed on first show, every time,
+        // regardless of each one's own `expanded('X', true)` call below.
+        const hadContent = body.children.length > 0;
         const open = new Set([...body.querySelectorAll('.nd-section')]
             .filter((s) => s.querySelector('.nd-section__content').style.display !== 'none')
             .map((s) => s.dataset.title));   // keep what the user opened or closed across the re-render
-        const expanded = (title, dflt) => (body.children.length ? open.has(title) : dflt);
+        const expanded = (title, dflt) => (hadContent ? open.has(title) : dflt);
         body.innerHTML = '';
 
         const status = m.blocked ? '<span class="lw-badge lw-badge--undecrypted">blocked</span>'

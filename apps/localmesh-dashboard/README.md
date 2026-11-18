@@ -45,12 +45,12 @@ rows get prepended with a flash.
 
 ## Smaller in scope than reticulum-dashboard
 
-LocalMesh has no NomadNet-style page browsing and no app-wide Messages-page
-integration — direct messages only exist inside the localmesh plugin's own
-Send tab, reached through that page's own internal tab switch, which only
-that page's own component instance can drive. So this page's member drawer
-is read-only here: click a member for the same side panel the localmesh
-page's own Members tab opens, but no "Send message" action from this page.
+LocalMesh has no NomadNet-style page browsing. It does have a working
+"Send message" action on the member drawer, same as reticulum-dashboard's
+own peer drawer — LocalMesh messages now mirror into the same shared core
+message store Reticulum/Meshtastic/MeshCore write into (see the localmesh
+plugin's own `listener.py`), so clicking a member here can jump straight
+to a live thread on the core Messages page.
 
 ## Enable it
 
