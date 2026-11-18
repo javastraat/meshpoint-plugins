@@ -362,7 +362,8 @@ class LocalMeshDashboard {
         const filtered = q
             ? this._members.filter((m) =>
                 (m.name || '').toLowerCase().includes(q) || String(m.member).includes(q))
-            : this._members.filter((m) => m.last_heard != null);
+            // own's last_heard is never set (a receiver doesn't hear itself), so it needs its own clause here
+            : this._members.filter((m) => m.last_heard != null || m.own);
         if (!filtered.length) {
             list.innerHTML = '';
             if (empty) {
