@@ -155,6 +155,24 @@ def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
     return out[:limit]
 
 
+def channels(receivers: Receivers) -> list[dict]:
+    """Every channel number known from the Settings overrides, a receiver's own channel list, or a message
+    heard/sent, with the name the Messages tab shows. The core Messages page uses it for the conversation titles:
+    a message row only carries its sender, never the channel's name."""
+    receivers = list(receivers)
+    numbers: set[int] = set(state.channel_names())
+    for _label, d in receivers:
+        numbers.update(d["channels"])
+        numbers.update(m["channel"] for m in d["messages"])
+        numbers.update(x["channel"] for x in d.get("sent", []) if not x["direct"])
+    numbers.discard(p.CHANNEL_DIRECT)
+    out = []
+    for n in sorted(numbers):
+        name = state.channel_name(n) or next((d["channels"][n] for _l, d in receivers if d["channels"].get(n)), "")
+        out.append({"channel": n, "name": name or f"channel {n}", "node_id": f"broadcast:localmesh:{n}"})
+    return out
+
+
 def activity(receivers: Receivers, limit: int = 200) -> list[dict]:
     """The packets the receivers heard, with their decision; one row per receiver that heard it."""
     receivers = list(receivers)

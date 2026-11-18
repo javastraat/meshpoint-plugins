@@ -119,6 +119,13 @@ class TestMessages(unittest.TestCase):
         a["net_name"] = None
         self.assertEqual(views.messages([("base", a)])[0]["sender"], "Meshpoint (base)")
 
+    def test_channels_list_names_for_the_messages_page(self) -> None:
+        a = data(messages=[msg(4, 1, "x"), msg(5, 2, "dm", channel=p.CHANNEL_DIRECT), msg(4, 3, "y", channel=7)],
+                 channels={0: "Algemeen"})
+        out = views.channels([("base", a)])
+        self.assertEqual([(c["channel"], c["name"], c["node_id"]) for c in out],
+                         [(0, "Algemeen", "broadcast:localmesh:0"), (7, "channel 7", "broadcast:localmesh:7")])
+
     def test_advert_name_wins_over_text(self) -> None:
         a = data(messages=[msg(4, 1, "Bijnaam: hoi")], adverts={4: {"name": "Albert", "heard": 1.0}})
         self.assertEqual(views.messages([("", a)])[0]["sender"], "Albert")
