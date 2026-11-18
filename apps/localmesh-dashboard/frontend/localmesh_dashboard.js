@@ -423,7 +423,8 @@ class LocalMeshDashboard {
         // showing them at all (same reasoning as reticulum-dashboard's
         // own Peers list, which is implicitly "peers heard/announced",
         // not "every theoretically possible peer"). Default view: only
-        // members actually heard at least once, newest first (already
+        // members heard at least once or with a known name (the board
+        // remembers names across restarts), newest first (already
         // the API's own sort). A search query reaches the full roster
         // though -- if you know a name/number to look for, you shouldn't
         // need it to have been heard recently to find it.
@@ -431,7 +432,7 @@ class LocalMeshDashboard {
             ? this._members.filter((m) =>
                 (m.name || '').toLowerCase().includes(q) || String(m.member).includes(q))
             // own's last_heard is never set (a receiver doesn't hear itself), so it needs its own clause here
-            : this._members.filter((m) => m.last_heard != null || m.own);
+            : this._members.filter((m) => m.last_heard != null || m.own || m.name);
         if (!filtered.length) {
             list.innerHTML = '';
             if (empty) {

@@ -45,7 +45,8 @@ MEMBERS_EVERY_S = 15 * 60
 PLAUSIBLE_TIME = 1_600_000_000   # a board without a set clock reports small numbers
 
 # sequence number per command, so a reply is recognised by its number alone
-SEQ_HELLO, SEQ_STATUS, SEQ_CHANNELS, SEQ_MESSAGES, SEQ_MEMBERS, SEQ_NEIGHBORS, SEQ_NAMES, SEQ_REPEATERS = 1, 2, 3, 4, 5, 6, 7, 8
+SEQ_HELLO, SEQ_STATUS, SEQ_CHANNELS, SEQ_MESSAGES, SEQ_MEMBERS, SEQ_NEIGHBORS, SEQ_NAMES, SEQ_REPEATERS, SEQ_TIME = (
+    1, 2, 3, 4, 5, 6, 7, 8, 9)
 SEQ_REQUEST_FIRST = 16   # 16..255: commands someone awaits (request())
 
 
@@ -193,6 +194,10 @@ class LocalMeshSerialSource(CaptureSource):
                 self._connected = True
                 self._pending.clear(); self._waiting = None
                 self._queue_cmd(SEQ_HELLO, p.hello(seq=SEQ_HELLO))
+                # A board without a set clock stamps no time on its messages, so a restart of Meshpoint could not tell
+                # when a member was last heard. The app does the same after HELLO; skipped if this host has no clock.
+                if time.time() >= PLAUSIBLE_TIME:
+                    self._queue_cmd(SEQ_TIME, p.time_set(SEQ_TIME, int(time.time())))
                 self._queue_cmd(SEQ_STATUS, p.command(p.STATUS, SEQ_STATUS))
                 self._queue_cmd(SEQ_CHANNELS, p.command(p.CHANNELS_GET, SEQ_CHANNELS))
                 self._queue_cmd(SEQ_MESSAGES, p.messages_get(SEQ_MESSAGES, 0))   # the board keeps its last 32

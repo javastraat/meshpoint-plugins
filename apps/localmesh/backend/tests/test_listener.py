@@ -121,6 +121,10 @@ class TestListener(unittest.TestCase):
         self.src._tick(1.0)
         self.assertEqual(self.port.frames[-1], bytes([p.REPEATERS_GET, l.SEQ_REPEATERS, 0]))
 
+    def test_time_set_frame(self) -> None:
+        frames, _ = p.SlipDecoder().feed(p.time_set(l.SEQ_TIME, 1_762_862_400))
+        self.assertEqual(frames, [bytes([p.TIME_SET, l.SEQ_TIME]) + struct.pack("<I", 1_762_862_400)])
+
     def test_messages_are_kept_once(self) -> None:
         self.src._handle(message(0, 4, 12, "hallo", t=1762862400))
         self.src._handle(message(0, 4, 12, "hallo", t=1762862400))   # fetched again after a reconnect

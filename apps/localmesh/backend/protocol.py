@@ -16,6 +16,7 @@ PROTOCOL_VERSION = 1
 
 # commands (app -> receiver) this plugin sends; read-only ones
 HELLO, INFO, MEMBERS_GET, CHANNELS_GET, MESSAGES_GET, STATUS, NEIGHBORS_GET = 0x01, 0x02, 0x15, 0x18, 0x21, 0x30, 0x36
+TIME_SET = 0x03   # sets the board's clock (the app does this right after HELLO)
 NAMES_GET, REPEATERS_GET = 0x19, 0x37   # names the board remembers per member; repeaters from the server's certificates
 # and the ones that transmit (the Send tab, admin only)
 ADVERT_SET, SEND, SEND_DIRECT, ADVERT_SEND = 0x16, 0x20, 0x22, 0x23
@@ -114,6 +115,11 @@ def hello(seq: int, app_name: str = "Meshpoint LocalMesh plugin") -> bytes:
 def command(type_: int, seq: int, payload: bytes = b"") -> bytes:
     """One SLIP-framed command, ready to write to the port."""
     return slip_encode(frame(type_, seq, payload))
+
+
+def time_set(seq: int, unix_time: int) -> bytes:
+    """The board has no clock of its own after a power-up: the app sets it, and messages carry its time from then on."""
+    return command(TIME_SET, seq, struct.pack("<I", unix_time))
 
 
 def messages_get(seq: int, from_index: int = 0) -> bytes:
