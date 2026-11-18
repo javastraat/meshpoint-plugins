@@ -34,6 +34,7 @@ from src.models.signal import SignalMetrics
 
 from . import protocol as p
 from . import state
+from . import views
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ class LocalMeshSerialSource(CaptureSource):
         self.members: dict[int, dict] = {}       # the receiver's member list (MEMBERS_GET)
         self._members_next: dict[int, dict] = {}
         self.channels: dict[int, str] = {}
+        self._text_names: dict[int, str] = {}   # member -> the name last seen in front of its channel messages
         self.neighbors: list[dict] = []
         self.sent: collections.deque = collections.deque(maxlen=100)   # what the Send tab sent, with its status
         # The name on the network. Firmware 13-11 reports it in INFO (the board is the truth then, name_from_board); with
@@ -444,12 +446,20 @@ class LocalMeshSerialSource(CaptureSource):
             direct = m.channel == p.CHANNEL_DIRECT
             node_id = f"localmesh:{m.member}" if direct else f"broadcast:localmesh:{m.channel}"
             # The row's name is the sender: the Messages page shows it above each message. A channel's own title
-            # comes from GET /api/localmesh/channels instead (a stored row has no room for both).
-            name = (self.adverts.get(m.member) or {}).get("name") or p.member_label(m.member)
+            # comes from GET /api/localmesh/channels instead (a stored row has no room for both). Same order as the
+            # LocalMesh page: advert name, else the "Name: " the app puts in front of a channel message, else the number.
+            text = m.text
+            prefix, rest = views.name_prefix(text)
+            if prefix and not direct and 0 < m.member < p.REPEATER_MEMBER_BASE:
+                self._text_names[m.member] = prefix
+            name = (self.adverts.get(m.member) or {}).get("name") or self._text_names.get(m.member) \
+                or p.member_label(m.member)
+            if not direct and prefix == name:
+                text = rest   # the name is already shown above the message
             # The board's buffer comes back at every connect (see above); the core store only dedupes on packet_id.
             packet_id = f"localmesh:{m.member}:{m.channel}:{m.counter}"
             self._loop.call_soon_threadsafe(
-                self._schedule_save_received, m.text, node_id, name, m.channel if not direct else 0, m.rssi, m.snr,
+                self._schedule_save_received, text, node_id, name, m.channel if not direct else 0, m.rssi, m.snr,
                 packet_id)
 
     def _schedule_save_received(self, text, node_id, node_name, channel, rssi, snr, packet_id) -> None:

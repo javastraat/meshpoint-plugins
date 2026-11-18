@@ -26,6 +26,12 @@ def _is_member(member: int) -> bool:
 # the app puts the sender's name in front of a channel message: "Einstein: I am OK"
 _NAME_PREFIX = re.compile(r"^([^:\n]{1,32}): ")
 
+
+def name_prefix(text: str) -> tuple[str, str]:
+    """("Einstein", "hoi") for "Einstein: hoi"; ("", text) when there is no name in front."""
+    found = _NAME_PREFIX.match(text)
+    return (found.group(1).strip(), text[found.end():]) if found else ("", text)
+
 # some apps share a position as plain chat text rather than (or in addition to) an ADVERT_SET -- "📍 52.37018,4.85858",
 # after the name prefix above is stripped off. Anchored to the whole message so a stray pin emoji inside an
 # unrelated chat line doesn't get mistaken for a location share.

@@ -115,6 +115,21 @@ class TestListener(unittest.TestCase):
         self.src._handle(message(1, 5, 3, "dm", channel=p.CHANNEL_DIRECT))
         self.assertEqual([c[-1] for c in loop.calls], ["localmesh:4:0:12", f"localmesh:5:{p.CHANNEL_DIRECT}:3"])
 
+    def test_mirrored_sender_name_comes_from_the_text_prefix(self) -> None:
+        class Loop:
+            def __init__(self) -> None: self.calls = []
+            def call_soon_threadsafe(self, fn, *args): self.calls.append(args)
+        loop = Loop()
+        self.src._loop, self.src.message_repo = loop, object()
+        self.src._handle(message(0, 4, 1, "Einstein Tag: nou zeg"))
+        self.src._handle(message(1, 4, 2, "dm without a name", channel=p.CHANNEL_DIRECT))
+        self.src._handle(message(2, 7, 3, "no name here"))
+        self.src.adverts[8] = {"name": "Bob"}
+        self.src._handle(message(3, 8, 4, "Bijnaam: hoi"))
+        got = [(c[0], c[2]) for c in loop.calls]   # (text, node_name)
+        self.assertEqual(got, [("nou zeg", "Einstein Tag"), ("dm without a name", "Einstein Tag"),
+                               ("no name here", "7"), ("Bijnaam: hoi", "Bob")])
+
     def test_channels_and_channel_events(self) -> None:
         self.src._handle(reply(l.SEQ_CHANNELS, bytes([1, 0, 0]) + s("Algemeen")))
         self.src._handle(bytes([p.CHANNEL_EVENT, 0, 2, 0]) + s("Noodnet"))
