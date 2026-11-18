@@ -137,7 +137,9 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
     """The repeaters: those in the server's certificates (name, region, revoked), plus any heard that are not, with
     when they were last heard (their own status and announce packets) and whether a receiver hears them directly.
     The receiver's neighbour table lists every node heard directly, companions too (it is just the previous hop of a
-    packet), so a neighbour only adds its signal to a repeater known from one of the other two."""
+    packet). A neighbour that is neither in the certificates nor heard as a repeater is still shown, unless the packets
+    heard through it all came from one member: that is a companion talking to us directly, not a repeater passing
+    traffic on."""
     receivers = list(receivers)
     now = time.time() if now is None else now
     out: dict[int, dict] = {}
@@ -166,11 +168,20 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             if label not in e["receivers"]:
                 e["receivers"].append(label)
             heard_at(e, h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"], type=h["type"])
+    carried: dict[int, set] = {}   # node -> the members whose packets were heard coming from that node
+    for _label, d in receivers:
+        for a in d["activity"]:
+            if a["via"]:
+                carried.setdefault(a["via"], set()).add(a["member"])
+        for m in d["messages"]:
+            if m["via"]:
+                carried.setdefault(m["via"], set()).add(m["member"])
     for label, d in receivers:
         for n in d.get("neighbors", []):
-            e = out.get(n["node"])
-            if e is None:
-                continue
+            who = carried.get(n["node"], set())
+            if n["node"] not in out and len(who) == 1 and next(iter(who)) < p.REPEATER_MEMBER_BASE:
+                continue   # a companion
+            e = entry(n["node"])
             e["direct"] = True
             if label not in e["receivers"]:
                 e["receivers"].append(label)
