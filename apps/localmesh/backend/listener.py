@@ -446,22 +446,25 @@ class LocalMeshSerialSource(CaptureSource):
             # The row's name is the sender: the Messages page shows it above each message. A channel's own title
             # comes from GET /api/localmesh/channels instead (a stored row has no room for both).
             name = (self.adverts.get(m.member) or {}).get("name") or p.member_label(m.member)
+            # The board's buffer comes back at every connect (see above); the core store only dedupes on packet_id.
+            packet_id = f"localmesh:{m.member}:{m.channel}:{m.counter}"
             self._loop.call_soon_threadsafe(
-                self._schedule_save_received, m.text, node_id, name, m.channel if not direct else 0, m.rssi, m.snr)
+                self._schedule_save_received, m.text, node_id, name, m.channel if not direct else 0, m.rssi, m.snr,
+                packet_id)
 
-    def _schedule_save_received(self, text, node_id, node_name, channel, rssi, snr) -> None:
+    def _schedule_save_received(self, text, node_id, node_name, channel, rssi, snr, packet_id) -> None:
         """call_soon_threadsafe can only schedule a plain callback, not await a coroutine directly --
         this is that callback, run on the event loop, whose only job is to hand the actual async
         repo write off to the loop as its own task."""
-        asyncio.ensure_future(self._save_received_async(text, node_id, node_name, channel, rssi, snr))
+        asyncio.ensure_future(self._save_received_async(text, node_id, node_name, channel, rssi, snr, packet_id))
 
-    async def _save_received_async(self, text, node_id, node_name, channel, rssi, snr) -> None:
+    async def _save_received_async(self, text, node_id, node_name, channel, rssi, snr, packet_id) -> None:
         if self.message_repo is None:
             return
         try:
             _row_id, is_duplicate = await self.message_repo.save_received(
                 text=text, node_id=node_id, node_name=node_name, protocol="localmesh",
-                channel=channel, rssi=rssi, snr=snr,
+                channel=channel, rssi=rssi, snr=snr, packet_id=packet_id,
             )
         except Exception:
             logger.debug("%s: could not mirror a message into the core Messages store", self.name, exc_info=True)

@@ -104,6 +104,17 @@ class TestListener(unittest.TestCase):
         self.assertEqual(msgs[0]["time"], 1762862400)
         self.assertIsNone(msgs[1]["time"])                            # board clock not set
 
+    def test_mirrored_messages_carry_a_stable_packet_id(self) -> None:
+        """The core store only dedupes on packet_id, and the board's buffer is fetched again after a restart."""
+        class Loop:
+            def __init__(self) -> None: self.calls = []
+            def call_soon_threadsafe(self, fn, *args): self.calls.append(args)
+        loop = Loop()
+        self.src._loop, self.src.message_repo = loop, object()
+        self.src._handle(message(0, 4, 12, "kanaal", channel=0))
+        self.src._handle(message(1, 5, 3, "dm", channel=p.CHANNEL_DIRECT))
+        self.assertEqual([c[-1] for c in loop.calls], ["localmesh:4:0:12", f"localmesh:5:{p.CHANNEL_DIRECT}:3"])
+
     def test_channels_and_channel_events(self) -> None:
         self.src._handle(reply(l.SEQ_CHANNELS, bytes([1, 0, 0]) + s("Algemeen")))
         self.src._handle(bytes([p.CHANNEL_EVENT, 0, 2, 0]) + s("Noodnet"))
