@@ -211,6 +211,12 @@ class LocalMeshDashboard {
         this._q('#lmd-map-expand-btn')?.addEventListener('click', () => this._toggleExpand());
 
         this._q('#lmd-members-list')?.addEventListener('click', (e) => {
+            const node = e.target.closest('[data-node]');
+            if (node && this._drawer) {
+                const r = this._repeaters.find((x) => String(x.node) === node.dataset.node);
+                if (r) this._drawer.openRepeater(r);
+                return;
+            }
             const row = e.target.closest('[data-member]');
             if (!row) return;
             const m = this._members.find((x) => String(x.member) === row.dataset.member);
@@ -396,7 +402,7 @@ class LocalMeshDashboard {
         const esc = P ? P.esc : (s) => String(s ?? '');
         const ago = P ? P.ago : () => '--';
         list.innerHTML = rows.slice(0, LMD_MEMBER_LIST_LIMIT).map((r) => `
-            <div class="lmd-member-row lmd-member-row--static" title="Repeater ${esc(r.node)}${r.region != null ? `, region ${esc(r.region)}` : ''}">
+            <div class="lmd-member-row" data-node="${esc(r.node)}" title="Repeater ${esc(r.node)}${r.region != null ? `, region ${esc(r.region)}` : ''}">
                 <span class="lmd-member-row__name">${esc(r.name || `Repeater ${r.node}`)}</span>
                 ${r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>' : ''}
                 ${r.direct ? '<span class="lw-badge lw-badge--join">direct</span>' : ''}

@@ -206,7 +206,8 @@ class LocalMeshPanel {
                 const tr = e.target.closest('tr[data-lm-row]');
                 if (!tr) return;
                 const r = this._shown[Number(tr.dataset.lmRow)];
-                if (tab === 'members' && this._drawer) {   // side panel, like nodes/peers
+                if (tab === 'repeaters' && this._drawer) this._drawer.openRepeater(r);   // same side panel
+                else if (tab === 'members' && this._drawer) {   // side panel, like nodes/peers
                     const own = this._devices.some((d) => d.info && d.info.member === r.member);   // no message to itself
                     this._drawer.open(r, this._sendTab && !own ? { onMessage: (m) => this.messageMember(m) } : {});
                 }

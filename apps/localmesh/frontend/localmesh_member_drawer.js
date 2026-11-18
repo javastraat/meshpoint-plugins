@@ -1,5 +1,5 @@
 /**
- * LocalMesh page: right-side panel for one Members-tab row.
+ * LocalMesh page: right-side panel for one Members-tab row (open) or Repeaters-tab row (openRepeater).
  *
  * Same look as the Meshtastic/MeshCore node drawer and the Reticulum peer drawer: it renders the core's own
  * node_drawer.css classes (nd-backdrop, nd-drawer, nd-header, nd-section, nd-row) with its own DOM, and never
@@ -20,6 +20,32 @@ class LocalMeshMemberDrawer {
      * @param {{onMessage?: function}} opts -- onMessage(member): a "Send direct message" button (admins)
      */
     open(m, opts = {}) {
+        const token = this._mount({
+            color: LocalMeshMemberDrawer.color(m.member), initials: (m.name || String(m.member)).slice(0, 2).toUpperCase(),
+            name: m.name || `Member ${m.member}`, idLine: `LocalMesh member ${m.member}`,
+            actions: opts.onMessage && !m.blocked ? `<div class="nd-actions">
+                <button class="nd-action-btn nd-action-btn--primary" type="button" data-lm-dm>Send direct message</button>
+            </div>` : '',
+        });
+        this._drawer.querySelector('[data-lm-dm]')?.addEventListener('click', () => opts.onMessage(m.member));
+        this._render(m, null, null);
+        this._fetchHistory(m, token);
+    }
+
+    /**
+     * @param {object} r -- one row of GET /api/localmesh/repeaters
+     */
+    openRepeater(r) {
+        const token = this._mount({
+            color: LocalMeshMemberDrawer.color(r.node), initials: (r.name || `R${r.node}`).slice(0, 2).toUpperCase(),
+            name: r.name || `Repeater ${r.node}`, idLine: `LocalMesh repeater ${r.node}`, actions: '',
+        });
+        this._renderRepeater(r, null);
+        this._fetchRepeaterHistory(r, token);
+    }
+
+    /** The shared chrome: backdrop, header and an empty body. Returns the token of this opening. */
+    _mount({ color, initials, name, idLine, actions }) {
         this.close();
         const token = ++this._token;
         const esc = LocalMeshMemberDrawer.esc;
@@ -31,26 +57,21 @@ class LocalMeshMemberDrawer {
         const drawer = document.createElement('div');
         drawer.className = 'nd-drawer';
         drawer.addEventListener('click', (e) => e.stopPropagation());
-        const name = m.name || `Member ${m.member}`;
-        const initials = (m.name || String(m.member)).slice(0, 2).toUpperCase();
         drawer.innerHTML = `
             <div class="nd-header">
                 <div class="nd-header__left">
-                    <div class="nd-avatar" style="background:${LocalMeshMemberDrawer.color(m.member)}">${esc(initials)}</div>
+                    <div class="nd-avatar" style="background:${color}">${esc(initials)}</div>
                     <div class="nd-header__info">
                         <div class="nd-header__name">${esc(name)}</div>
-                        <div class="nd-header__id">LocalMesh member ${m.member}</div>
+                        <div class="nd-header__id">${esc(idLine)}</div>
                     </div>
                 </div>
                 <button class="nd-close" title="Close">&times;</button>
             </div>
-            ${opts.onMessage && !m.blocked ? `<div class="nd-actions">
-                <button class="nd-action-btn nd-action-btn--primary" type="button" data-lm-dm>Send direct message</button>
-            </div>` : ''}
+            ${actions}
             <div class="nd-body"></div>
         `;
         drawer.querySelector('.nd-close').addEventListener('click', () => this.close());
-        drawer.querySelector('[data-lm-dm]')?.addEventListener('click', () => opts.onMessage(m.member));
 
         document.body.appendChild(backdrop);
         document.body.appendChild(drawer);
@@ -61,9 +82,7 @@ class LocalMeshMemberDrawer {
             backdrop.classList.add('nd-backdrop--visible');
             drawer.classList.add('nd-drawer--open');
         });
-
-        this._render(m, null, null);
-        this._fetchHistory(m, token);
+        return token;
     }
 
     close() {
@@ -85,6 +104,62 @@ class LocalMeshMemberDrawer {
         if (token !== this._token || !this._drawer) return;
         this._render(m, messages.filter((x) => x.member === m.member).slice(0, 10),
             activity.filter((x) => x.member === m.member).slice(0, 15));
+    }
+
+    async _fetchRepeaterHistory(r, token) {
+        let activity = [];
+        try {
+            const res = await fetch('/api/localmesh/activity?limit=300', { credentials: 'same-origin' });
+            if (res.ok) activity = await res.json();
+        } catch (_) { /* the drawer still shows what the list knew */ }
+        if (token !== this._token || !this._drawer) return;
+        this._renderRepeater(r, activity.filter((x) => x.member === r.member).slice(0, 15));
+    }
+
+    /** activity: null while loading. */
+    _renderRepeater(r, activity) {
+        const esc = LocalMeshMemberDrawer.esc;
+        const P = window.LocalMeshPanel;
+        const when = (t) => (t ? `${esc(new Date(t * 1000).toLocaleString())} (${P.ago(t)})` : null);
+        const body = this._drawer.querySelector('.nd-body');
+        const hadContent = body.children.length > 0;
+        const open = new Set([...body.querySelectorAll('.nd-section')]
+            .filter((s) => s.querySelector('.nd-section__content').style.display !== 'none')
+            .map((s) => s.dataset.title));
+        const expanded = (title, dflt) => (hadContent ? open.has(title) : dflt);
+        body.innerHTML = '';
+
+        const status = r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>'
+            : r.listed ? '<span class="lw-badge lw-badge--join">in the server certificates</span>'
+            : '<span class="lw-badge lw-badge--rejoin">not in the certificates</span>';
+        body.appendChild(LocalMeshMemberDrawer.section('Repeater', [
+            ['Name', esc(r.name)],
+            ['Node', String(r.node)],
+            ['Region', r.region == null ? null : String(r.region)],
+            ['Status', status],
+            ['Heard directly', r.direct ? 'yes (a neighbour of a receiver)' : 'no (through other repeaters)'],
+        ], expanded('Repeater', true)));
+
+        body.appendChild(LocalMeshMemberDrawer.section('Last heard', [
+            ['When', when(r.last_heard) || 'not heard since Meshpoint started'],
+            ['Packet type', esc(r.type)],
+            ['Packets', r.count ? String(r.count) : null],
+            ['Heard by', esc((r.receivers || []).join(', '))],
+        ], expanded('Last heard', true)));
+
+        body.appendChild(LocalMeshMemberDrawer.section('Signal', r.last_heard ? [
+            ['Hops left', r.hops == null ? null : `${r.hops} (counts down by one at every repeater)`],
+            ['Previous hop', r.via ? `node ${r.via}` : null],
+            ['RSSI', r.rssi == null ? null : `${r.rssi} dBm`],
+            ['SNR', r.snr == null ? null : `${r.snr} dB`],
+        ] : [], expanded('Signal', true)));
+
+        const loading = [['', '<span class="nd-loading">Loading…</span>']];
+        body.appendChild(LocalMeshMemberDrawer.section('Recent packets', activity === null ? loading
+            : activity.map((x) => [P.clock(x.time),
+                `${esc(x.type)} #${x.counter} · ${x.hops} hops left · `
+                + `<span class="lw-badge lw-badge--${LM_DECISION_BADGE[x.decision] || 'rejoin'}">${esc(x.decision.replace(/_/g, ' '))}</span>`]),
+        expanded('Recent packets', true)));
     }
 
     /** messages/activity: null while loading. */
