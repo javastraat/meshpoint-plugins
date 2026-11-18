@@ -25,6 +25,9 @@
 
 .lm-subtitle { margin-top: 16px; }
 
+/* Members | Repeaters switch under the tab bar */
+.lm-subtabs { padding: 10px 16px 0; }
+
 /* Topbar pill (13-11): its own colour, as the core does for Reticulum (.topbar-reticulum in topbar.css). Orange
    #FF6B35 is LocalMesh's brand colour (website/app logo gradient); the brand red is taken by "offline". */
 .topbar-localmesh {

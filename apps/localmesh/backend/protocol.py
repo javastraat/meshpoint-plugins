@@ -16,11 +16,12 @@ PROTOCOL_VERSION = 1
 
 # commands (app -> receiver) this plugin sends; read-only ones
 HELLO, INFO, MEMBERS_GET, CHANNELS_GET, MESSAGES_GET, STATUS, NEIGHBORS_GET = 0x01, 0x02, 0x15, 0x18, 0x21, 0x30, 0x36
+NAMES_GET, REPEATERS_GET = 0x19, 0x37   # names the board remembers per member; repeaters from the server's certificates
 # and the ones that transmit (the Send tab, admin only)
 ADVERT_SET, SEND, SEND_DIRECT, ADVERT_SEND = 0x16, 0x20, 0x22, 0x23
 # reply and events (receiver -> app)
-REPLY, MESSAGE, RX_LOG, STATUS_EVENT, DELIVERY, ADVERT, DELIVERY_FAILED, TRACE, CHANNEL_EVENT, TEXT = (
-    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x8F)
+REPLY, MESSAGE, RX_LOG, STATUS_EVENT, DELIVERY, ADVERT, DELIVERY_FAILED, TRACE, CHANNEL_EVENT, REPEATER_EVENT, TEXT = (
+    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8F)
 
 ROLES = ["repeater", "companion", "bridge", "observer"]
 # packet types over the air (firmware src/Packet.h, packet format v4)
@@ -121,6 +122,14 @@ def messages_get(seq: int, from_index: int = 0) -> bytes:
 
 def members_get(seq: int, from_index: int = 0) -> bytes:
     return command(MEMBERS_GET, seq, struct.pack("<H", from_index))
+
+
+def names_get(seq: int, from_index: int = 0) -> bytes:
+    return command(NAMES_GET, seq, struct.pack("<H", from_index))
+
+
+def repeaters_get(seq: int, from_index: int = 0) -> bytes:
+    return command(REPEATERS_GET, seq, bytes([from_index & 0xFF]))
 
 
 def channel_text_max(name: str) -> int:
@@ -320,6 +329,42 @@ def parse_members(p: bytes) -> tuple[int, list[MemberEntry]]:
     r = Reader(p)
     total = r.u16()
     return total, [MemberEntry(r.u32(), r.raw(32).hex(), r.u8(), r.u32()) for _ in range(r.u8())]
+
+
+def parse_names(p: bytes) -> tuple[int, dict[int, str]]:
+    """NAMES_GET reply: (total names on the board, this page of member -> last heard name). Firmware 14-11 and later."""
+    r = Reader(p)
+    total = r.u16()
+    out = {}
+    for _ in range(r.u8()):
+        member = r.u32()
+        out[member] = r.str()
+    return total, out
+
+
+@dataclass
+class RepeaterEntry:
+    node: int; region: int; flags: int; name: str
+
+    @property
+    def revoked(self) -> bool:
+        return bool(self.flags & 1)
+
+
+def parse_repeater_entry(r: Reader) -> RepeaterEntry:
+    return RepeaterEntry(r.u16(), r.u8(), r.u8(), r.str())
+
+
+def parse_repeaters(p: bytes) -> tuple[int, list[RepeaterEntry]]:
+    """REPEATERS_GET reply: (total repeaters on the board, this page). The names come from the server's certificates
+    (firmware 15-11 and later)."""
+    r = Reader(p)
+    total = r.u8()
+    return total, [parse_repeater_entry(r) for _ in range(r.u8())]
+
+
+def parse_repeater_event(p: bytes) -> RepeaterEntry:
+    return parse_repeater_entry(Reader(p))
 
 
 @dataclass

@@ -10,6 +10,7 @@ even before state.init() ever runs (module-level {}), so it doesn't disturb that
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Iterable
 
 from . import protocol as p
@@ -39,8 +40,13 @@ _LOCATION = re.compile(r"^📍\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
 
 
 def _names(receivers: list) -> dict[int, str]:
-    """Member -> name: from an advert, else from the "Name: " in front of their latest message."""
+    """Member -> name: from an advert, else from the "Name: " in front of their latest message, else what the board
+    itself remembers (NAMES_GET: also names heard before this Meshpoint started)."""
     names: dict[int, str] = {}
+    for _label, d in receivers:
+        for member, name in d.get("names", {}).items():
+            if name and _is_member(member):
+                names[member] = name
     for _label, d in receivers:
         for m in d["messages"]:
             found = _NAME_PREFIX.match(m["text"])
@@ -89,10 +95,18 @@ def members(receivers: Receivers) -> list[dict]:
                 set_position(member, a["lat"], a["lon"], a["heard"])
             if e["last_heard"] is None or a["heard"] > e["last_heard"]:
                 e.update(last_heard=a["heard"], hops=a["hops"], rssi=a["rssi"], via=a["via"], type="advert")
-        for m in d["messages"]:   # a position shared as plain chat text, e.g. "Einstein Tag: 📍 52.37018,4.85858"
+        for m in d["messages"]:
             member = m["member"]
             if not _is_member(member):
                 continue
+            # The board keeps its last 32 messages: a member's last heard time and radio details survive a restart of
+            # Meshpoint this way. Only with a real board time -- without a clock "received" would be the fetch time.
+            if m["time"]:
+                e = entry(member)
+                if e["last_heard"] is None or m["time"] > e["last_heard"]:
+                    e.update(last_heard=m["time"], hops=m["hops"], rssi=m["rssi"], snr=m["snr"], via=m["via"],
+                             type="direct" if m["channel"] == p.CHANNEL_DIRECT else "channel")
+            # a position shared as plain chat text, e.g. "Einstein Tag: 📍 52.37018,4.85858"
             text = m["text"]
             prefix = _NAME_PREFIX.match(text)
             found = _LOCATION.match(text[prefix.end():] if prefix else text)
@@ -117,6 +131,46 @@ def members(receivers: Receivers) -> list[dict]:
     for e in out.values():
         e["name"] = e["name"] or names.get(e["member"], "")
     return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["member"]))
+
+
+def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
+    """The repeaters: those in the server's certificates (name, region, revoked), plus any heard that are not, with
+    when they were last heard (their own status and announce packets) and whether a receiver hears them directly."""
+    receivers = list(receivers)
+    now = time.time() if now is None else now
+    out: dict[int, dict] = {}
+
+    def entry(node: int) -> dict:
+        return out.setdefault(node, {
+            "node": node, "member": p.REPEATER_MEMBER_BASE | node, "name": "", "region": None, "revoked": False,
+            "listed": False, "count": 0, "last_heard": None, "hops": None, "rssi": None, "snr": None, "via": None,
+            "type": None, "direct": False, "receivers": [],
+        })
+
+    def heard_at(e: dict, t: float, **radio: Any) -> None:
+        if e["last_heard"] is None or t >= e["last_heard"]:
+            e.update(last_heard=t, **radio)
+
+    for label, d in receivers:
+        for node, r in d.get("repeaters", {}).items():
+            e = entry(node)
+            e.update(listed=True, region=r["region"], revoked=e["revoked"] or bool(r["revoked"]))
+            e["name"] = e["name"] or r["name"]
+        for member, h in d["heard"].items():
+            if member < p.REPEATER_MEMBER_BASE:
+                continue
+            e = entry(member - p.REPEATER_MEMBER_BASE)
+            e["count"] += h["count"]
+            if label not in e["receivers"]:
+                e["receivers"].append(label)
+            heard_at(e, h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"], type=h["type"])
+        for n in d.get("neighbors", []):   # the repeaters this receiver hears directly
+            e = entry(n["node"])
+            e["direct"] = True
+            if label not in e["receivers"]:
+                e["receivers"].append(label)
+            heard_at(e, now - n["ago_s"], hops=e["hops"], rssi=n["rssi"], snr=n["snr"], via=0, type=e["type"] or "direct")
+    return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["node"]))
 
 
 def messages(receivers: Receivers, limit: int = 200) -> list[dict]:
@@ -183,7 +237,9 @@ def activity(receivers: Receivers, limit: int = 200) -> list[dict]:
     """The packets the receivers heard, with their decision; one row per receiver that heard it."""
     receivers = list(receivers)
     names = _names(receivers)
-    out = [{**a, "receiver": label, "name": names.get(a["member"], "")}
+    rnames = {p.REPEATER_MEMBER_BASE | node: r["name"] for _l, d in receivers
+              for node, r in d.get("repeaters", {}).items() if r["name"]}
+    out = [{**a, "receiver": label, "name": names.get(a["member"]) or rnames.get(a["member"], "")}
            for label, d in receivers for a in d["activity"]]
     out.sort(key=lambda a: -a["time"])
     return out[:limit]

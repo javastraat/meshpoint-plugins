@@ -95,6 +95,32 @@ class TestListener(unittest.TestCase):
         self.assertEqual(sorted(self.src.members), [1, 2, 3, 4, 5, 6])
         self.assertTrue(self.src.members[6]["blocked"])
 
+    def test_names_and_repeaters_are_fetched_page_by_page(self) -> None:
+        self.src._next_members = 0.0
+        self.src._tick(0.0)
+        self.src._handle(reply(l.SEQ_MEMBERS, struct.pack("<HB", 0, 0)))   # the member list is complete: names next
+        self.src._tick(1.0)
+        self.assertEqual(self.port.frames[-1], bytes([p.NAMES_GET, l.SEQ_NAMES, 0, 0]))
+        self.src._handle(reply(l.SEQ_NAMES, struct.pack("<HB", 2, 1) + struct.pack("<I", 4) + s("Albert")))
+        self.assertEqual(self.src.names, {})                          # not replaced until complete
+        self.src._tick(2.0)
+        self.assertEqual(self.port.frames[-1], bytes([p.NAMES_GET, l.SEQ_NAMES, 1, 0]))
+        self.src._handle(reply(l.SEQ_NAMES, struct.pack("<HB", 2, 1) + struct.pack("<I", 5) + s("Bob")))
+        self.assertEqual(self.src.names, {4: "Albert", 5: "Bob"})
+        self.src._tick(3.0)
+        self.assertEqual(self.port.frames[-1], bytes([p.REPEATERS_GET, l.SEQ_REPEATERS, 0]))
+        self.src._handle(reply(l.SEQ_REPEATERS, bytes([1, 1]) + struct.pack("<HBB", 11, 3, 0) + s("NL-AMS-1076")))
+        self.assertEqual(self.src.repeaters[11]["name"], "NL-AMS-1076")
+        self.src._handle(bytes([p.REPEATER_EVENT, 0]) + struct.pack("<HBB", 11, 3, 1) + s("NL-AMS-1076"))
+        self.assertTrue(self.src.repeaters[11]["revoked"])
+
+    def test_repeaters_still_fetched_when_the_board_has_no_names_command(self) -> None:
+        self.src._queue_names()
+        self.src._tick(0.0)
+        self.src._handle(reply(l.SEQ_NAMES, err=p.ERR_UNKNOWN))
+        self.src._tick(1.0)
+        self.assertEqual(self.port.frames[-1], bytes([p.REPEATERS_GET, l.SEQ_REPEATERS, 0]))
+
     def test_messages_are_kept_once(self) -> None:
         self.src._handle(message(0, 4, 12, "hallo", t=1762862400))
         self.src._handle(message(0, 4, 12, "hallo", t=1762862400))   # fetched again after a reconnect

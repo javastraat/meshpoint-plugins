@@ -2,6 +2,7 @@
 
 - GET /api/localmesh/status: per receiver whether it is connected, its INFO, last STATUS, channels and neighbours.
 - GET /api/localmesh/members, /messages, /activity: the lists of the Members, Messages and Activity tabs (views.py).
+- GET /api/localmesh/repeaters: the repeaters (name from the server's certificates, last heard, direct or not).
 - GET /api/localmesh/channels: channel number -> name, for the conversation titles in the core Messages page.
 """
 
@@ -37,6 +38,11 @@ async def members() -> list[dict]:
 @router.get("/api/localmesh/messages")
 async def messages(limit: int = Query(200, ge=1, le=300)) -> list[dict]:
     return views.messages(_receivers(), limit)
+
+
+@router.get("/api/localmesh/repeaters")
+async def repeaters() -> list[dict]:
+    return views.repeaters(_receivers())
 
 
 @router.get("/api/localmesh/channels")

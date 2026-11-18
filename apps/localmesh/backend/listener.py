@@ -45,7 +45,7 @@ MEMBERS_EVERY_S = 15 * 60
 PLAUSIBLE_TIME = 1_600_000_000   # a board without a set clock reports small numbers
 
 # sequence number per command, so a reply is recognised by its number alone
-SEQ_HELLO, SEQ_STATUS, SEQ_CHANNELS, SEQ_MESSAGES, SEQ_MEMBERS, SEQ_NEIGHBORS = 1, 2, 3, 4, 5, 6
+SEQ_HELLO, SEQ_STATUS, SEQ_CHANNELS, SEQ_MESSAGES, SEQ_MEMBERS, SEQ_NEIGHBORS, SEQ_NAMES, SEQ_REPEATERS = 1, 2, 3, 4, 5, 6, 7, 8
 SEQ_REQUEST_FIRST = 16   # 16..255: commands someone awaits (request())
 
 
@@ -81,6 +81,10 @@ class LocalMeshSerialSource(CaptureSource):
         self.heard: dict[int, dict] = {}         # member -> what RX_LOG told us: count, last time/type/hops/signal
         self.members: dict[int, dict] = {}       # the receiver's member list (MEMBERS_GET)
         self._members_next: dict[int, dict] = {}
+        self.names: dict[int, str] = {}          # what the board remembers per member (NAMES_GET), also from before a restart
+        self._names_next: dict[int, str] = {}
+        self.repeaters: dict[int, dict] = {}     # node -> region, flags, name (REPEATERS_GET and REPEATER events)
+        self._repeaters_next: dict[int, dict] = {}
         self.channels: dict[int, str] = {}
         self._text_names: dict[int, str] = {}   # member -> the name last seen in front of its channel messages
         self.neighbors: list[dict] = []
@@ -132,6 +136,8 @@ class LocalMeshSerialSource(CaptureSource):
                 "heard": {k: dict(v) for k, v in self.heard.items()},
                 "members": {k: dict(v) for k, v in self.members.items()},
                 "channels": dict(self.channels),
+                "names": dict(self.names), "repeaters": {k: dict(v) for k, v in self.repeaters.items()},
+                "neighbors": [dict(n) for n in self.neighbors],
                 "sent": [dict(x) for x in self.sent],
                 "own_member": self.info.member if self.info else None,
                 "net_name": self.net_name,
@@ -339,6 +345,14 @@ class LocalMeshSerialSource(CaptureSource):
             self._serial.write(data)
             self._waiting = (seq, now)
 
+    def _queue_names(self) -> None:
+        self._names_next = {}
+        self._queue_cmd(SEQ_NAMES, p.names_get(SEQ_NAMES, 0))
+
+    def _queue_repeaters(self) -> None:
+        self._repeaters_next = {}
+        self._queue_cmd(SEQ_REPEATERS, p.repeaters_get(SEQ_REPEATERS, 0))
+
     def _handle(self, f: bytes) -> None:
         if len(f) < 2:
             return
@@ -352,6 +366,8 @@ class LocalMeshSerialSource(CaptureSource):
                         self._loop.call_soon_threadsafe(self._resolve, seq, payload[0], payload[1:])
                 elif payload and payload[0] == p.ERR_OK:
                     self._reply(seq, payload[1:])
+                elif seq == SEQ_NAMES:   # firmware from before 14-11 does not know NAMES_GET: go on with the repeaters
+                    self._queue_repeaters()
             elif t == p.STATUS_EVENT:
                 self.status = p.parse_status(payload)
             elif t == p.RX_LOG:
@@ -373,6 +389,10 @@ class LocalMeshSerialSource(CaptureSource):
             elif t == p.DELIVERY_FAILED:
                 _member, counter, _tries = p.parse_delivery_failed(payload)
                 self._sent_status(counter, True, "failed")
+            elif t == p.REPEATER_EVENT:
+                r = p.parse_repeater_event(payload)
+                with self._lock:
+                    self.repeaters[r.node] = asdict(r) | {"revoked": r.revoked}
             elif t == p.CHANNEL_EVENT:
                 ev = p.parse_channel_event(payload)
                 with self._lock:
@@ -407,6 +427,27 @@ class LocalMeshSerialSource(CaptureSource):
                 with self._lock:
                     self.members = self._members_next
                 self._members_next = {}
+                self._queue_names()   # the names, then the repeaters, follow the member list one command at a time
+        elif seq == SEQ_NAMES:   # older firmware answers with an error, which never gets here
+            total, page = p.parse_names(payload)
+            self._names_next.update(page)
+            if page and len(self._names_next) < total:
+                self._queue_cmd(SEQ_NAMES, p.names_get(SEQ_NAMES, len(self._names_next)))
+            else:
+                with self._lock:
+                    self.names = self._names_next
+                self._names_next = {}
+                self._queue_repeaters()
+        elif seq == SEQ_REPEATERS:
+            total, page = p.parse_repeaters(payload)
+            for r in page:
+                self._repeaters_next[r.node] = asdict(r) | {"revoked": r.revoked}
+            if page and len(self._repeaters_next) < total:
+                self._queue_cmd(SEQ_REPEATERS, p.repeaters_get(SEQ_REPEATERS, len(self._repeaters_next)))
+            else:
+                with self._lock:
+                    self.repeaters = self._repeaters_next
+                self._repeaters_next = {}
         # SEQ_MESSAGES: the reply is only the total; the messages follow as MESSAGE events
 
     def _sent_status(self, counter: int, direct: bool, status: str, only_from: Optional[str] = None) -> None:

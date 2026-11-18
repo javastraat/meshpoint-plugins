@@ -126,6 +126,35 @@ class TestMessages(unittest.TestCase):
         self.assertEqual([(c["channel"], c["name"], c["node_id"]) for c in out],
                          [(0, "Algemeen", "broadcast:localmesh:0"), (7, "channel 7", "broadcast:localmesh:7")])
 
+    def test_members_are_filled_from_names_and_the_boards_message_buffer(self) -> None:
+        a = data(names={4: "Albert", 5: "Bob"}, messages=[msg(4, 1, "hoi", time=1_762_862_400), msg(5, 2, "x")],
+                 members={4: {"flags": 0}, 5: {"flags": 0}})
+        out = {m["member"]: m for m in views.members([("base", a)])}
+        self.assertEqual((out[4]["name"], out[4]["last_heard"], out[4]["type"]), ("Albert", 1_762_862_400, "channel"))
+        self.assertEqual((out[5]["name"], out[5]["last_heard"]), ("Bob", None))   # no board clock: not guessed
+        a["adverts"] = {4: {"name": "Advert", "heard": 1.0, "hops": 1, "rssi": -50, "via": 0}}
+        self.assertEqual(views.members([("base", a)])[0]["name"], "Advert")        # an advert still wins
+
+    def test_repeaters_with_names_last_heard_and_direct(self) -> None:
+        base = p.REPEATER_MEMBER_BASE
+        a = data(repeaters={11: {"node": 11, "region": 3, "flags": 1, "name": "NL-AMS-1076", "revoked": True},
+                            12: {"node": 12, "region": 3, "flags": 0, "name": "", "revoked": False}},
+                 heard={base | 11: {"count": 2, "last_heard": 100.0, "type": "status", "hops": 2, "via": 7, "rssi": -80, "snr": 3.0},
+                        base | 99: {"count": 1, "last_heard": 50.0, "type": "announce", "hops": 1, "via": 0, "rssi": -90, "snr": 1.0}},
+                 neighbors=[{"node": 12, "snr": 2.0, "rssi": -70, "ago_s": 30, "count": 5}])
+        out = {r["node"]: r for r in views.repeaters([("base", a)], now=1000.0)}
+        self.assertEqual((out[11]["name"], out[11]["revoked"], out[11]["last_heard"], out[11]["direct"]),
+                         ("NL-AMS-1076", True, 100.0, False))
+        self.assertEqual((out[12]["direct"], out[12]["last_heard"], out[12]["rssi"]), (True, 970.0, -70))
+        self.assertFalse(out[99]["listed"])                                         # heard, but not in the certificates
+        self.assertEqual([r["node"] for r in views.repeaters([("base", a)], now=1000.0)], [12, 11, 99])
+
+    def test_activity_names_repeaters(self) -> None:
+        base = p.REPEATER_MEMBER_BASE
+        a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1076", "revoked": False}},
+                 activity=[{"member": base | 11, "time": 5.0, "sender": "repeater 11"}])
+        self.assertEqual(views.activity([("base", a)])[0]["name"], "NL-AMS-1076")
+
     def test_advert_name_wins_over_text(self) -> None:
         a = data(messages=[msg(4, 1, "Bijnaam: hoi")], adverts={4: {"name": "Albert", "heard": 1.0}})
         self.assertEqual(views.messages([("", a)])[0]["sender"], "Albert")

@@ -25,11 +25,16 @@ const LM_TABS = [
     { id: 'receiver', label: 'Receiver', admin: false },
     { id: 'settings', label: 'Settings', admin: true },
 ];
-const LM_SEARCH_TABS = ['members', 'messages', 'activity'];
+const LM_SEARCH_TABS = ['members', 'repeaters', 'messages', 'activity'];
+// the Members tab shows either list; the choice is remembered
+const LM_MEMBER_VIEW_KEY = 'meshpoint.lmMemberView';
+const LM_MEMBER_VIEWS = [{ id: 'members', label: 'Members' }, { id: 'repeaters', label: 'Repeaters' }];
 // columns per list: [header, width class from localmesh.css ('' takes the rest), right-aligned]
 const LM_COLUMNS = {
     members: [['Last heard', 'lm-ago'], ['Name', ''], ['Member', 'lm-num'], ['Packets', 'lm-num', true],
         ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal'], ['Position', 'lm-pos'], ['Status', 'lm-type']],
+    repeaters: [['Last heard', 'lm-ago'], ['Name', ''], ['Node', 'lm-num'], ['Region', 'lm-num'], ['Packets', 'lm-num', true],
+        ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal'], ['Status', 'lm-type']],
     messages: [['Time', 'lm-time'], ['Channel', 'lm-channel'], ['From', 'lm-from'], ['Text', ''],
         ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal']],
     activity: [['Time', 'lm-time'], ['Type', 'lm-type'], ['From', 'lm-from'], ['Counter', 'lm-num', true],
@@ -90,13 +95,16 @@ class LocalMeshPanel {
         this._root = null;
         this._timer = null;
         this._devices = [];
-        this._lists = { members: [], messages: [], activity: [] };
+        this._lists = { members: [], repeaters: [], messages: [], activity: [] };
         this._search = '';
         this._shown = [];   // the rows on screen, for the detail popup
         this._isAdmin = window.meshpointIdentity?.role !== 'viewer';
         let stored = null;
         try { stored = localStorage.getItem(LM_TAB_STORE_KEY); } catch (_) {}
         this._tab = this._allowed(stored) ? stored : 'members';
+        let view = null;
+        try { view = localStorage.getItem(LM_MEMBER_VIEW_KEY); } catch (_) {}
+        this._memberView = view === 'repeaters' ? 'repeaters' : 'members';
         this._settingsTab = null;
         this._sendTab = null;
         this._drawer = window.LocalMeshMemberDrawer ? new window.LocalMeshMemberDrawer() : null;
@@ -143,7 +151,13 @@ class LocalMeshPanel {
                             <button class="lw-search-clear" data-lm-search-clear title="Clear search" hidden>&times;</button>
                         </div>
                     </div>
+                    <div class="lm-subtabs" data-lm-subtabs hidden>
+                        <div class="lw-tabs" role="tablist">${LM_MEMBER_VIEWS.map((v) => `
+                            <button class="lw-tab" type="button" role="tab" data-lm-memberview="${v.id}">${v.label}</button>`).join('')}
+                        </div>
+                    </div>
                     ${table('members')}
+                    ${table('repeaters')}
                     ${table('messages')}
                     ${table('activity')}
                     <div data-lm-view="receiver" hidden>
@@ -167,6 +181,9 @@ class LocalMeshPanel {
         rootEl.querySelector('[data-lm-refresh]').addEventListener('click', () => this._refresh());
         rootEl.querySelectorAll('[data-lm-tab]').forEach((btn) => {
             btn.addEventListener('click', () => this._setTab(btn.dataset.lmTab));
+        });
+        rootEl.querySelectorAll('[data-lm-memberview]').forEach((btn) => {
+            btn.addEventListener('click', () => this._setMemberView(btn.dataset.lmMemberview));
         });
         const search = rootEl.querySelector('[data-lm-search]');
         const clear = rootEl.querySelector('[data-lm-search-clear]');
@@ -226,7 +243,7 @@ class LocalMeshPanel {
         try { localStorage.setItem(LM_TAB_STORE_KEY, tab); } catch (_) {}
         this._applyTab();
         this._showTabExtras();
-        if (LM_SEARCH_TABS.includes(tab)) this._loadList(tab);
+        if (LM_SEARCH_TABS.includes(tab)) this._loadList(this._view());
     }
 
     /** The Settings and Send tabs load their own data when opened. */
@@ -244,16 +261,40 @@ class LocalMeshPanel {
         if (this._tab === 'send') this._sendTab.show();
     }
 
+    /** The list on screen: the Members tab holds two, Members and Repeaters. */
+    _view() {
+        return this._tab === 'members' ? this._memberView : this._tab;
+    }
+
+    _setMemberView(view) {
+        if (view === this._memberView) return;
+        this._memberView = view;
+        try { localStorage.setItem(LM_MEMBER_VIEW_KEY, view); } catch (_) {}
+        this._search = '';
+        const search = this._root.querySelector('[data-lm-search]');
+        search.value = '';
+        this._root.querySelector('[data-lm-search-clear]').hidden = true;
+        this._applyTab();
+        this._loadList(view);
+    }
+
     _applyTab() {
+        const view = this._view();
         this._root.querySelectorAll('[data-lm-tab]').forEach((btn) => {
             const active = btn.dataset.lmTab === this._tab;
             btn.classList.toggle('lw-tab--active', active);
             btn.setAttribute('aria-selected', active ? 'true' : 'false');
         });
-        this._root.querySelectorAll('[data-lm-view]').forEach((el) => {
-            el.hidden = el.dataset.lmView !== this._tab;
+        this._root.querySelector('[data-lm-subtabs]').hidden = this._tab !== 'members';
+        this._root.querySelectorAll('[data-lm-memberview]').forEach((btn) => {
+            const active = btn.dataset.lmMemberview === this._memberView;
+            btn.classList.toggle('lw-tab--active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
         });
-        this._root.querySelector('[data-lm-search-wrap]').hidden = !LM_SEARCH_TABS.includes(this._tab);
+        this._root.querySelectorAll('[data-lm-view]').forEach((el) => {
+            el.hidden = el.dataset.lmView !== view;
+        });
+        this._root.querySelector('[data-lm-search-wrap]').hidden = !LM_SEARCH_TABS.includes(view);
         this._renderList();
     }
 
@@ -267,10 +308,12 @@ class LocalMeshPanel {
 
     async _refresh() {
         // Members and messages every time too: the cards count them, whichever tab is open.
-        const [devices, members, messages] = await Promise.all([this._get('/api/localmesh/status'),
-            this._get('/api/localmesh/members'), this._get('/api/localmesh/messages')]);
+        const [devices, members, messages, repeaters] = await Promise.all([this._get('/api/localmesh/status'),
+            this._get('/api/localmesh/members'), this._get('/api/localmesh/messages'),
+            this._get('/api/localmesh/repeaters')]);
         if (Array.isArray(devices)) this._devices = devices;
         if (Array.isArray(members)) this._lists.members = members;
+        if (Array.isArray(repeaters)) this._lists.repeaters = repeaters;
         if (Array.isArray(messages)) this._lists.messages = messages;
         if (this._sendTab) this._sendTab.update(this._devices);
         this._renderCards();
@@ -282,19 +325,19 @@ class LocalMeshPanel {
     async _loadList(tab) {
         const list = await this._get(`/api/localmesh/${tab}`);
         if (Array.isArray(list)) this._lists[tab] = list;
-        if (tab === this._tab) this._renderList();
+        if (tab === this._view()) this._renderList();
     }
 
     // --- Members / Messages / Activity ---
 
     _renderList() {
-        const tab = this._tab;
+        const tab = this._view();
         if (!LM_SEARCH_TABS.includes(tab) || !this._root) return;
         const all = this._lists[tab];
         const rows = this._search
             ? all.filter((r) => LocalMeshPanel.searchText(tab, r).includes(this._search)) : all;
-        const row = { members: LocalMeshPanel.memberRow, messages: LocalMeshPanel.messageRow,
-            activity: LocalMeshPanel.activityRow }[tab];
+        const row = { members: LocalMeshPanel.memberRow, repeaters: LocalMeshPanel.repeaterRow,
+            messages: LocalMeshPanel.messageRow, activity: LocalMeshPanel.activityRow }[tab];
         this._shown = rows;
         this._root.querySelector(`[data-lm-body="${tab}"]`).innerHTML = rows
             .map((r, i) => row(r).replace('<tr>', `<tr data-lm-row="${i}" title="Click for details">`)).join('');
@@ -302,6 +345,7 @@ class LocalMeshPanel {
         empty.style.display = rows.length ? 'none' : '';
         empty.textContent = all.length ? 'Nothing matches the search.' : {
             members: 'No members heard yet.',
+            repeaters: 'No repeaters known yet.',
             messages: 'No messages yet. The receiver shows channel messages it has the key for, and direct messages to itself.',
             activity: 'No packets heard yet.',
         }[tab];
@@ -311,6 +355,7 @@ class LocalMeshPanel {
 
     static searchText(tab, r) {
         const parts = tab === 'members' ? [r.name, r.member]
+            : tab === 'repeaters' ? [r.name, r.node, r.region]
             : tab === 'messages' ? [r.sender, r.member, r.channel_name, r.text]
                 : [r.name, r.sender, r.type, r.decision, LocalMeshPanel.decisionOf(r).label, r.counter];
         return parts.join(' ').toLowerCase();
@@ -332,6 +377,22 @@ class LocalMeshPanel {
             <td class="lw-r">${m.hops ?? '--'}</td>
             <td>${LocalMeshPanel.signal(m.rssi, m.snr)}</td>
             <td>${pos}</td>
+            <td>${status}</td>
+        </tr>`;
+    }
+
+    static repeaterRow(r) {
+        const status = r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>'
+            : r.direct ? '<span class="lw-badge lw-badge--join">direct</span>'
+            : !r.listed ? '<span class="lw-badge lw-badge--rejoin">not in certificates</span>' : '';
+        return `<tr>
+            <td>${LocalMeshPanel.ago(r.last_heard)}</td>
+            <td>${LocalMeshPanel.esc(r.name) || '--'}</td>
+            <td>${r.node}</td>
+            <td>${r.region ?? '--'}</td>
+            <td class="lw-r">${r.count || '--'}</td>
+            <td class="lw-r">${r.hops ?? '--'}</td>
+            <td>${LocalMeshPanel.signal(r.rssi, r.snr)}</td>
             <td>${status}</td>
         </tr>`;
     }
@@ -420,6 +481,15 @@ class LocalMeshPanel {
                     + row('Counter', r.counter) + row('Heard', when(r.time)) + row('Receiver', esc(r.receiver)))
                 + layer('Route', row('Routed', r.routed ? 'yes (follows a learned path)' : 'no (flood)')
                     + row('Path', esc(path) || null) + radio(r));
+        } else if (tab === 'repeaters') {
+            title = r.name ? `${esc(r.name)} (repeater ${r.node})` : `Repeater ${r.node}`;
+            body = layer('Repeater', row('Name', esc(r.name)) + row('Node', r.node) + row('Region', r.region)
+                    + row('Status', r.revoked ? 'revoked' : r.listed ? 'in the server certificates' : 'heard, not in the certificates',
+                        r.revoked ? 'bad' : r.listed ? 'good' : '')
+                    + row('Heard directly', r.direct ? 'yes (a neighbour of a receiver)' : 'no (through other repeaters)'))
+                + layer('Last heard', row('When', when(r.last_heard) || 'not heard since Meshpoint started')
+                    + row('Packet type', esc(r.type)) + row('Packets', r.count || null)
+                    + row('Heard by', esc((r.receivers || []).join(', '))) + (r.last_heard ? radio(r) : ''));
         } else {
             title = r.name ? `${esc(r.name)} (member ${r.member})` : `Member ${r.member}`;
             const pos = r.lat != null ? `<a href="https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lon}#map=15/${r.lat}/${r.lon}"
@@ -466,7 +536,7 @@ class LocalMeshPanel {
                 </div>`;
             return;
         }
-        // Five cards as on the Reticulum and Meshtastic pages (13-11): status, members, neighbours, messages, airtime.
+        // The cards of the Reticulum and Meshtastic pages (13-11): status, members, neighbours, messages, airtime; plus repeaters.
         // More than one receiver: added up, airtime the busiest; the battery is on the Receiver tab.
         const esc = LocalMeshPanel.esc;
         const devs = this._devices;
@@ -491,6 +561,12 @@ class LocalMeshPanel {
         const active = members.filter((m) => m.listed && m.last_heard && m.last_heard >= day).length; // of those on the list
         const membersCard = card('Members', `${active} / ${listed}`, 'heard 24h / on the list');
 
+        const reps = this._lists.repeaters || [];
+        const repsActive = reps.filter((r) => r.last_heard && r.last_heard >= day).length;
+        const revoked = reps.filter((r) => r.revoked).length;
+        const repsCard = card('Repeaters', `${repsActive} / ${reps.length}`, 'heard 24h / known',
+            revoked ? `${revoked} revoked` : '');
+
         const neigh = devs.flatMap((d) => d.neighbors || []);
         const neighNodes = [...new Set(neigh.map((n) => n.node))];
         const neighCard = card('Neighbours', `${neighNodes.length}`, 'heard directly',
@@ -510,7 +586,7 @@ class LocalMeshPanel {
                 air.map((a) => `${esc(a.d.label || 'receiver')}: ${(a.used / 1000).toFixed(1)} s of ${Math.round(a.limit / 1000)} s`).join('\n'))
             : card('Airtime (hour)', '--', 'no budget reported');
 
-        el.innerHTML = status + membersCard + neighCard + msgCard + airCard;
+        el.innerHTML = status + membersCard + repsCard + neighCard + msgCard + airCard;
     }
 
     _renderReceivers() {

@@ -63,6 +63,9 @@ class LocalMeshDashboard {
         this._refreshTimer = null;
         this._devices = [];
         this._members = [];
+        this._repeaters = [];
+        this._listView = 'members';       // the right-hand card shows either list
+        try { if (localStorage.getItem('meshpoint.lmdListView') === 'repeaters') this._listView = 'repeaters'; } catch (_) {}
         this._activity = [];              // mirrors the ticker's DOM rows, newest first
         this._activitySeen = new Set();   // composite keys already rendered, for diff-driven flashing
         this._seeded = false;
@@ -91,6 +94,11 @@ class LocalMeshDashboard {
                         <div class="stat-card__label">Members</div>
                         <div class="stat-card__value" id="lmd-stat-members">--</div>
                         <div class="stat-card__sub">heard 24h / on the list</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__label">Repeaters</div>
+                        <div class="stat-card__value" id="lmd-stat-repeaters">--</div>
+                        <div class="stat-card__sub">heard 24h / known</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card__label">Neighbours</div>
@@ -137,8 +145,11 @@ class LocalMeshDashboard {
 
                     <section class="dashboard__side">
                         <div class="panel panel--nodes">
-                            <div class="panel__header">
-                                <span>Members</span>
+                            <div class="panel__header panel__header--tabs">
+                                <div class="lw-tabs" role="tablist">
+                                    <button class="lw-tab" type="button" role="tab" data-lmd-listview="members">Members</button>
+                                    <button class="lw-tab" type="button" role="tab" data-lmd-listview="repeaters">Repeaters</button>
+                                </div>
                                 <div class="node-search-wrap">
                                     <input type="search" id="lmd-member-search" class="node-search"
                                            placeholder="Search..." autocomplete="off" spellcheck="false">
@@ -184,6 +195,15 @@ class LocalMeshDashboard {
             this._memberSearchQuery = e.target.value.trim().toLowerCase();
             this._renderMembersList();
         });
+        this._q('.panel--nodes .lw-tabs')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-lmd-listview]');
+            if (!btn || btn.dataset.lmdListview === this._listView) return;
+            this._listView = btn.dataset.lmdListview;
+            try { localStorage.setItem('meshpoint.lmdListView', this._listView); } catch (_) {}
+            this._syncListTabs();
+            this._renderMembersList();
+        });
+        this._syncListTabs();
 
         this._syncBasemapBtn(this._basemapLight);
         this._q('#lmd-map-basemap-btn')?.addEventListener('click', () => this._toggleBasemap());
@@ -308,7 +328,16 @@ class LocalMeshDashboard {
 
     async _loadMembers() {
         try {
-            const r = await fetch('/api/localmesh/members', { credentials: 'same-origin' });
+            const [r, rr] = await Promise.all([
+                fetch('/api/localmesh/members', { credentials: 'same-origin' }),
+                fetch('/api/localmesh/repeaters', { credentials: 'same-origin' }),
+            ]);
+            if (rr.ok) {
+                this._repeaters = await rr.json();
+                const day = Date.now() / 1000 - 86400;
+                this._setText('lmd-stat-repeaters',
+                    `${this._repeaters.filter((x) => x.last_heard && x.last_heard >= day).length} / ${this._repeaters.length}`);
+            }
             if (!r.ok) return;
             this._members = await r.json();
             this._renderMembersCard();
@@ -338,7 +367,46 @@ class LocalMeshDashboard {
 
     // --- Members list (right column) ------------------------------------
 
+    _syncListTabs() {
+        this._root?.querySelectorAll('[data-lmd-listview]').forEach((btn) => {
+            const active = btn.dataset.lmdListview === this._listView;
+            btn.classList.toggle('lw-tab--active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+    }
+
+    _renderRepeatersList() {
+        const list = this._q('#lmd-members-list');
+        const empty = this._q('#lmd-members-empty');
+        if (!list) return;
+        const q = this._memberSearchQuery;
+        const rows = q
+            ? this._repeaters.filter((r) => (r.name || '').toLowerCase().includes(q) || String(r.node).includes(q))
+            : this._repeaters;
+        if (!rows.length) {
+            list.innerHTML = '';
+            if (empty) {
+                empty.style.display = '';
+                empty.textContent = q ? 'No repeaters match that search.' : 'No repeaters known yet.';
+            }
+            return;
+        }
+        if (empty) empty.style.display = 'none';
+        const P = window.LocalMeshPanel;
+        const esc = P ? P.esc : (s) => String(s ?? '');
+        const ago = P ? P.ago : () => '--';
+        list.innerHTML = rows.slice(0, LMD_MEMBER_LIST_LIMIT).map((r) => `
+            <div class="lmd-member-row lmd-member-row--static" title="Repeater ${esc(r.node)}${r.region != null ? `, region ${esc(r.region)}` : ''}">
+                <span class="lmd-member-row__name">${esc(r.name || `Repeater ${r.node}`)}</span>
+                ${r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>' : ''}
+                ${r.direct ? '<span class="lw-badge lw-badge--join">direct</span>' : ''}
+                <span class="lmd-member-row__time">${r.last_heard ? esc(ago(r.last_heard)) : '--'}</span>
+            </div>
+        `).join('');
+    }
+
     _renderMembersList() {
+        if (this._listView === 'repeaters') return this._renderRepeatersList();
         const list = this._q('#lmd-members-list');
         const empty = this._q('#lmd-members-empty');
         if (!list) return;
