@@ -129,10 +129,25 @@
         "sidebar",
         "topbar"
       ],
-      "description": "LocalMesh receiver (Heltec V4, companion firmware) on USB serial: every packet it hears in the packet log under protocol localmesh (type, member, hops, path, signal, decision), a topbar chip with connection, node and battery, and the LocalMesh page (Members, Messages, Activity, Send, Receiver and Settings tabs). Sends only from the Send tab (admin). LocalMesh uses 62.5 kHz, which the SX1302 cannot receive.",
+      "description": "LocalMesh receiver (Heltec V4, companion firmware) on USB serial: every packet it hears in the packet log under protocol localmesh (type, member, hops, path, signal, decision), a topbar chip with connection, node and frequency, and the LocalMesh page (Members, Messages, Activity, Send, Receiver and Settings tabs). Sends only from the Send tab (admin). LocalMesh uses 62.5 kHz, which the SX1302 cannot receive.",
       "author": "Einstein PD2EMC",
       "homepage": "https://www.localmesh.nl",
       "has_setup": false
+    },
+    {
+      "id": "localmesh-dashboard",
+      "kind": "app",
+      "path": "apps/localmesh-dashboard",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "sidebar"
+      ],
+      "description": "A live, standalone view of LocalMesh activity -- stat cards (Status / Members / Neighbours / Messages / Airtime), a map of located members, a live member list, and a flashing real-time activity ticker. Companion to the localmesh plugin's own Members/Messages/Activity/Send/Receiver/Settings page; requires localmesh enabled to show data.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://www.localmesh.nl",
+      "has_setup": false,
+      "requires": "localmesh"
     },
     {
       "id": "offline-map",

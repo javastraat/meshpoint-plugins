@@ -1,0 +1,46 @@
+name = "localmesh-dashboard"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["sidebar"]    # a whole top-level sidebar page of its own -- see
+                           # [sidebar] below and window.registerSidebarPage().
+                           # No "routes": this page has no backend of its
+                           # own, it reads the localmesh plugin's existing
+                           # /api/localmesh/* endpoints instead (see
+                           # backend/__init__.py).
+requires = "localmesh"  # not a [hook] -- this page doesn't attach to
+                         # localmesh's own page, it just has nothing to show
+                         # without it running. Enforced the same way a hook's
+                         # [hook].host is: PUT /api/plugins/localmesh-dashboard
+                         # refuses to enable it until localmesh is enabled,
+                         # and disabling localmesh cascades to disable this
+                         # too (src/api/routes/plugin_routes.py). Same shape
+                         # as reticulum-dashboard's own requires = "reticulum".
+
+[frontend]
+scripts = ["frontend/localmesh_dashboard.js"]
+styles = ["frontend/localmesh_dashboard.css"]
+# The layout itself is the literal core Dashboard markup/classes
+# (main.dashboard, .dashboard__stats/.dashboard__main/.dashboard__map/
+# .dashboard__side/.dashboard__feed, .panel*, all dashboard.css, loaded
+# globally already) -- nothing needed here for that. The one own
+# stylesheet holds just what's genuinely page-specific: the member-row
+# list styling and the located-member map/popup theming (copied from
+# reticulum-dashboard's own equivalent rules -- see that file's header
+# note on why cross-plugin asset serving means this can't just be linked
+# from here either).
+
+[sidebar]
+route = "localmesh-dashboard"
+label = "LocalMesh Dashboard"
+category = "top"      # sits right under the built-in Dashboard item,
+                       # above "Networks" -- this page IS a dashboard, in
+                       # spirit if not in nav section, same placement as
+                       # reticulum-dashboard.
+icon = "zap"          # same glyph as the localmesh plugin's own nav item --
+                       # icon names are a shared curated set, not exclusive
+                       # to one plugin.
+
+[meta]
+description = "A live, standalone view of LocalMesh activity -- stat cards (Status / Members / Neighbours / Messages / Airtime), a map of located members, a live member list, and a flashing real-time activity ticker. Companion to the localmesh plugin's own Members/Messages/Activity/Send/Receiver/Settings page; requires localmesh enabled to show data."
+homepage = "https://www.localmesh.nl"
+author = "Einstein PD2EMC"

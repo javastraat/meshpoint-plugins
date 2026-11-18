@@ -1,0 +1,145 @@
+/* LocalMesh Dashboard -- own stylesheet.
+ *
+ * The page's structure/panels/stat-cards are the literal core Dashboard
+ * markup (main.dashboard, .dashboard__stats/.dashboard__main/
+ * .dashboard__map/.dashboard__side/.dashboard__feed, .panel/.panel__header/
+ * .panel__body -- all frontend/css/dashboard.css, loaded globally) -- see
+ * localmesh_dashboard.js's own header comment for why. Nothing to add for
+ * any of that here.
+ *
+ * What's left, genuinely specific to this page:
+ *   - the member-map + its popup theming, copied verbatim from
+ *     reticulum-dashboard's own reticulum_dashboard.css (cross-plugin
+ *     asset serving is scoped per-plugin -- src/plugins/assets.py:
+ *     resolve_plugin_asset only serves a plugin's own manifest-listed
+ *     files, so that file genuinely can't be linked from here either;
+ *     kept in sync by hand, small and stable)
+ *   - the simple member-row list on the right (a lighter readout than
+ *     the localmesh plugin's own sortable/searchable Members table)
+ *   - the live Activity ticker's column widths (localmesh.css's own
+ *     lm-* column classes aren't reachable from here either, same
+ *     cross-plugin-asset reason)
+ */
+
+/* ---- Member map. Framed by .panel (core); .map-container only gives
+   overflow/min-height, not an actual height -- core's own map gets that
+   from the ID selector #map, not the class, so this page's differently-
+   ID'd div needs its own copy (same value #map uses: fill the panel, so
+   it stretches to match the Members column's height like the real
+   Dashboard's NODE MAP does). ---- */
+.lmd-member-map {
+    height: 100%;
+    width: 100%;
+}
+.lmd-member-map .leaflet-container { background: var(--bg, #111); }
+
+/* Basemap dark/light toggle (panel-header button) -- same filter values
+   as dashboard.css's #map.map--basemap-dark/light, copied rather than
+   reused since that rule is scoped to the core map's own #map id, which
+   this page's differently-ID'd div doesn't match. */
+.lmd-member-map.map--basemap-dark .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) saturate(0.22) brightness(0.72) contrast(1.22) !important;
+}
+.lmd-member-map.map--basemap-light .leaflet-tile-pane {
+    filter: none !important;
+}
+
+/* Home marker (device's own configured location) -- a distinct pin,
+   deliberately not one of the member markers so it reads as "this box",
+   not "a member". Identical to reticulum-dashboard's own .rtd-home-marker,
+   just under this plugin's own prefix. */
+.lmd-home-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent-cyan, #06b6d4);
+    color: var(--bg-primary, #0a0a0a);
+    box-shadow: 0 0 0 2px var(--bg-primary, #0a0a0a), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.lmd-home-marker svg { width: 15px; height: 15px; }
+
+/* Marker popups -- copied verbatim from reticulum-dashboard's own
+   .rt-tele-popup* rules (same class names, same cross-plugin-asset
+   reason as above -- kept matching so a member pin's popup looks
+   identical to a Reticulum telemetry peer's). */
+.lmd-member-map .leaflet-popup-content-wrapper {
+    background: var(--bg-card, #1a1a1a);
+    color: var(--text-primary, #eee);
+    border: 1px solid var(--border, #333);
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.lmd-member-map .leaflet-popup-content { margin: 10px 12px; }
+.lmd-member-map .leaflet-popup-tip { background: var(--bg-card, #1a1a1a); }
+.lmd-member-map .leaflet-popup-close-button { color: var(--text-muted, #888) !important; }
+
+.rt-tele-popup__head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 4px;
+}
+.rt-tele-popup__name {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text-primary, #eee);
+}
+.rt-tele-popup__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 220px;
+}
+.rt-tele-popup__tag {
+    font-size: 0.68rem;
+    color: var(--text-secondary, #aaa);
+    background: var(--overlay-weak, rgba(255, 255, 255, 0.06));
+    border-radius: 5px;
+    padding: 2px 6px;
+    white-space: nowrap;
+}
+.rt-tele-popup__tag--closed { color: var(--accent-red, #ef4444); }
+
+/* ---- Members list (right column, #lmd-members-list *is* the
+   .panel__body -- core already gives it flex:1/overflow:auto
+   scrolling). ---- */
+.lmd-member-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border, #2a2a2a);
+}
+.lmd-member-row:last-child { border-bottom: none; }
+.lmd-member-row:hover { background: var(--overlay-weak, rgba(255, 255, 255, 0.06)); }
+.lmd-member-row__name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    color: var(--text-primary, #eee);
+}
+.lmd-member-row__time {
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    color: var(--text-muted, #888);
+    white-space: nowrap;
+}
+
+/* ---- Live Activity ticker column widths -- localmesh.css's own lm-*
+   column classes (lm-time/lm-hops/lm-signal/...) aren't reachable from
+   here (cross-plugin-asset scoping, same as everything else copied in
+   this file), so this page gets its own narrower set under its own
+   prefix instead of guessing at reuse. ---- */
+.lmd-col-time { width: 7rem; }
+.lmd-col-type { width: 6rem; }
+.lmd-col-from { width: 10rem; }
+.lmd-col-hops { width: 5rem; }
+.lmd-col-signal { width: 8rem; }
+.lmd-col-badge { width: 9rem; }
