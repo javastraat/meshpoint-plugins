@@ -220,17 +220,7 @@ class LocalMeshDashboard {
             const row = e.target.closest('[data-member]');
             if (!row) return;
             const m = this._members.find((x) => String(x.member) === row.dataset.member);
-            if (!m || !this._drawer) return;
-            // Now wired, since LocalMesh messages flow through the same
-            // shared store Reticulum's do (see localmesh plugin's own
-            // listener.py) -- window.LocalMeshPanel.composeMessageTo() is
-            // the one canonical place that navigation lives, same helper
-            // the main LocalMesh page's own drawer and messaging_chat.js's
-            // drawer both call too.
-            const onMessage = (window.LocalMeshPanel && !m.blocked)
-                ? (member) => window.LocalMeshPanel.composeMessageTo(member, m.name)
-                : undefined;
-            this._drawer.open(m, onMessage ? { onMessage } : {});
+            if (m) this._openMemberDrawer(m);
         });
         this._q('#lmd-ticker-tbody')?.addEventListener('click', (e) => {
             const tr = e.target.closest('tr[data-lmd-key]');
@@ -350,6 +340,20 @@ class LocalMeshDashboard {
             this._renderMembersList();
             this._renderMemberMap();
         } catch (_) {}
+    }
+
+    _openMemberDrawer(m) {
+        if (!this._drawer) return;
+        // Now wired, since LocalMesh messages flow through the same
+        // shared store Reticulum's do (see localmesh plugin's own
+        // listener.py) -- window.LocalMeshPanel.composeMessageTo() is
+        // the one canonical place that navigation lives, same helper
+        // the main LocalMesh page's own drawer and messaging_chat.js's
+        // drawer both call too.
+        const onMessage = (window.LocalMeshPanel && !m.blocked)
+            ? (member) => window.LocalMeshPanel.composeMessageTo(member, m.name)
+            : undefined;
+        this._drawer.open(m, onMessage ? { onMessage } : {});
     }
 
     _renderMembersCard() {
@@ -544,23 +548,12 @@ class LocalMeshDashboard {
 
     _updateMemberMarkers(located) {
         this._memberMarkers.clearLayers();
-        const P = window.LocalMeshPanel;
-        const esc = P ? P.esc : (s) => String(s ?? '');
-        const ago = P ? P.ago : () => '--';
         located.forEach((m) => {
-            const name = m.name || `Member ${m.member}`;
-            const popupHtml = `
-                <div class="rt-tele-popup">
-                    <div class="rt-tele-popup__head">
-                        <span class="rt-tele-popup__name">${esc(name)}</span>
-                    </div>
-                    <div class="rt-tele-popup__tags">
-                        <span class="rt-tele-popup__tag">member ${esc(m.member)}</span>
-                        ${m.last_heard ? `<span class="rt-tele-popup__tag">heard ${esc(ago(m.last_heard))}</span>` : ''}
-                        ${m.blocked ? '<span class="rt-tele-popup__tag rt-tele-popup__tag--closed">blocked</span>' : ''}
-                    </div>
-                </div>`;
-            L.marker([m.lat, m.lon]).bindPopup(popupHtml).addTo(this._memberMarkers);
+            // A click opens the member's side panel, as a click in the list does; the name shows on hover.
+            L.marker([m.lat, m.lon])
+                .bindTooltip(m.name || `Member ${m.member}`, { direction: 'top', offset: [0, -28] })
+                .on('click', () => this._openMemberDrawer(m))
+                .addTo(this._memberMarkers);
         });
         this._fitBounds(located);
     }
