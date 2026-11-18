@@ -443,7 +443,10 @@ class LocalMeshSerialSource(CaptureSource):
         if self._loop is not None and self.message_repo is not None:
             direct = m.channel == p.CHANNEL_DIRECT
             node_id = f"localmesh:{m.member}" if direct else f"broadcast:localmesh:{m.channel}"
-            name = (self.adverts.get(m.member) or {}).get("name") or p.member_label(m.member)
+            # A channel conversation's title comes from its own name, not whoever last posted to it --
+            # same resolution order as _save_sent()'s outgoing path and views.py's channel_name field.
+            name = ((self.adverts.get(m.member) or {}).get("name") or p.member_label(m.member)) if direct \
+                else (state.channel_name(m.channel) or self.channels.get(m.channel) or f"channel {m.channel}")
             self._loop.call_soon_threadsafe(
                 self._schedule_save_received, m.text, node_id, name, m.channel if not direct else 0, m.rssi, m.snr)
 
