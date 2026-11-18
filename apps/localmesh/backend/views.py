@@ -135,7 +135,9 @@ def members(receivers: Receivers) -> list[dict]:
 
 def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
     """The repeaters: those in the server's certificates (name, region, revoked), plus any heard that are not, with
-    when they were last heard (their own status and announce packets) and whether a receiver hears them directly."""
+    when they were last heard (their own status and announce packets) and whether a receiver hears them directly.
+    The receiver's neighbour table lists every node heard directly, companions too (it is just the previous hop of a
+    packet), so a neighbour only adds its signal to a repeater known from one of the other two."""
     receivers = list(receivers)
     now = time.time() if now is None else now
     out: dict[int, dict] = {}
@@ -164,8 +166,11 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             if label not in e["receivers"]:
                 e["receivers"].append(label)
             heard_at(e, h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"], type=h["type"])
-        for n in d.get("neighbors", []):   # the repeaters this receiver hears directly
-            e = entry(n["node"])
+    for label, d in receivers:
+        for n in d.get("neighbors", []):
+            e = out.get(n["node"])
+            if e is None:
+                continue
             e["direct"] = True
             if label not in e["receivers"]:
                 e["receivers"].append(label)

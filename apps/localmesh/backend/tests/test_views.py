@@ -141,11 +141,13 @@ class TestMessages(unittest.TestCase):
                             12: {"node": 12, "region": 3, "flags": 0, "name": "", "revoked": False}},
                  heard={base | 11: {"count": 2, "last_heard": 100.0, "type": "status", "hops": 2, "via": 7, "rssi": -80, "snr": 3.0},
                         base | 99: {"count": 1, "last_heard": 50.0, "type": "announce", "hops": 1, "via": 0, "rssi": -90, "snr": 1.0}},
-                 neighbors=[{"node": 12, "snr": 2.0, "rssi": -70, "ago_s": 30, "count": 5}])
+                 neighbors=[{"node": 12, "snr": 2.0, "rssi": -70, "ago_s": 30, "count": 5},
+                            {"node": 102, "snr": 5.0, "rssi": -40, "ago_s": 5, "count": 9}])   # a companion, not a repeater
         out = {r["node"]: r for r in views.repeaters([("base", a)], now=1000.0)}
         self.assertEqual((out[11]["name"], out[11]["revoked"], out[11]["last_heard"], out[11]["direct"]),
                          ("NL-AMS-1076", True, 100.0, False))
         self.assertEqual((out[12]["direct"], out[12]["last_heard"], out[12]["rssi"]), (True, 970.0, -70))
+        self.assertNotIn(102, out)                                                  # a neighbour that is no repeater
         self.assertFalse(out[99]["listed"])                                         # heard, but not in the certificates
         self.assertEqual([r["node"] for r in views.repeaters([("base", a)], now=1000.0)], [12, 11, 99])
 
