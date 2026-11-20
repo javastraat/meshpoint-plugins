@@ -150,6 +150,8 @@ class LocalMeshPanel {
             <header class="lw-panel__head">
                 <h2 class="lw-panel__title">LocalMesh</h2>
                 <div class="lw-panel__actions">
+                    <button class="terminal-button" type="button" data-lm-announce
+                            ${this._isAdmin ? '' : 'hidden'}>Announce now</button>
                     <button class="terminal-button" type="button" data-lm-refresh>Refresh</button>
                 </div>
             </header>
@@ -209,6 +211,7 @@ class LocalMeshPanel {
             }
         });
         rootEl.querySelector('[data-lm-refresh]').addEventListener('click', () => this._refresh());
+        rootEl.querySelector('[data-lm-announce]').addEventListener('click', () => this._announce());
         rootEl.querySelectorAll('[data-lm-tab]').forEach((btn) => {
             btn.addEventListener('click', () => this._setTab(btn.dataset.lmTab));
         });
@@ -284,6 +287,45 @@ class LocalMeshPanel {
         if (this._tab === 'settings' && this._settingsTab) this._settingsTab.show();
         if (this._tab === 'send' && this._sendTab) this._sendTab.show();
         this._hookTab(this._tab)?.panel?.show?.();
+    }
+
+    /** 20-11, as Reticulum's "Announce now": every connected receiver broadcasts its name now (an advert; admin,
+     * POST /api/localmesh/advert, the same as the Send tab's "Broadcast name now"). */
+    async _announce() {
+        const btn = this._root.querySelector('[data-lm-announce]');
+        const receivers = this._devices.filter((d) => d.connected);
+        if (!receivers.length) { this._toast('No receiver connected.'); return; }
+        btn.disabled = true;
+        let ok = 0;
+        try {
+            for (const d of receivers) {
+                try {
+                    const res = await fetch('/api/localmesh/advert', {
+                        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ receiver: d.label || '' }),
+                    });
+                    if (res.ok) ok += 1;
+                } catch (_) { /* counted as failed */ }
+            }
+        } finally {
+            btn.disabled = false;
+        }
+        this._toast(ok === receivers.length ? 'Announce sent.' : ok ? `Announce sent by ${ok} of ${receivers.length} receivers.`
+            : 'Announce failed.');
+    }
+
+    /** Same shared #r-toast pill as the Reticulum page and app.js. */
+    _toast(message) {
+        let toast = document.getElementById('r-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'r-toast';
+            toast.className = 'r-toast';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.classList.add('r-toast--visible');
+        setTimeout(() => toast.classList.remove('r-toast--visible'), 2500);
     }
 
     /** From the member side panel: the Send tab with a direct message to this member. */
