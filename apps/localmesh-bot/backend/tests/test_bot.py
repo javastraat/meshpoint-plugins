@@ -128,6 +128,39 @@ class TestLimits(unittest.TestCase):
         self.assertIsNotNone(bot.decide(msg(".ping"), c, ctx(), lim)[0])
 
 
+class TestAdmins(unittest.TestCase):
+    """20-11: admin members are not held to the cooldown or the hourly limit -- only when a repeater passed the question
+    on (a repeater checked the member key; heard directly, anyone with the channel key could use an admin's number)."""
+
+    def test_admin_through_a_repeater_has_no_limits(self) -> None:
+        lim, c = bot.Limiter(), cfg(admins=[3277263], max_per_hour=1, cooldown_s=60)
+        for i in range(5):
+            reply, why = bot.decide(msg(".ping", path=[42978]), c, ctx(NOW + i), lim)
+            self.assertIsNotNone(reply, f"answer {i}")
+            self.assertEqual(why, ".ping (admin)")
+
+    def test_admin_answers_do_not_use_up_the_hour_for_others(self) -> None:
+        lim, c = bot.Limiter(), cfg(admins=[3277263], max_per_hour=1)
+        for i in range(3):
+            bot.decide(msg(".ping", path=[42978]), c, ctx(NOW + i), lim)
+        self.assertIsNotNone(bot.decide(msg(".ping", member=7), c, ctx(NOW + 5), lim)[0])
+
+    def test_admin_heard_directly_keeps_the_limits(self) -> None:
+        lim, c = bot.Limiter(), cfg(admins=[3277263], cooldown_s=60)
+        self.assertEqual(bot.decide(msg(".ping"), c, ctx(NOW), lim)[1], ".ping")
+        self.assertEqual(bot.decide(msg(".ping"), c, ctx(NOW + 1), lim), (None, "cooldown"))
+
+    def test_others_keep_the_limits(self) -> None:
+        lim, c = bot.Limiter(), cfg(admins=[3277263], cooldown_s=60)
+        bot.decide(msg(".ping", member=7, path=[42978]), c, ctx(NOW), lim)
+        self.assertEqual(bot.decide(msg(".ping", member=7, path=[42978]), c, ctx(NOW + 1), lim), (None, "cooldown"))
+
+    def test_admin_list_cleaned_and_validated(self) -> None:
+        self.assertEqual(bot.Config.from_dict({"admins": [5, 5, 0, -1, 2**24, 3277263]}).admins, [5, 3277263])
+        self.assertEqual(bot.validate({"admins": [3277263]}), [])
+        self.assertEqual(len(bot.validate({"admins": [0, "x"]})), 2)
+
+
 class TestConfig(unittest.TestCase):
     def test_round_trip_and_cleaning(self) -> None:
         c = bot.Config.from_dict({"enabled": True, "channels": [3, 3, 0, 255, 300], "prefix": "a",

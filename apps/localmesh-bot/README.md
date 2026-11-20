@@ -23,6 +23,7 @@ signal of the earlier hops is not in a message; only a route test (TRACE) measur
   name (the same `PUT /api/localmesh/name` as the Send tab).
 - **Channels** it listens on: tick the channels the receiver has a key for, or add any number 0-254.
 - **Prefix** (`.` by default), **cooldown per member** (20 s) and **answers per hour** in all (30).
+- **Admin members**: member numbers that are not held to the cooldown or the hourly limit -- only for questions that came through a repeater (a repeater checked the member key; a receiver only checks the channel key, so heard directly anyone with that key could use an admin's number). The receiver's own airtime budget still applies.
 - **Commands**: your own command → answer pairs (1-16 of `a-z 0-9 _ -`, answers up to 140 characters).
 - **Log**: the last 50 questions and what the bot did (answered, or why not: cooldown, hourly limit, unknown command,
   too old, our own name in front).

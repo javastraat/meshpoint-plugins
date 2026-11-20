@@ -74,6 +74,14 @@
                                 <input class="cfg-field__input lmbot__num" type="number" min="1" max="120" data-bot-hour>
                             </label>
                         </div>
+                        <label class="cfg-field lmbot__admins">
+                            <span class="cfg-field__label">Admin members (no cooldown, no hourly limit)</span>
+                            <input class="cfg-field__input" type="text" placeholder="e.g. 3277263, 535246" data-bot-admins>
+                            <span class="cfg-field__hint">Member numbers, separated by commas. Only for questions that
+                                came through a repeater (a repeater checked the member key; heard directly, anyone with
+                                the channel key could use an admin's number). The receiver's own airtime budget still
+                                applies.</span>
+                        </label>
                     </article>
 
                     <article class="cfg-card">
@@ -151,6 +159,7 @@
             q('[data-bot-prefix]').value = c.prefix;
             q('[data-bot-cooldown]').value = c.cooldown_s;
             q('[data-bot-hour]').value = c.max_per_hour;
+            q('[data-bot-admins]').value = (c.admins || []).join(', ');
             const sel = q('[data-bot-receiver]');
             sel.innerHTML = (data.receivers.length ? data.receivers : [{ label: '', name: '' }]).map((r) =>
                 `<option value="${esc(r.label)}">${esc(r.label || 'receiver')}${r.name ? ` -- ${esc(r.name)}` : ''}</option>`).join('');
@@ -243,6 +252,9 @@
                 commands,
                 cooldown_s: Number(q('[data-bot-cooldown]').value) || 20,
                 max_per_hour: Number(q('[data-bot-hour]').value) || 30,
+                // numbers only; anything else goes to the server as text so it says what is wrong
+                admins: q('[data-bot-admins]').value.split(/[\s,;]+/).filter(Boolean)
+                    .map((x) => (/^\d+$/.test(x) ? Number(x) : x)),
             };
         }
 

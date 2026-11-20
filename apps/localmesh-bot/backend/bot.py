@@ -10,6 +10,9 @@ hops, via, rssi, snr, text, path). decide() returns the reply text, or None, and
 - only text that starts with the prefix (".ping"); an unknown command gets no answer (airtime)
 - at most one answer per member per cooldown, and at most max_per_hour answers in all: the band allows 10 % airtime and
   every answer is a flood through every repeater
+- admin members (20-11) are not held to those two limits, but only when a repeater passed the question on: a repeater
+  checked the member key, while a receiver only checks the channel key, so heard directly anyone with the channel key
+  could use an admin's number. The receiver's own airtime budget still applies to every answer.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ CHANNEL_DIRECT = 255
 BUILTIN = ("help", "ping", "trace")
 COMMAND_RE = re.compile(r"^[a-z0-9_-]{1,16}$")
 ANSWER_MAX = 140   # characters of a custom answer
+MEMBER_LIMIT = 1 << 24   # member numbers are 3 bytes on the air
 _NAME_PREFIX = re.compile(r"^([^:\n]{1,32}): ")   # same as the localmesh plugin's views.py
 
 
@@ -36,6 +40,7 @@ class Config:
     cooldown_s: int = 20                                # per member
     max_per_hour: int = 30                              # in all
     max_age_s: int = 120                                # older messages (buffer after a restart) get no answer
+    admins: list = field(default_factory=list)          # member numbers without cooldown and hourly limit
 
     @classmethod
     def from_dict(cls, d: dict) -> "Config":
@@ -50,12 +55,14 @@ class Config:
         c.cooldown_s = max(5, min(int(d.get("cooldown_s", 20)), 3600))
         c.max_per_hour = max(1, min(int(d.get("max_per_hour", 30)), 120))
         c.max_age_s = max(30, min(int(d.get("max_age_s", 120)), 3600))
+        c.admins = sorted({int(x) for x in (d.get("admins") or [])
+                           if isinstance(x, int) and 0 < x < MEMBER_LIMIT})
         return c
 
     def to_dict(self) -> dict:
         return {"enabled": self.enabled, "receiver": self.receiver, "channels": list(self.channels),
                 "prefix": self.prefix, "commands": dict(self.commands), "cooldown_s": self.cooldown_s,
-                "max_per_hour": self.max_per_hour, "max_age_s": self.max_age_s}
+                "max_per_hour": self.max_per_hour, "max_age_s": self.max_age_s, "admins": list(self.admins)}
 
 
 def validate(d: dict) -> list[str]:
@@ -68,6 +75,9 @@ def validate(d: dict) -> list[str]:
     prefix = d.get("prefix", ".")
     if not isinstance(prefix, str) or len(prefix) != 1 or prefix.isalnum() or prefix.isspace():
         errors.append("prefix: one character such as . or !")
+    for x in d.get("admins") or []:
+        if not isinstance(x, int) or not 0 < x < MEMBER_LIMIT:
+            errors.append(f"admin {x!r}: a member number")
     for k, v in (d.get("commands") or {}).items():
         name = str(k).lower()
         if not COMMAND_RE.match(name):
@@ -185,10 +195,14 @@ def decide(msg: dict, cfg: Config, ctx: Context, limiter: Limiter) -> tuple[Opti
     reply = answer(command, msg, cfg, ctx)
     if reply is None:
         return None, f"unknown command {command}"
-    blocked = limiter.allow(msg.get("member", 0), ctx.now, cfg)
-    if blocked:
-        return None, blocked
-    limiter.note(msg.get("member", 0), ctx.now)
+    why = f"{cfg.prefix}{command}"
+    if msg.get("member") in cfg.admins and msg.get("path"):   # an admin, and a repeater checked the member key
+        why += " (admin)"
+    else:
+        blocked = limiter.allow(msg.get("member", 0), ctx.now, cfg)
+        if blocked:
+            return None, blocked
+        limiter.note(msg.get("member", 0), ctx.now)
     if sender:
         reply = f"@{sender} {reply}"
-    return clip_utf8(reply, ctx.text_max), f"{cfg.prefix}{command}"
+    return clip_utf8(reply, ctx.text_max), why

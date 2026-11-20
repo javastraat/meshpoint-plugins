@@ -38,7 +38,7 @@ async def put_config(body: dict, _claims: SessionClaims = Depends(require_admin)
     if errors:
         raise HTTPException(400, "; ".join(errors))
     params = {"enabled": bool(body.get("enabled")), "channels": body.get("channels"),
-              "commands": len(body.get("commands") or {})}
+              "commands": len(body.get("commands") or {}), "admins": body.get("admins") or []}
     with audit.timed_action(user=_claims.subject, action="localmesh-bot.config_update", params=params):
         _service.set_config(body)
     return {"saved": True, "config": _service.config.to_dict()}
