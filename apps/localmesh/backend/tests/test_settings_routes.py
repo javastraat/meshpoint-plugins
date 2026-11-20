@@ -82,5 +82,14 @@ class TestSettingsRoutes(unittest.TestCase):
         self.persist.assert_not_called()
 
 
+    def test_channel_names_up_to_127(self) -> None:
+        """20-11: channels run 0-127 in the firmware and the app (Test 126, Meldingen 127); it said 0-39."""
+        self.assertEqual(routes.validate_channel_names({"126": " Test ", "127": "Meldingen", "0": "Algemeen"}),
+                         {126: "Test", 127: "Meldingen", 0: "Algemeen"})
+        for bad in ("128", "255", "-1"):
+            with self.assertRaises(HTTPException) as cm:
+                routes.validate_channel_names({bad: "x"})
+            self.assertIn("0-127", cm.exception.detail)
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@
 
 class LocalMeshSettingsTab {
     _MAX_DEVICES = 4;
-    _MAX_CHANNEL = 39;   // 0..39 -- up to 40 channels, matches settings_routes.py's own MAX_CHANNEL
+    _MAX_CHANNEL = 127;   // 0..127, matches settings_routes.py's own MAX_CHANNEL (firmware and app; was 39 until 20-11)
 
     constructor(el) {
         this._el = el;
@@ -126,7 +126,7 @@ class LocalMeshSettingsTab {
     }
 
     _addChannelRow(data = {}) {
-        if (this._channelsEl.children.length > this._MAX_CHANNEL) return;   // at most 40 rows at once -- plenty of slack to actually use all 0-39
+        if (this._channelsEl.children.length > this._MAX_CHANNEL) return;   // at most one row per channel number
         const div = document.createElement('div');
         div.className = 'cfg-companion';
         const hint = data.reportedName ? `Receiver reports: "${this._esc(data.reportedName)}"` : 'Not reported by any receiver yet';

@@ -21,7 +21,7 @@ from . import state
 router = APIRouter(prefix="/api/localmesh", tags=["config", "localmesh"])
 
 MAX_DEVICES = 4
-MAX_CHANNEL = 39   # LocalMesh channel numbers run 0..39 (up to 40 channels)
+MAX_CHANNEL = 127   # LocalMesh channel numbers run 0..127 (firmware and app; 126 Test, 127 Meldingen; was 39 until 20-11)
 _LABEL = re.compile(r"^[a-z0-9_-]{0,16}$")   # becomes part of the capture source name: localmesh_<label>
 
 
