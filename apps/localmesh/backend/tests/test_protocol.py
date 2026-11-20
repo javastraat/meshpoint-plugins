@@ -100,6 +100,16 @@ class TestParsers(unittest.TestCase):
         m = p.parse_message(raw)
         self.assertEqual((m.index, m.channel, m.member, m.counter, m.hops, m.via, m.rssi, m.snr, m.text),
                          (3, 0, 4, 12, 1, 100, -70, 7.5, "hallo"))
+        self.assertEqual(m.path, [])   # older firmware: no v2 tail
+
+    def test_message_v2_path(self) -> None:
+        """MESSAGE v2 (firmware 15-11): u8 n, n x u16 node after the text -- the repeaters of a flood, first one first."""
+        raw = struct.pack("<HBIIIBHhb", 3, 0, 4, 12, 1762862400, 2, 42978, -36, 47) + s(".trace") \
+            + struct.pack("<BHH", 2, 58159, 42978)
+        m = p.parse_message(raw)
+        self.assertEqual((m.text, m.path), (".trace", [58159, 42978]))
+        raw = struct.pack("<HBIIIBHhb", 3, 0, 4, 12, 1762862400, 0, 0, -7, 48) + s("x") + bytes([0])
+        self.assertEqual(p.parse_message(raw).path, [])   # heard directly (or routed): empty path
 
     def test_advert_position_and_none(self) -> None:
         a = p.parse_advert(struct.pack("<IBii", 4, 1, 521234567, 48765432) + s("base") + struct.pack("<BHh", 0, 0, -50))
@@ -148,8 +158,8 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(frames[3], bytes([p.ADVERT_SEND, 19]))
 
     def test_limits_and_clip(self) -> None:
-        self.assertEqual(p.channel_text_max(""), 155)
-        self.assertEqual(p.channel_text_max("Meshpoint"), 155 - 11)
+        self.assertEqual(p.channel_text_max(""), 151)
+        self.assertEqual(p.channel_text_max("Meshpoint"), 151 - 11)
         self.assertEqual(p.clip_utf8("ééé", 5), "éé")          # never half a character
         self.assertEqual(p.clip_utf8("abc", 5), "abc")
 

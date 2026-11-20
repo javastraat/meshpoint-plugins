@@ -1,0 +1,17 @@
+name = "localmesh-bot"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["routes", "hook"]   # routes: /api/localmesh-bot/*; hook: an extra "Bot" tab on the LocalMesh page
+requires = "localmesh"          # answers through a localmesh receiver: can only be enabled with localmesh enabled
+
+[frontend]
+scripts = ["frontend/localmesh_bot.js"]
+styles = ["frontend/localmesh_bot.css"]
+
+[hook]
+host = "localmesh"   # the localmesh plugin's [sidebar].route: its page adds every hook as an extra tab (admin)
+
+[meta]
+description = "A bot for LocalMesh: answers commands such as .help, .ping and .trace (the repeaters a message came through) and your own command -> answer pairs on the channels you choose, through a localmesh receiver and under its name. Cooldown per member and a limit per hour (every answer is a flood). Settings and a log in an extra Bot tab on the LocalMesh page."
+homepage = "https://www.localmesh.nl"
+author = "Einstein PD2EMC"

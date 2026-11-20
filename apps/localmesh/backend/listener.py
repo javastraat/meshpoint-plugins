@@ -32,6 +32,7 @@ from src.capture.base import CaptureSource
 from src.models.packet import RawCapture
 from src.models.signal import SignalMetrics
 
+from . import hooks
 from . import protocol as p
 from . import state
 from . import views
@@ -481,8 +482,11 @@ class LocalMeshSerialSource(CaptureSource):
                 old = self.messages[0]
                 self._message_keys.discard((old["member"], old["counter"], old["channel"]))
             self._message_keys.add(key)
-            self.messages.append({**asdict(m), "received": now,
-                                  "time": m.time if m.time >= PLAUSIBLE_TIME else None})
+            record = {**asdict(m), "received": now, "time": m.time if m.time >= PLAUSIBLE_TIME else None}
+            self.messages.append(record)
+        # Plugins that build on this one (localmesh-bot) get every new message, on the event loop (hooks.py)
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(hooks.emit_message, self, record)
         # Mirror into the core Messages page's shared store too (protocol="localmesh"), so LocalMesh
         # conversations show up there alongside Reticulum/Meshtastic/MeshCore -- same deduplicate-
         # once reasoning as self.messages above, just a second destination for the same event. This

@@ -27,7 +27,7 @@ list, neighbours). It transmits only from the Send tab, by an admin, within the 
     decision (green passed on or delivered, amber dropped as normal mesh traffic, red refused).
   - **Send** (admin): a message to a channel the receiver has the key for, or a direct message to a member (also from
     a member's side panel), with a byte counter (a channel message carries the receiver's name in front, in the same
-    155 bytes; a direct message fits 149). The receiver's name on the network (it broadcasts it 5 s after a change,
+    151 bytes since firmware 8e12ea5; a direct message fits 149). The receiver's name on the network (it broadcasts it 5 s after a change,
     and every 24 h) and "Broadcast name now". Recently sent, with status: sent, repeated (a repeater was heard
     passing it on), delivered or not delivered (direct messages). Sent messages also show on the Messages tab.
     Every send is in the audit log (where to and how many bytes, not the text).
@@ -81,7 +81,8 @@ pyserial is already on every Meshpoint (the core serial sources use it); no setu
   audited): the only routes that transmit.
 - `backend/settings_routes.py`: `GET/PUT /api/localmesh/settings` (saving is admin-only and audited).
 - `backend/state.py`: the receiver list, saved to `plugins.localmesh` in `local.yaml`.
-- `frontend/localmesh_panel.js`: the page and its tabs; `localmesh_settings_tab.js`: the Settings tab;
+- `backend/hooks.py`: a small registry in `sys.modules` for plugins that build on this one (first: [localmesh-bot](../localmesh-bot)): the receivers, and handlers that get every new message (with its route) on the event loop.
+- `frontend/localmesh_panel.js`: the page and its tabs (plus one extra tab, admin only, per page hook for host `localmesh`, e.g. the Bot tab); `localmesh_settings_tab.js`: the Settings tab;
   `localmesh_member_drawer.js`: the member side panel; `localmesh_send_tab.js`: the Send tab.
 - `frontend/localmesh_topbar_chip.js`: the chip; `localmesh.css`: scrolling, column widths, clickable rows.
 

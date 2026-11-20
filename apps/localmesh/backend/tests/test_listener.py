@@ -8,6 +8,7 @@ import unittest
 
 from plugins.apps.localmesh.backend import protocol as p
 from plugins.apps.localmesh.backend import listener as l
+from plugins.apps.localmesh.backend import hooks
 
 
 def s(text: str) -> bytes:
@@ -138,7 +139,8 @@ class TestListener(unittest.TestCase):
         """The core store only dedupes on packet_id, and the board's buffer is fetched again after a restart."""
         class Loop:
             def __init__(self) -> None: self.calls = []
-            def call_soon_threadsafe(self, fn, *args): self.calls.append(args)
+            def call_soon_threadsafe(self, fn, *args):   # only the core-store mirror (hooks.emit_message is tested apart)
+                if fn is not hooks.emit_message: self.calls.append(args)
         loop = Loop()
         self.src._loop, self.src.message_repo = loop, object()
         self.src._handle(message(0, 4, 12, "kanaal", channel=0))
@@ -148,7 +150,8 @@ class TestListener(unittest.TestCase):
     def test_mirrored_sender_name_comes_from_the_text_prefix(self) -> None:
         class Loop:
             def __init__(self) -> None: self.calls = []
-            def call_soon_threadsafe(self, fn, *args): self.calls.append(args)
+            def call_soon_threadsafe(self, fn, *args):   # only the core-store mirror (hooks.emit_message is tested apart)
+                if fn is not hooks.emit_message: self.calls.append(args)
         loop = Loop()
         self.src._loop, self.src.message_repo = loop, object()
         self.src._handle(message(0, 4, 1, "Einstein Tag: nou zeg"))
@@ -159,6 +162,25 @@ class TestListener(unittest.TestCase):
         got = [(c[0], c[2]) for c in loop.calls]   # (text, node_name)
         self.assertEqual(got, [("nou zeg", "Einstein Tag"), ("dm without a name", "Einstein Tag"),
                                ("no name here", "7"), ("Bijnaam: hoi", "Bob")])
+
+    def test_new_messages_go_to_the_hooks_once(self) -> None:
+        """20-11: plugins that build on this one (localmesh-bot) get every NEW message, with its path, on the loop."""
+        class Loop:
+            def __init__(self) -> None: self.calls = []
+            def call_soon_threadsafe(self, fn, *args): self.calls.append((fn, args))
+        loop = Loop()
+        self.src._loop = loop
+        got = []
+        handler = lambda source, m: got.append((source, m["member"], m["text"], m["path"]))
+        hooks.registry().message_handlers.append(handler)
+        try:
+            raw = message(0, 4, 12, ".ping") + struct.pack("<BHH", 2, 58159, 42978)
+            self.src._handle(raw); self.src._handle(raw)   # the same message again (buffer after a reconnect)
+            for fn, args in loop.calls:
+                if fn is hooks.emit_message: fn(*args)
+        finally:
+            hooks.registry().message_handlers.remove(handler)
+        self.assertEqual(got, [(self.src, 4, ".ping", [58159, 42978])])
 
     def test_channels_and_channel_events(self) -> None:
         self.src._handle(reply(l.SEQ_CHANNELS, bytes([1, 0, 0]) + s("Algemeen")))

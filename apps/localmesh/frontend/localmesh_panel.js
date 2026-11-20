@@ -99,6 +99,13 @@ class LocalMeshPanel {
         this._search = '';
         this._shown = [];   // the rows on screen, for the detail popup
         this._isAdmin = window.meshpointIdentity?.role !== 'viewer';
+        // 20-11: plugins that build on this one (localmesh-bot) add a tab of their own through the core's page-hook
+        // seam (window.registerPageHook({host: 'localmesh', label, make})): one extra tab each, after Settings, admin
+        // only. Their scripts run before app.js, so every hook is registered by the time this page is made.
+        this._hookTabs = (window.MESHPOINT_PAGE_HOOKS || []).filter((h) => h.host === 'localmesh').map((h, i) => ({
+            id: `hook-${String(h.label || i).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+            label: h.label || 'Plugin', admin: true, make: h.make, panel: null,
+        }));
         let stored = null;
         try { stored = localStorage.getItem(LM_TAB_STORE_KEY); } catch (_) {}
         this._tab = this._allowed(stored) ? stored : 'members';
@@ -110,14 +117,23 @@ class LocalMeshPanel {
         this._drawer = window.LocalMeshMemberDrawer ? new window.LocalMeshMemberDrawer() : null;
     }
 
+    /** The built-in tabs, then one per page hook. */
+    _tabs() {
+        return LM_TABS.concat(this._hookTabs);
+    }
+
+    _hookTab(id) {
+        return this._hookTabs.find((t) => t.id === id) || null;
+    }
+
     _allowed(id) {
-        const tab = LM_TABS.find((t) => t.id === id);
+        const tab = this._tabs().find((t) => t.id === id);
         return Boolean(tab) && (!tab.admin || this._isAdmin);
     }
 
     mount(rootEl) {
         this._root = rootEl;
-        const tabs = LM_TABS.map((t) => `
+        const tabs = this._tabs().map((t) => `
             <button class="lw-tab" type="button" role="tab" data-lm-tab="${t.id}"
                     ${this._allowed(t.id) ? '' : 'hidden'}>${t.label}</button>`).join('');
         const table = (id) => `
@@ -169,6 +185,10 @@ class LocalMeshPanel {
                     <div data-lm-view="settings" hidden>
                         <div class="panel__body" data-lm-settings-body></div>
                     </div>
+                    ${this._hookTabs.map((t) => `
+                    <div data-lm-view="${t.id}" hidden>
+                        <div class="panel__body" data-lm-hook-body="${t.id}"></div>
+                    </div>`).join('')}
                 </div>
             </section>
         `;
@@ -178,6 +198,16 @@ class LocalMeshPanel {
         if (window.LocalMeshSettingsTab) {
             this._settingsTab = new window.LocalMeshSettingsTab(rootEl.querySelector('[data-lm-settings-body]'));
         }
+        this._hookTabs.forEach((t) => {
+            if (!this._allowed(t.id)) return;
+            try {
+                t.panel = t.make();
+                t.panel.mount(rootEl.querySelector(`[data-lm-hook-body="${t.id}"]`));
+            } catch (e) {
+                console.warn('LocalMesh: a plugin tab failed to mount', t.label, e);
+                t.panel = null;
+            }
+        });
         rootEl.querySelector('[data-lm-refresh]').addEventListener('click', () => this._refresh());
         rootEl.querySelectorAll('[data-lm-tab]').forEach((btn) => {
             btn.addEventListener('click', () => this._setTab(btn.dataset.lmTab));
@@ -236,10 +266,12 @@ class LocalMeshPanel {
         clearInterval(this._timer);
         this._timer = null;
         if (this._drawer) this._drawer.close();
+        this._hookTab(this._tab)?.panel?.hide?.();
     }
 
     _setTab(tab) {
         if (!this._allowed(tab) || tab === this._tab) return;
+        this._hookTab(this._tab)?.panel?.hide?.();   // a plugin tab stops polling when it is left
         this._tab = tab;
         try { localStorage.setItem(LM_TAB_STORE_KEY, tab); } catch (_) {}
         this._applyTab();
@@ -247,10 +279,11 @@ class LocalMeshPanel {
         if (LM_SEARCH_TABS.includes(tab)) this._loadList(this._view());
     }
 
-    /** The Settings and Send tabs load their own data when opened. */
+    /** The Settings and Send tabs, and a plugin's tab, load their own data when opened. */
     _showTabExtras() {
         if (this._tab === 'settings' && this._settingsTab) this._settingsTab.show();
         if (this._tab === 'send' && this._sendTab) this._sendTab.show();
+        this._hookTab(this._tab)?.panel?.show?.();
     }
 
     /** From the member side panel: the Send tab with a direct message to this member. */

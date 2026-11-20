@@ -11,7 +11,7 @@
  * over the receivers (GET /api/localmesh/status) on every refresh via update().
  */
 
-const LM_CHANNEL_TEXT_MAX = 155;   // protocol.py CHANNEL_TEXT_MAX: includes "Name: " in front
+const LM_CHANNEL_TEXT_MAX = 151;   // protocol.py CHANNEL_TEXT_MAX (151 since firmware 8e12ea5): includes "Name: " in front
 const LM_DIRECT_TEXT_MAX = 149;
 const LM_SENT_BADGE = { sent: 'data', repeated: 'join', delivered: 'join', failed: 'undecrypted' };
 const LM_SENT_TEXT = {

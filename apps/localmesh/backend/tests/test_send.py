@@ -173,7 +173,7 @@ class TestSendRoutes(unittest.TestCase):
         self.assert_refused(src, 400, to=p.REPEATER_MEMBER_BASE | 1, text="hoi")
         self.assert_refused(src, 400, to=4, text="x" * (p.DIRECT_TEXT_MAX + 1))
         detail = self.assert_refused(src, 400, channel=0, text="x" * (p.channel_text_max("Meshpoint") + 1))
-        self.assertIn("at most 144", detail)                                # 155 - "Meshpoint: "
+        self.assertIn("at most 140", detail)                                # 151 - "Meshpoint: "
         self.assertEqual(src.calls, [])
         self.send(src, channel=0, text="x" * p.channel_text_max("Meshpoint"))   # exactly fits
 

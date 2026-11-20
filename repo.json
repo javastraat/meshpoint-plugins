@@ -135,6 +135,23 @@
       "has_setup": false
     },
     {
+      "id": "localmesh-bot",
+      "kind": "app",
+      "path": "apps/localmesh-bot",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "routes",
+        "hook"
+      ],
+      "description": "A bot for LocalMesh: answers commands such as .help, .ping and .trace (the repeaters a message came through) and your own command -> answer pairs on the channels you choose, through a localmesh receiver and under its name. Cooldown per member and a limit per hour (every answer is a flood). Settings and a log in an extra Bot tab on the LocalMesh page.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://www.localmesh.nl",
+      "has_setup": false,
+      "hook_host": "localmesh",
+      "requires": "localmesh"
+    },
+    {
       "id": "localmesh-dashboard",
       "kind": "app",
       "path": "apps/localmesh-dashboard",

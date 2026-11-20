@@ -49,13 +49,13 @@ class TestSettingsRoutes(unittest.TestCase):
 
     def test_get(self) -> None:
         self.assertEqual(_run(routes.get_localmesh_settings()),
-                         {"devices": [{"serial_port": "/dev/ttyACM0", "label": "old"}]})
+                         {"devices": [{"serial_port": "/dev/ttyACM0", "label": "old"}], "channel_names": {}})
 
     def test_put_saves_cleaned_list_and_asks_for_restart(self) -> None:
         result = self._put(_dev(" /dev/serial/by-id/usb-Espressif-if00 ", " Base "), _dev("/dev/ttyACM1", "attic"))
         expected = [{"serial_port": "/dev/serial/by-id/usb-Espressif-if00", "label": "base"},
                     {"serial_port": "/dev/ttyACM1", "label": "attic"}]
-        self.assertEqual(result, {"saved": True, "restart_required": True, "devices": expected})
+        self.assertEqual(result, {"saved": True, "restart_required": True, "devices": expected, "channel_names": {}})
         self.assertEqual(state.devices(), expected)
         self.persist.assert_called_once()
 

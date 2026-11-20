@@ -12,7 +12,7 @@ from __future__ import annotations
 
 
 def register(reg) -> None:
-    from . import decode, routes, send_routes, settings_routes, state
+    from . import decode, hooks, routes, send_routes, settings_routes, state
     from .listener import LocalMeshSerialSource
 
     state.init(reg.config)
@@ -57,6 +57,7 @@ def register(reg) -> None:
             s.ws_manager = ws_manager
         routes.init_routes(sources)
         send_routes.init_routes(sources)
+        hooks.set_sources(sources)   # for plugins that build on this one (localmesh-bot), see hooks.py
 
     reg.add_capture_source("localmesh", build, wire)
     reg.add_protocol("localmesh", capture_prefix="localmesh",

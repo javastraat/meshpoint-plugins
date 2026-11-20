@@ -96,8 +96,7 @@ async def update_localmesh_settings(
     devices_changed = devices != state.devices()
     with audit.timed_action(user=_claims.subject, action="localmesh.settings_update",
                             params={"channel_names_count": len(channel_names)}):
-        state.set_devices(devices)
-        state.set_channel_names(channel_names)
+        state.set_settings(devices, channel_names)   # one save for both
     return {
         "saved": True, "restart_required": devices_changed,
         "devices": state.devices(), "channel_names": state.channel_names(),

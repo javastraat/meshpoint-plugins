@@ -80,6 +80,14 @@ def set_channel_names(names: dict[int, str]) -> None:
     _persist()
 
 
+def set_settings(devices: list[dict], names: dict[int, str]) -> None:
+    """The Settings tab saves both at once: one write to local.yaml instead of two (20-11)."""
+    global _devices, _channel_names
+    _devices = [dict(d) for d in devices]
+    _channel_names = dict(names)
+    _persist()
+
+
 def set_name(label: str, name: str) -> None:
     """Remember the name the Send tab gave a receiver (the board itself does not report it), and persist."""
     for d in _devices:

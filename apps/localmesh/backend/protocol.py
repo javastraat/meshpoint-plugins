@@ -36,8 +36,9 @@ CHANNEL_DIRECT = 255
 # reply error codes
 ERR_OK, ERR_UNKNOWN, ERR_ARGUMENT, ERR_STATE, ERR_RADIO = 0, 1, 2, 3, 4
 # text limits in bytes (firmware Packet.h / Core.h, packet format v4): a channel message carries the receiver's own
-# name in front ("Name: "), inside the same 155 bytes; a direct message does not
-CHANNEL_TEXT_MAX = 155   # MAX_PAYLOAD 160 - channel byte - 4-byte MAC
+# name in front ("Name: "), inside the same 151 bytes; a direct message does not
+CHANNEL_TEXT_MAX = 151   # MAX_PAYLOAD 160 - channel byte - 4-byte nonce part - 4-byte MAC (firmware 8e12ea5, 18-11:
+                         # the nonce part travels in every channel message; was 155)
 DIRECT_TEXT_MAX = 149    # MAX_PAYLOAD 160 - 7-byte direct head - 4-byte MAC
 NAME_MAX = 32
 
@@ -273,11 +274,16 @@ def parse_rx_log(p: bytes) -> RxLog:
 @dataclass
 class Message:
     index: int; channel: int; member: int; counter: int; time: int; hops: int; via: int; rssi: int; snr: float; text: str
+    path: list = field(default_factory=list)   # v2 (firmware 15-11): the repeaters of a flood, first one first
 
 
 def parse_message(p: bytes) -> Message:
     r = Reader(p)
-    return Message(r.u16(), r.u8(), r.u32(), r.u32(), r.u32(), r.u8(), r.u16(), r.i16(), r.i8() / 4, r.str())
+    m = Message(r.u16(), r.u8(), r.u32(), r.u32(), r.u32(), r.u8(), r.u16(), r.i16(), r.i8() / 4, r.str())
+    if r.remaining >= 1:   # v2: u8 n, n x u16 node (empty for a routed packet or one heard directly)
+        n = r.u8()
+        m.path = [r.u16() for _ in range(n)]
+    return m
 
 
 @dataclass

@@ -17,7 +17,8 @@ class TestState(unittest.TestCase):
         devices = state.devices()
         devices[0]["label"] = "changed"
         self.assertEqual(state.devices(), [{"serial_port": "/dev/ttyACM0", "label": "base"}])
-        self.assertEqual(state.to_dict(), {"devices": [{"serial_port": "/dev/ttyACM0", "label": "base"}]})
+        self.assertEqual(state.to_dict(), {"devices": [{"serial_port": "/dev/ttyACM0", "label": "base"}],
+                                           "channel_names": {}})   # 18-11: channel-name overrides too
 
     def test_no_devices(self) -> None:
         state.init({"enabled": True})
@@ -31,7 +32,8 @@ class TestState(unittest.TestCase):
         (section, values), _ = save.call_args
         self.assertEqual(section, "plugins")
         self.assertEqual(values["localmesh"], {"enabled": True, "extra": "kept",
-                                               "devices": [{"serial_port": "/dev/ttyACM1", "label": "base"}]})
+                                               "devices": [{"serial_port": "/dev/ttyACM1", "label": "base"}],
+                                               "channel_names": {}})
 
 
 if __name__ == "__main__":
