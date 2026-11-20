@@ -74,14 +74,20 @@
                                 <input class="cfg-field__input lmbot__num" type="number" min="1" max="120" data-bot-hour>
                             </label>
                         </div>
-                        <label class="cfg-field lmbot__admins">
+                        <div class="cfg-field lmbot__admins">
                             <span class="cfg-field__label">Admin members (no cooldown, no hourly limit)</span>
-                            <input class="cfg-field__input" type="text" placeholder="e.g. 3277263, 535246" data-bot-admins>
-                            <span class="cfg-field__hint">Member numbers, separated by commas. Only for questions that
+                            <div class="lmbot__chips" data-bot-admin-chips></div>
+                            <span class="lmbot__row">
+                                <select class="cfg-field__input" data-bot-admin-pick></select>
+                                <input class="cfg-field__input lmbot__num" type="number" min="1" max="16777215"
+                                       placeholder="number" data-bot-admin-other hidden>
+                                <button class="terminal-button" type="button" data-bot-admin-add>+ Add</button>
+                            </span>
+                            <span class="cfg-field__hint">Pick members the receiver knows, or "Other number…". Only for questions that
                                 came through a repeater (a repeater checked the member key; heard directly, anyone with
                                 the channel key could use an admin's number). The receiver's own airtime budget still
                                 applies.</span>
-                        </label>
+                        </div>
                     </article>
 
                     <article class="cfg-card">
@@ -120,6 +126,10 @@
             q('[data-bot-channel-add-btn]').addEventListener('click', () => this._addChannel());
             q('[data-bot-rename]').addEventListener('click', () => this._rename());
             q('[data-bot-receiver]').addEventListener('change', () => this._renderReceiver());
+            q('[data-bot-admin-add]').addEventListener('click', () => this._addAdmin());
+            q('[data-bot-admin-pick]').addEventListener('change', (e) => {
+                q('[data-bot-admin-other]').hidden = e.target.value !== 'other';
+            });
         }
 
         show() {
@@ -159,7 +169,9 @@
             q('[data-bot-prefix]').value = c.prefix;
             q('[data-bot-cooldown]').value = c.cooldown_s;
             q('[data-bot-hour]').value = c.max_per_hour;
-            q('[data-bot-admins]').value = (c.admins || []).join(', ');
+            this._admins = new Set(c.admins || []);
+            this._members = await this._loadMembers();
+            this._renderAdmins();
             const sel = q('[data-bot-receiver]');
             sel.innerHTML = (data.receivers.length ? data.receivers : [{ label: '', name: '' }]).map((r) =>
                 `<option value="${esc(r.label)}">${esc(r.label || 'receiver')}${r.name ? ` -- ${esc(r.name)}` : ''}</option>`).join('');
@@ -199,6 +211,50 @@
                 const id = Number(cb.value);
                 if (cb.checked) this._channels.add(id); else this._channels.delete(id);
             }));
+        }
+
+        /** The members the localmesh plugin knows (name + number), for the admin pull-down. Not the Meshpoint's own. */
+        async _loadMembers() {
+            const { data } = await this._request('GET', '/api/localmesh/members');
+            return Array.isArray(data) ? data.filter((m) => !m.own && m.member > 0) : [];
+        }
+
+        _memberName(n) {
+            const m = (this._members || []).find((x) => x.member === n);
+            return m && m.name ? `${m.name} (${n})` : String(n);
+        }
+
+        _renderAdmins() {
+            const q = (s) => this._el.querySelector(s);
+            const chips = q('[data-bot-admin-chips]');
+            chips.innerHTML = [...this._admins].sort((a, b) => a - b).map((n) => `
+                <span class="lmbot__adminchip">${esc(this._memberName(n))}
+                    <button type="button" title="Remove" data-bot-admin-remove="${n}">✕</button></span>`).join('')
+                || '<span class="cfg-field__hint">No admins yet.</span>';
+            chips.querySelectorAll('[data-bot-admin-remove]').forEach((b) => b.addEventListener('click', () => {
+                this._admins.delete(Number(b.dataset.botAdminRemove));
+                this._renderAdmins();
+            }));
+            const left = (this._members || []).filter((m) => !this._admins.has(m.member))
+                .sort((a, b) => (a.name || '~').localeCompare(b.name || '~') || a.member - b.member);
+            q('[data-bot-admin-pick]').innerHTML = '<option value="">Choose a member…</option>'
+                + left.map((m) => `<option value="${m.member}">${esc(m.name || 'no name')} (${m.member})</option>`).join('')
+                + '<option value="other">Other number…</option>';
+            q('[data-bot-admin-other]').hidden = true;
+        }
+
+        _addAdmin() {
+            const q = (s) => this._el.querySelector(s);
+            const pick = q('[data-bot-admin-pick]').value;
+            const n = Number(pick === 'other' ? q('[data-bot-admin-other]').value : pick);
+            if (!pick || !Number.isInteger(n) || n < 1 || n > 16777215) {
+                this._status(pick === 'other' ? 'A member number is 1-16777215.' : 'Choose a member first.', true);
+                return;
+            }
+            this._admins.add(n);
+            q('[data-bot-admin-other]').value = '';
+            this._renderAdmins();
+            this._status('Added; press Save to keep it.');
         }
 
         _addChannel() {
@@ -252,9 +308,7 @@
                 commands,
                 cooldown_s: Number(q('[data-bot-cooldown]').value) || 20,
                 max_per_hour: Number(q('[data-bot-hour]').value) || 30,
-                // numbers only; anything else goes to the server as text so it says what is wrong
-                admins: q('[data-bot-admins]').value.split(/[\s,;]+/).filter(Boolean)
-                    .map((x) => (/^\d+$/.test(x) ? Number(x) : x)),
+                admins: [...(this._admins || [])].sort((a, b) => a - b),
             };
         }
 
