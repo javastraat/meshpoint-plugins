@@ -43,10 +43,15 @@ class TestCommands(unittest.TestCase):
     def setUp(self) -> None:
         self.lim = bot.Limiter()
 
-    def test_ping_answers_with_the_signal_and_the_sender(self) -> None:
-        reply, why = bot.decide(msg("Einstein Tag: .ping"), cfg(), ctx(), self.lim)
-        self.assertEqual(reply, "@Einstein Tag pong, -36 dBm / 11.75 dB")
+    def test_ping_heard_directly_gives_the_askers_own_signal(self) -> None:
+        reply, why = bot.decide(msg("Einstein Tag: .ping", rssi=-7, snr=12.0), cfg(), ctx(), self.lim)
+        self.assertEqual(reply, "@Einstein Tag pong, heard directly, -7 dBm / 12 dB")
         self.assertEqual(why, ".ping")
+
+    def test_ping_through_repeaters_says_the_signal_is_the_last_hop(self) -> None:
+        """20-11: through a repeater the signal is how the bot heard that repeater, not the asker: say so."""
+        reply, _ = bot.decide(msg(".ping", path=[58159, 42978]), cfg(), ctx(), self.lim)
+        self.assertEqual(reply, "pong, 2 hops, last hop NL-AMS-1057 (42978) -36 dBm / 11.75 dB")
 
     def test_help_lists_builtin_and_own_commands(self) -> None:
         reply, _ = bot.decide(msg(".help"), cfg(commands={"weer": "Kijk naar buiten"}), ctx(), self.lim)
@@ -54,18 +59,20 @@ class TestCommands(unittest.TestCase):
 
     def test_trace_names_the_repeaters_in_order(self) -> None:
         reply, _ = bot.decide(msg("Einstein Tag: .trace", path=[58159, 42978]), cfg(), ctx(), self.lim)
-        self.assertEqual(reply, "@Einstein Tag 2 hops: NL-AMS-1076 (58159) → NL-AMS-1057 (42978), -36 dBm / 11.75 dB")
+        self.assertEqual(reply, "@Einstein Tag 2 hops: NL-AMS-1076 (58159) → NL-AMS-1057 (42978), "
+                                "last hop -36 dBm / 11.75 dB")
 
     def test_trace_heard_directly(self) -> None:
-        reply, _ = bot.decide(msg(".trace"), cfg(), ctx(), self.lim)
-        self.assertEqual(reply, "directly, no repeater, -36 dBm / 11.75 dB")
+        reply, _ = bot.decide(msg(".trace", rssi=-7, snr=12.0), cfg(), ctx(), self.lim)
+        self.assertEqual(reply, "heard directly, no repeater, -7 dBm / 12 dB")
 
     def test_own_command_and_case(self) -> None:
         reply, _ = bot.decide(msg(".WEER"), cfg(commands={"weer": "Kijk naar buiten"}), ctx(), self.lim)
         self.assertEqual(reply, "Kijk naar buiten")
 
     def test_other_prefix(self) -> None:
-        self.assertEqual(bot.decide(msg("!ping"), cfg(prefix="!"), ctx(), self.lim)[0], "pong, -36 dBm / 11.75 dB")
+        self.assertEqual(bot.decide(msg("!ping"), cfg(prefix="!"), ctx(), self.lim)[0],
+                         "pong, heard directly, -36 dBm / 11.75 dB")
         self.assertIsNone(bot.decide(msg(".ping"), cfg(prefix="!"), ctx(), bot.Limiter())[0])
 
     def test_reply_fits_the_receiver(self) -> None:

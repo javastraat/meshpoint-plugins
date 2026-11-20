@@ -68,7 +68,7 @@ class TestService(unittest.TestCase):
 
     def test_answers_through_the_same_receiver_on_the_same_channel(self) -> None:
         self.deliver(msg("Einstein Tag: .trace"))
-        self.assertEqual(self.src.sent, [(3, "@Einstein Tag 1 hop: NL-AMS-1057 (42978), -34 dBm / 12 dB")])
+        self.assertEqual(self.src.sent, [(3, "@Einstein Tag 1 hop: NL-AMS-1057 (42978), last hop -34 dBm / 12 dB")])
         self.assertEqual(self.service.log[-1]["status"], "sent")
 
     def test_attach_once(self) -> None:

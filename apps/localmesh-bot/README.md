@@ -6,11 +6,15 @@ A bot for LocalMesh that answers commands on the channels you choose, through a 
 | Command | Answer |
 |---|---|
 | `.help` | the list of commands |
-| `.ping` | `pong` with the signal the question arrived with (`-36 dBm / 11.75 dB`) |
-| `.trace` | the repeaters the question came through, in order (`2 hops: NL-AMS-1076 (58159) → NL-AMS-1057 (42978)`), or "directly, no repeater", plus the signal |
+| `.ping` | `pong, heard directly, -7 dBm / 12 dB`, or through repeaters `pong, 2 hops, last hop NL-AMS-1057 (42978) -36 dBm / 11.75 dB` |
+| `.trace` | the repeaters the question came through, in order (`2 hops: NL-AMS-1076 (58159) → NL-AMS-1057 (42978), last hop -36 dBm / 11.75 dB`), or `heard directly, no repeater, -7 dBm / 12 dB` |
 | your own | a fixed answer per command (`.weer` → "Kijk even naar buiten"), set in the tab |
 
 Answers start with `@<name>` of whoever asked, when their app put its name in front of the question.
+
+**The signal is the last hop's.** The receiver only measures the last transmitter: the asker when it was heard
+directly, otherwise the last repeater -- the same for everyone behind that repeater. The answers say which it is. The
+signal of the earlier hops is not in a message; only a route test (TRACE) measures it.
 
 ## The Bot tab
 

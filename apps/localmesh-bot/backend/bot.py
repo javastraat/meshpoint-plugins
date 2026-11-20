@@ -98,15 +98,28 @@ def signal(msg: dict) -> str:
     return f"{msg.get('rssi', 0)} dBm / {msg.get('snr', 0):g} dB"
 
 
-def route(msg: dict, repeater_name: Callable[[int], str]) -> str:
-    """How the message came: the repeaters of the flood in order, or "directly"."""
-    # "via" is the last transmitter: for a message heard directly that is the sender's own node, not a repeater, so
-    # only the path (MESSAGE v2, firmware 15-11) says which repeaters it went through
+def _hops(path: list) -> str:
+    return "1 hop" if len(path) == 1 else f"{len(path)} hops"
+
+
+# The signal (rssi/snr) is how the bot's receiver heard the LAST transmitter: the asker only when it was heard directly,
+# otherwise the last repeater -- the same for everyone behind that repeater (20-11). The answers say which it is.
+# "via" is that last transmitter too, but for a message heard directly it is the sender's own node, so only the path
+# (MESSAGE v2, firmware 15-11) says which repeaters it went through.
+
+def ping_text(msg: dict, repeater_name: Callable[[int], str]) -> str:
     path = list(msg.get("path") or [])
     if not path:
-        return "directly, no repeater"
-    hops = "1 hop" if len(path) == 1 else f"{len(path)} hops"
-    return f"{hops}: " + " → ".join(repeater_name(n) for n in path)
+        return f"pong, heard directly, {signal(msg)}"
+    return f"pong, {_hops(path)}, last hop {repeater_name(path[-1])} {signal(msg)}"
+
+
+def route(msg: dict, repeater_name: Callable[[int], str]) -> str:
+    """How the message came: the repeaters of the flood in order and the last hop's signal, or "heard directly"."""
+    path = list(msg.get("path") or [])
+    if not path:
+        return f"heard directly, no repeater, {signal(msg)}"
+    return f"{_hops(path)}: " + " → ".join(repeater_name(n) for n in path) + f", last hop {signal(msg)}"
 
 
 @dataclass
@@ -144,9 +157,9 @@ def answer(command: str, msg: dict, cfg: Config, ctx: Context) -> Optional[str]:
         names = list(BUILTIN) + sorted(cfg.commands)
         return "Commands: " + " ".join(cfg.prefix + n for n in names)
     if command == "ping":
-        return f"pong, {signal(msg)}"
+        return ping_text(msg, ctx.repeater_name)
     if command == "trace":
-        return f"{route(msg, ctx.repeater_name)}, {signal(msg)}"
+        return route(msg, ctx.repeater_name)
     return cfg.commands.get(command)
 
 
