@@ -405,8 +405,14 @@ class LocalMeshDashboard {
         const P = window.LocalMeshPanel;
         const esc = P ? P.esc : (s) => String(s ?? '');
         const ago = P ? P.ago : () => '--';
+        // firmware, battery and uptime in the tooltip (an older localmesh plugin has no repeaterHealth)
+        const health = (r) => {
+            const h = P && P.repeaterHealth ? P.repeaterHealth(r) : null;
+            return !h ? '' : [h.firmware && `firmware ${h.firmware}`, h.battery && `battery ${h.battery}`,
+                h.uptime && `up ${h.uptime}`, h.title].filter(Boolean).map((x) => `, ${x}`).join('');
+        };
         list.innerHTML = rows.slice(0, LMD_MEMBER_LIST_LIMIT).map((r) => `
-            <div class="lmd-member-row" data-node="${esc(r.node)}" title="Repeater ${esc(r.node)}${r.region != null ? `, region ${esc(r.region)}` : ''}">
+            <div class="lmd-member-row" data-node="${esc(r.node)}" title="Repeater ${esc(r.node)}${r.region != null ? `, region ${esc(r.region)}` : ''}${esc(health(r))}">
                 <span class="lmd-member-row__name">${esc(r.name || `Repeater ${r.node}`)}</span>
                 ${r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>' : ''}
                 ${r.direct ? '<span class="lw-badge lw-badge--join">direct</span>' : ''}

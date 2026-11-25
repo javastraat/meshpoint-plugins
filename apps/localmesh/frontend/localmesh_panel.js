@@ -33,7 +33,8 @@ const LM_MEMBER_VIEWS = [{ id: 'members', label: 'Members' }, { id: 'repeaters',
 const LM_COLUMNS = {
     members: [['Last heard', 'lm-ago'], ['Name', ''], ['Member', 'lm-num'], ['Packets', 'lm-num', true],
         ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal'], ['Position', 'lm-pos'], ['Status', 'lm-type']],
-    repeaters: [['Last heard', 'lm-ago'], ['Name', ''], ['Node', 'lm-num'], ['Region', 'lm-num'], ['Packets', 'lm-num', true],
+    repeaters: [['Last heard', 'lm-ago'], ['Name', ''], ['Node', 'lm-num'], ['Region', 'lm-hops'], ['Firmware', 'lm-hops'],
+        ['Battery', 'lm-hops', true], ['Uptime', 'lm-hops', true], ['Packets', 'lm-hops', true],
         ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal'], ['Status', 'lm-type']],
     messages: [['Time', 'lm-time'], ['Channel', 'lm-channel'], ['From', 'lm-from'], ['Text', ''],
         ['Hops left', 'lm-hops', true], ['Signal', 'lm-signal']],
@@ -84,6 +85,17 @@ const LM_REPEATER_INFO = { label: 'repeater info', badge: 'data',
         + 'A receiver cannot check it and does nothing with it: normal, not an error.' };
 
 class LocalMeshPanel {
+    /** A repeater's firmware, battery and uptime as short texts ('' = not known), and when the status came in. The
+     * firmware is from its last status or announce, whichever is newer. */
+    static repeaterHealth(r) {
+        const s = r.status;
+        const firmware = s && s.time >= (r.announced || 0) ? s.version : r.version;
+        const h = s ? s.uptime_h : 0;
+        return { firmware: firmware || '', battery: s && s.battery_mv ? `${(s.battery_mv / 1000).toFixed(2)} V` : '',
+            uptime: !s ? '' : h >= 48 ? `${Math.floor(h / 24)} d` : `${h} h`,
+            title: s ? `status received ${LocalMeshPanel.ago(s.time)}, not verified` : '' };
+    }
+
     /** [key, value] rows of a repeater's opened status (popup, side panel, dashboard); empty without a status. */
     static statusRows(s) {
         if (!s) return [];
@@ -95,7 +107,7 @@ class LocalMeshPanel {
             ['Firmware', s.version], ['Uptime', up], ['Noise floor', `${s.noise_floor} dBm`],
             ['Airtime', `${s.airtime_pct} %`], ['Send queue', String(s.queue)],
             ['Packets', `${s.rx_ok} accepted, ${s.rx_rejected} refused`], ['Refused for', why],
-            ['Neighbours', `${s.neighbor_count}${near ? `: ${near}` : ''}`],
+            ['Neighbours', `${s.neighbor_count} known${near ? `; last 25 h: ${near}` : ''}`],
             ['Note', 'As the packet says; this plugin cannot check that it is genuine.']];
     }
 
@@ -454,7 +466,7 @@ class LocalMeshPanel {
 
     static searchText(tab, r) {
         const parts = tab === 'members' ? [r.name, r.member]
-            : tab === 'repeaters' ? [r.name, r.node, r.region]
+            : tab === 'repeaters' ? [r.name, r.node, r.region, LocalMeshPanel.repeaterHealth(r).firmware]
             : tab === 'messages' ? [r.sender, r.member, r.channel_name, r.text]
                 : [r.name, r.sender, r.type, r.decision, LocalMeshPanel.decisionOf(r).label, r.counter];
         return parts.join(' ').toLowerCase();
@@ -484,11 +496,16 @@ class LocalMeshPanel {
         const status = r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>'
             : r.direct ? '<span class="lw-badge lw-badge--join">direct</span>'
             : !r.listed ? '<span class="lw-badge lw-badge--rejoin">not in certificates</span>' : '';
+        const health = LocalMeshPanel.repeaterHealth(r);
+        const title = LocalMeshPanel.esc(health.title);
         return `<tr>
             <td>${LocalMeshPanel.ago(r.last_heard)}</td>
             <td>${LocalMeshPanel.esc(r.name) || '--'}</td>
             <td>${r.node}</td>
             <td>${r.region ?? '--'}</td>
+            <td>${LocalMeshPanel.esc(health.firmware) || '--'}</td>
+            <td class="lw-r" title="${title}">${health.battery || '--'}</td>
+            <td class="lw-r" title="${title}">${health.uptime || '--'}</td>
             <td class="lw-r">${r.count || '--'}</td>
             <td class="lw-r">${r.hops ?? '--'}</td>
             <td>${LocalMeshPanel.signal(r.rssi, r.snr)}</td>

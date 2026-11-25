@@ -25,6 +25,11 @@
 
 .lm-subtitle { margin-top: 16px; }
 
+/* side panel: a long value (neighbours, note) keeps its distance from the label and lines up on the right */
+.lm-drawer .nd-row { gap: 12px; align-items: baseline; }
+.lm-drawer .nd-row__label { flex-shrink: 0; }
+.lm-drawer .nd-row__value { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+
 /* Members | Repeaters switch under the tab bar */
 .lm-subtabs { padding: 10px 16px 0; }
 

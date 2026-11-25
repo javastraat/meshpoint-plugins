@@ -249,7 +249,7 @@ class LocalMeshMemberDrawer {
         header.innerHTML = `<span class="nd-section__title">${title}</span>
             <span class="nd-section__arrow">${expanded ? '▼' : '▶'}</span>`;
         const content = document.createElement('div');
-        content.className = 'nd-section__content';
+        content.className = 'nd-section__content lm-drawer';
         content.innerHTML = kept.length
             ? kept.map(([label, value]) => `<div class="nd-row"><span class="nd-row__label">${label}</span>
                 <span class="nd-row__value">${value}</span></div>`).join('')
