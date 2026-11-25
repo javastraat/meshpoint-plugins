@@ -573,13 +573,13 @@ class LocalMeshSerialSource(CaptureSource):
                 if "announce" in info:
                     self.announces[node] = {**info["announce"], "time": now}
                 if "repeater_status" in info:
-                    self.statuses[node] = {**info["repeater_status"], "time": now}
+                    st = {**info["repeater_status"], "time": now, "counter": log.counter, "hops": log.hops, "via": log.via,
+                          "rssi": log.rssi, "snr": log.snr}
+                    self.statuses[node] = st
                     if self._loop is not None:   # for plugins that build on this one (localmesh-repeaters)
                         known = self.repeaters.get(node) or {}
                         self._loop.call_soon_threadsafe(hooks.emit_repeater_status, self, {
-                            **info["repeater_status"], "node": node, "counter": log.counter, "time": now,
-                            "name": known.get("name", ""), "region": known.get("region"), "hops": log.hops,
-                            "via": log.via, "rssi": log.rssi, "snr": log.snr})
+                            **st, "node": node, "name": known.get("name", ""), "region": known.get("region")})
             self.activity.append(entry)
             h = self.heard.setdefault(log.member, {"count": 0})
             h.update(count=h["count"] + 1, last_heard=now, type=log.type, hops=log.hops, via=log.via,

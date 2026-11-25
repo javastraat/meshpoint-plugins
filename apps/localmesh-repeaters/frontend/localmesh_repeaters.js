@@ -108,6 +108,7 @@ class LocalMeshRepeatersPage {
 
         const empty = this._q('[data-lmr-empty]');
         const text = this._failed ? 'Could not load the repeaters.'
+            : this._data.localmesh_too_old ? 'The localmesh plugin is too old to pass on what it receives: update it and restart Meshpoint.'
             : this._data.status_key_set === false ? 'No status key: enter one on the LocalMesh page (Settings, Repeater status) to see what the repeaters report.'
             : !heard.length ? 'No status received yet. Repeaters send one every hour.' : '';
         empty.textContent = text;

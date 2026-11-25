@@ -34,8 +34,8 @@ class FakeDB:
 
 
 class Source:
-    def __init__(self, repeaters): self._r = repeaters
-    def page_data(self): return {"repeaters": self._r}
+    def __init__(self, repeaters, statuses=None): self._r, self._s = repeaters, statuses or {}
+    def page_data(self): return {"repeaters": self._r, "statuses": self._s}
 
 
 def st(node=7, counter=1, t=NOW, up=10, **kw):
@@ -92,6 +92,26 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(Ws.sent, [("localmesh_repeater", {"node": 7})])
         await self.svc.stop()
         self.assertNotIn(self.svc._on_status, self.reg.status_handlers)
+
+    async def test_a_status_from_before_the_start_is_caught_up(self):
+        kept = {k: v for k, v in st(counter=9).items() if k not in ("node", "name", "region")}   # as localmesh keeps it
+        old = {k: v for k, v in kept.items() if k != "counter"}
+        self.reg.sources = (Source({7: {"node": 7, "name": "NL-7", "region": 1, "revoked": False}}, {7: kept, 8: old}),)
+        await self.svc.catch_up(); await self.svc.catch_up()
+        self.assertEqual((self.svc.latest[7]["counter"], self.svc.latest[7]["name"], self.count()), (9, "NL-7", 1))
+        self.assertNotIn(8, self.svc.latest)
+
+    async def test_says_so_when_localmesh_is_too_old(self):
+        import types
+        name = "meshpoint_plugin_localmesh.hooks"
+        sys.modules[name] = types.ModuleType(name)
+        try:
+            self.assertTrue(self.svc.overview()["localmesh_too_old"])
+            sys.modules[name].emit_repeater_status = lambda *a: None
+            self.assertFalse(self.svc.overview()["localmesh_too_old"])
+        finally:
+            del sys.modules[name]
+        self.assertFalse(self.svc.overview()["localmesh_too_old"])
 
     async def test_restarts_are_counted(self):
         await self.svc.add(st(counter=1, up=50))

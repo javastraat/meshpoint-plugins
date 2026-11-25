@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 REGISTRY_MODULE = "meshpoint_localmesh_hooks"
 DEFAULTS: dict[str, Any] = {"keep_days": 30, "hidden": []}
 PRUNE_EVERY_S = 86400
+CATCH_UP_EVERY_S = 30         # what the hook missed (a status that came in before this service had started)
 RESTART_SLACK_H = 2          # whole hours and delays on the way: less than this is not a restart
 MILLIS_WRAP_H = 2 ** 32 / 3_600_000   # the board's uptime starts again at 0 after 49.7 days without a restart
 LATE_COPY_S = 600            # an older counter within this time is a copy that took a detour
@@ -65,6 +66,7 @@ class RepeaterService:
         self._lock = asyncio.Lock()
         self._tasks: set[asyncio.Task] = set()
         self._prune_task: Optional[asyncio.Task] = None
+        self._catch_up_task: Optional[asyncio.Task] = None
         self.latest: dict[int, dict] = {}
         self.config = dict(DEFAULTS)
 
@@ -74,12 +76,14 @@ class RepeaterService:
         self.latest = await self._store.load_latest()
         registry().status_handlers.append(self._on_status)
         self._prune_task = asyncio.create_task(self._prune_loop())
+        self._catch_up_task = asyncio.create_task(self._catch_up_loop())
 
     async def stop(self) -> None:
         if self._on_status in registry().status_handlers:
             registry().status_handlers.remove(self._on_status)
-        if self._prune_task:
-            self._prune_task.cancel()
+        for task in (self._prune_task, self._catch_up_task):
+            if task:
+                task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def _prune_loop(self) -> None:
@@ -89,6 +93,23 @@ class RepeaterService:
             except Exception:
                 logger.exception("localmesh-repeaters: could not remove old samples")
             await asyncio.sleep(PRUNE_EVERY_S)
+
+    async def _catch_up_loop(self) -> None:
+        while True:
+            await self.catch_up()
+            await asyncio.sleep(CATCH_UP_EVERY_S)
+
+    async def catch_up(self) -> None:
+        """The receivers' own last status per repeater, in case the hook missed one."""
+        for source in registry().sources:
+            try:
+                d = source.page_data()
+                for node, st in d.get("statuses", {}).items():
+                    if "counter" in st:   # an older localmesh does not keep it
+                        cert = d.get("repeaters", {}).get(node) or {}
+                        await self._keep({**st, "node": node, "name": cert.get("name", ""), "region": cert.get("region")})
+            except Exception:
+                logger.exception("localmesh-repeaters: could not read a receiver's statuses")
 
     def _on_status(self, _source, st: dict) -> None:
         """Called on the event loop by localmesh; must not block."""
@@ -148,7 +169,8 @@ class RepeaterService:
                         "revoked": bool(cert and cert.get("revoked")), "hidden": node in self.config["hidden"],
                         "region": cert["region"] if cert else (st or {}).get("region"), "status": st})
         out.sort(key=lambda r: (r["status"] is None, r["name"] or "~", r["node"]))
-        return {"repeaters": out, "settings": dict(self.config), "status_key_set": status_key_set()}
+        return {"repeaters": out, "settings": dict(self.config), "status_key_set": status_key_set(),
+                "localmesh_too_old": localmesh_too_old()}
 
 
 def status_key_set() -> Optional[bool]:
@@ -156,3 +178,9 @@ def status_key_set() -> Optional[bool]:
     state = sys.modules.get("meshpoint_plugin_localmesh.state")
     fn = getattr(state, "status_key_set", None)
     return bool(fn()) if fn else None
+
+
+def localmesh_too_old() -> bool:
+    """A localmesh without the status hook opens statuses but never hands them over."""
+    hooks = sys.modules.get("meshpoint_plugin_localmesh.hooks")
+    return hooks is not None and not hasattr(hooks, "emit_repeater_status")
