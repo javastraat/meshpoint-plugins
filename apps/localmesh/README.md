@@ -75,6 +75,9 @@ pyserial is already on every Meshpoint (the core serial sources use it); no setu
   list replies), stdlib only.
 - `backend/listener.py`: the serial capture source (thread, reconnects by itself, one command at a time).
 - `backend/decode.py`: RX_LOG to a Meshpoint Packet.
+- Repeater announces (firmware version, region) are read from the full packets the receiver prints with `RAWLOG SHORT`,
+  which the listener turns on. Shown in the packet popup and the repeater's side panel; only repeaters heard directly
+  (nobody forwards an announce), and unverified: checking one needs the network key.
 - `backend/routes.py`: `GET /api/localmesh/status`, `/members`, `/messages`, `/activity`.
 - `backend/views.py`: the Members, Messages and Activity lists, merged over all receivers.
 - `backend/send_routes.py`: `POST /api/localmesh/send`, `PUT /api/localmesh/name`, `POST /api/localmesh/advert` (admin,

@@ -136,6 +136,7 @@ class LocalMeshMemberDrawer {
             ['Name', esc(r.name)],
             ['Node', String(r.node)],
             ['Region', r.region == null ? null : String(r.region)],
+            ['Firmware', r.version ? `${esc(r.version)} (announced ${P.ago(r.announced)})` : null],
             ['Status', status],
             ['Heard directly', r.direct ? 'yes (a neighbour of a receiver)' : 'no (through other repeaters)'],
         ], expanded('Repeater', true)));

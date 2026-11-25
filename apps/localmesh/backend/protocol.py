@@ -16,6 +16,7 @@ PROTOCOL_VERSION = 1
 
 # commands (app -> receiver) this plugin sends; read-only ones
 HELLO, INFO, MEMBERS_GET, CHANNELS_GET, MESSAGES_GET, STATUS, NEIGHBORS_GET = 0x01, 0x02, 0x15, 0x18, 0x21, 0x30, 0x36
+RAW = 0x7F        # a text command of the board's line protocol in a frame (its output comes as TEXT events)
 TIME_SET = 0x03   # sets the board's clock (the app does this right after HELLO)
 NAMES_GET, REPEATERS_GET = 0x19, 0x37   # names the board remembers per member; repeaters from the server's certificates
 # and the ones that transmit (the Send tab, admin only)
@@ -269,6 +270,35 @@ def parse_rx_log(p: bytes) -> RxLog:
         log.routed = r.u8() != 0
         log.path = [(r.u16(), r.i8() / 4) for _ in range(r.u8())]
     return log
+
+
+def raw_command(seq: int, line: str) -> bytes:
+    """A text command as a frame. Never write it to the port as a plain line: the board then takes the host for a
+    terminal and stops sending events until the next HELLO."""
+    b = line.encode()[:255]
+    return command(RAW, seq, bytes([len(b)]) + b)
+
+
+def parse_text(p: bytes) -> str:
+    return Reader(p).str()
+
+
+@dataclass
+class Announce:
+    member: int; counter: int; region: int; version: str
+
+
+def parse_announce(frame: bytes) -> Optional[Announce]:
+    """A repeater's announce from a whole packet as sent over the air (packet format v4, firmware src/Packet.h), or None
+    for anything else. Its payload is plain text: version 1, region, firmware (3 bytes). The HMAC in the tail needs the
+    network key, so this is what the packet says, not proof of who sent it."""
+    if len(frame) < 13 or frame[0] != (4 << 4 | PACKET_TYPES.index("announce")) or frame[1] >> 6 != 2:
+        return None                                      # 2: the 8-byte HMAC tail every announce has
+    member = int.from_bytes(frame[4:7], "big")
+    payload = frame[13 + 2 * (frame[2] >> 4 & 7):-8]     # 2 bytes per hop in the path
+    if member < REPEATER_MEMBER_BASE or len(payload) != 5 or payload[0] != 1:
+        return None
+    return Announce(member, int.from_bytes(frame[7:11], "big"), payload[1], ".".join(str(b) for b in payload[2:5]))
 
 
 @dataclass

@@ -84,6 +84,14 @@ const LM_REPEATER_INFO = { label: 'repeater info', badge: 'data',
         + 'A receiver cannot check it and does nothing with it: normal, not an error.' };
 
 class LocalMeshPanel {
+    /** [key, value] rows of what a repeater's announce says (also used by the dashboard's popup); empty for other packets. */
+    static announceRows(a) {
+        if (!a.announce) return [];
+        const region = a.announce.region;
+        return [['Firmware', a.announce.version], ['Region', region === 0 ? '0 (national)' : String(region)],
+            ['Note', 'As the packet says; a receiver cannot check that it is genuine.']];
+    }
+
     /** Label, badge colour and meaning of a packet's decision (repeater info for what a receiver cannot check). */
     static decisionOf(a) {
         if (a.decision === 'not_member' && (a.type === 'announce' || a.type === 'status')) return LM_REPEATER_INFO;
@@ -555,11 +563,13 @@ class LocalMeshPanel {
                     + row('Meaning', esc(dec.text)))
                 + layer('Packet', row('Type', esc(r.type)) + row('Sender', esc(r.sender)) + row('Name', esc(r.name))
                     + row('Counter', r.counter) + row('Heard', when(r.time)) + row('Receiver', esc(r.receiver)))
+                + layer('Announce', LocalMeshPanel.announceRows(r).map(([k, v]) => row(k, esc(v))).join(''))
                 + layer('Route', row('Routed', r.routed ? 'yes (follows a learned path)' : 'no (flood)')
                     + row('Path', esc(path) || null) + radio(r));
         } else if (tab === 'repeaters') {
             title = r.name ? `${esc(r.name)} (repeater ${r.node})` : `Repeater ${r.node}`;
             body = layer('Repeater', row('Name', esc(r.name)) + row('Node', r.node) + row('Region', r.region)
+                    + row('Firmware', r.version ? `${esc(r.version)} (announce of ${when(r.announced)})` : null)
                     + row('Status', r.revoked ? 'revoked' : r.listed ? 'in the server certificates' : 'heard, not in the certificates',
                         r.revoked ? 'bad' : r.listed ? 'good' : '')
                     + row('Heard directly', r.direct ? 'yes (a neighbour of a receiver)' : 'no (through other repeaters)'))

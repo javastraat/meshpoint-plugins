@@ -157,6 +157,18 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(frames[2], bytes([p.ADVERT_SET, 18]) + struct.pack("<Bii", 0, 0, 0) + bytes([32]) + b"x" * 32)
         self.assertEqual(frames[3], bytes([p.ADVERT_SEND, 19]))
 
+    def test_announce(self) -> None:
+        head = bytes([0x4D, 0x81, 0x00, 3]) + bytes.fromhex("ffa7e2" "01aa8d94" "a7e2")
+        body, tail = bytes([1, 3, 0, 10, 9]), bytes(8)
+        want = p.Announce(0xFFA7E2, 0x01AA8D94, 3, "0.10.9")
+        self.assertEqual(p.parse_announce(head + body + tail), want)
+        self.assertEqual(p.parse_announce(head[:2] + b"\x10" + head[3:] + b"\x00\x0b" + body + tail), want)  # one hop in the path
+        for bad in (b"", head, head + body, head + body + tail + b"x", head + b"\x02" + body[1:] + tail,
+                    b"\x4c" + head[1:] + body + tail, b"\x3d" + head[1:] + body + tail,     # a status; format v3
+                    head[:1] + b"\x41" + head[2:] + body + tail,                            # Ed25519 tail
+                    head[:4] + b"\x00\x00\x04" + head[7:] + body + tail):                   # from a member
+            self.assertIsNone(p.parse_announce(bad))
+
     def test_limits_and_clip(self) -> None:
         self.assertEqual(p.channel_text_max(""), 151)
         self.assertEqual(p.channel_text_max("Meshpoint"), 151 - 11)

@@ -740,6 +740,7 @@ class LocalMeshDashboard {
                 + row('Meaning', esc(dec.text)))
             + layer('Packet', row('Type', esc(a.type)) + row('Sender', esc(a.sender)) + row('Name', esc(a.name))
                 + row('Counter', a.counter) + row('Heard', when(a.time)) + row('Receiver', esc(a.receiver)))
+            + layer('Announce', (P.announceRows ? P.announceRows(a) : []).map(([k, v]) => row(k, esc(v))).join(''))
             + layer('Route', row('Routed', a.routed ? 'yes (follows a learned path)' : 'no (flood)')
                 + row('Path', esc(path) || null)
                 + row('Hops left', a.hops == null ? null : `${a.hops} (counts down by one at every repeater)`)

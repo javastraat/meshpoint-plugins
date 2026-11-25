@@ -146,7 +146,7 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
         return out.setdefault(node, {
             "node": node, "member": p.REPEATER_MEMBER_BASE | node, "name": "", "region": None, "revoked": False,
             "listed": False, "count": 0, "last_heard": None, "hops": None, "rssi": None, "snr": None, "via": None,
-            "type": None, "direct": False, "receivers": [],
+            "type": None, "direct": False, "receivers": [], "version": None, "announced": None,
         })
 
     def heard_at(e: dict, t: float, **radio: Any) -> None:
@@ -166,6 +166,12 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             if label not in e["receivers"]:
                 e["receivers"].append(label)
             heard_at(e, h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"], type=h["type"])
+        for node, a in d.get("announces", {}).items():   # what its last announce said (not proven, see parse_announce)
+            e = entry(node)
+            if e["announced"] is None or a["time"] >= e["announced"]:
+                e.update(announced=a["time"], version=a["version"])
+                if not e["listed"]:
+                    e["region"] = a["region"]            # the server's certificate (any receiver's) wins, see above
     for label, d in receivers:
         for n in d.get("neighbors", []):
             e = out.get(n["node"])

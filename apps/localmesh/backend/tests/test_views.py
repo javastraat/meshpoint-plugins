@@ -151,6 +151,16 @@ class TestMessages(unittest.TestCase):
         self.assertFalse(out[99]["listed"])                                         # heard, but not in the certificates
         self.assertEqual([r["node"] for r in views.repeaters([("base", a)], now=1000.0)], [12, 11, 99])
 
+    def test_repeater_firmware_from_the_latest_announce(self) -> None:
+        a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1", "revoked": False}})
+        a["announces"] = {11: {"region": 9, "version": "0.10.8", "time": 5.0}, 12: {"region": 4, "version": "0.10.9", "time": 6.0}}
+        b = data()
+        b["announces"] = {11: {"region": 9, "version": "0.10.9", "time": 8.0}}
+        for receivers in ([("a", a), ("b", b)], [("b", b), ("a", a)]):
+            out = {r["node"]: r for r in views.repeaters(receivers, now=1000.0)}
+            self.assertEqual((out[11]["version"], out[11]["announced"], out[11]["region"]), ("0.10.9", 8.0, 3))
+            self.assertEqual((out[12]["version"], out[12]["region"], out[12]["listed"]), ("0.10.9", 4, False))
+
     def test_activity_names_repeaters(self) -> None:
         base = p.REPEATER_MEMBER_BASE
         a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1076", "revoked": False}},

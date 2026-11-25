@@ -8,7 +8,11 @@ the member list every 15 minutes. One command at a time, as the protocol asks.
 Every packet the receiver hears arrives as an RX_LOG event and goes into Meshpoint's packet pipeline and the Activity
 list; STATUS_EVENTs (every 30 s) keep the topbar chip current; MESSAGE, ADVERT and CHANNEL_EVENT feed the page.
 
-By itself this source only sends the read commands above. It transmits only when the Send tab asks (an admin, through
+A repeater's announce (region, firmware) is plain text over the air, but RX_LOG has only the header. RAWLOG SHORT makes
+the board print those packets in full, as a TEXT event just before their RX_LOG. Not saved on the board, so it is sent
+again every minute (after a restart of the board it is off).
+
+By itself this source only sends the read commands above (and RAWLOG, which changes only what the board reports). It transmits only when the Send tab asks (an admin, through
 send_text / set_name / send_advert): those wait for the receiver's reply, go through the same one-at-a-time queue, and
 the receiver's own airtime budget still decides. DELIVERY / DELIVERY_FAILED and our own packets heard back (RX_LOG)
 update the status of what was sent.
@@ -46,8 +50,8 @@ MEMBERS_EVERY_S = 15 * 60
 PLAUSIBLE_TIME = 1_600_000_000   # a board without a set clock reports small numbers
 
 # sequence number per command, so a reply is recognised by its number alone
-SEQ_HELLO, SEQ_STATUS, SEQ_CHANNELS, SEQ_MESSAGES, SEQ_MEMBERS, SEQ_NEIGHBORS, SEQ_NAMES, SEQ_REPEATERS, SEQ_TIME = (
-    1, 2, 3, 4, 5, 6, 7, 8, 9)
+SEQ_HELLO, SEQ_STATUS, SEQ_CHANNELS, SEQ_MESSAGES, SEQ_MEMBERS, SEQ_NEIGHBORS, SEQ_NAMES, SEQ_REPEATERS, SEQ_TIME, SEQ_RAWLOG = (
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 SEQ_REQUEST_FIRST = 16   # 16..255: commands someone awaits (request())
 
 
@@ -87,6 +91,8 @@ class LocalMeshSerialSource(CaptureSource):
         self._names_next: dict[int, str] = {}
         self.repeaters: dict[int, dict] = {}     # node -> region, flags, name (REPEATERS_GET and REPEATER events)
         self._repeaters_next: dict[int, dict] = {}
+        self.announces: dict[int, dict] = {}     # node -> region, version, time of its last announce heard
+        self._announce: Optional[p.Announce] = None   # from a RAW line, waiting for its RX_LOG
         self.channels: dict[int, str] = {}
         self._text_names: dict[int, str] = {}   # member -> the name last seen in front of its channel messages
         self.neighbors: list[dict] = []
@@ -139,6 +145,7 @@ class LocalMeshSerialSource(CaptureSource):
                 "members": {k: dict(v) for k, v in self.members.items()},
                 "channels": dict(self.channels),
                 "names": dict(self.names), "repeaters": {k: dict(v) for k, v in self.repeaters.items()},
+                "announces": {k: dict(v) for k, v in self.announces.items()},
                 "neighbors": [dict(n) for n in self.neighbors],
                 "sent": [dict(x) for x in self.sent],
                 "own_member": self.info.member if self.info else None,
@@ -339,6 +346,7 @@ class LocalMeshSerialSource(CaptureSource):
             # working meanwhile, so without this the page silently stops receiving. The reply is INFO, as at connect.
             self._queue_cmd(SEQ_HELLO, p.hello(seq=SEQ_HELLO))
             self._queue_cmd(SEQ_NEIGHBORS, p.command(p.NEIGHBORS_GET, SEQ_NEIGHBORS))
+            self._queue_cmd(SEQ_RAWLOG, p.raw_command(SEQ_RAWLOG, "RAWLOG SHORT"))
         if now >= self._next_members:
             self._next_members = now + MEMBERS_EVERY_S
             self._members_next = {}
@@ -376,6 +384,8 @@ class LocalMeshSerialSource(CaptureSource):
                     self._queue_repeaters()
             elif t == p.STATUS_EVENT:
                 self.status = p.parse_status(payload)
+            elif t == p.TEXT:
+                self._note_text(p.parse_text(payload))
             elif t == p.RX_LOG:
                 now = time.time()
                 self.last_heard = now
@@ -462,11 +472,25 @@ class LocalMeshSerialSource(CaptureSource):
                 if e["counter"] == counter and e["direct"] == direct and (only_from is None or e["status"] == only_from):
                     e["status"] = status
 
+    def _note_text(self, line: str) -> None:
+        """The board's log lines; only a whole packet (RAW <hex>) that is an announce matters here."""
+        if line.startswith("RAW "):
+            try:
+                self._announce = p.parse_announce(bytes.fromhex(line[4:]))
+            except ValueError:   # a long line comes in several TEXT events; an announce always fits in one
+                self._announce = None
+
     def _note_rx(self, log: p.RxLog, now: float) -> None:
         if self.info and log.member == self.info.member:   # our own channel message, heard back from a repeater
             self._sent_status(log.counter, False, "repeated", only_from="sent")
         entry = {**asdict(log), "sender": p.member_label(log.member), "time": now}
+        announce, self._announce = self._announce, None
+        if announce and log.type == "announce" and (announce.member, announce.counter) == (log.member, log.counter):
+            entry["announce"] = {"region": announce.region, "version": announce.version}
         with self._lock:
+            # not_member: what a companion says of every repeater packet of its own net (it cannot check them)
+            if "announce" in entry and log.decision in ("not_member", "forward"):
+                self.announces[log.member - p.REPEATER_MEMBER_BASE] = {**entry["announce"], "time": now}
             self.activity.append(entry)
             h = self.heard.setdefault(log.member, {"count": 0})
             h.update(count=h["count"] + 1, last_heard=now, type=log.type, hops=log.hops, via=log.via,

@@ -79,8 +79,11 @@ class TestListener(unittest.TestCase):
         self.src._tick(0.5)
         self.assertEqual(self.sent(), [p.HELLO, p.NEIGHBORS_GET])
         self.src._handle(reply(l.SEQ_NEIGHBORS, bytes([0])))
+        self.src._tick(1.0)
+        self.assertEqual(self.port.frames[-1], bytes([p.RAW, l.SEQ_RAWLOG]) + s("RAWLOG SHORT"))
+        self.src._handle(reply(l.SEQ_RAWLOG))
         self.src._tick(30.0)
-        self.assertEqual(self.sent(), [p.HELLO, p.NEIGHBORS_GET])   # nothing new within the minute
+        self.assertEqual(self.sent(), [p.HELLO, p.NEIGHBORS_GET, p.RAW])   # nothing new within the minute
         self.src._tick(l.NEIGHBORS_EVERY_S + 0.1)
         self.assertEqual(self.sent()[-1], p.HELLO)
 
@@ -188,6 +191,33 @@ class TestListener(unittest.TestCase):
         self.assertEqual(self.src.channels, {0: "Algemeen", 2: "Noodnet"})
         self.src._handle(bytes([p.CHANNEL_EVENT, 0, 0, 1]) + s("Algemeen"))
         self.assertEqual(self.src.snapshot()["channels"], {"2": "Noodnet"})
+
+    ANNOUNCE = "4d810003ffa7e201aa8d94a7e2" + "0103000a09" + "00" * 8
+
+    def rx_announce(self, counter: int = 0x01AA8D94, decision: str = "not_member") -> bytes:
+        return bytes([p.RX_LOG, 0]) + struct.pack("<IIBBHhbB", 0xFFA7E2, counter, 13, 0, 0xA7E2, -48, 45,
+                                                  p.DECISIONS.index(decision)) + bytes([0, 0])
+
+    def test_announce_from_the_raw_line_before_its_rx_log(self) -> None:
+        self.src._handle(bytes([p.TEXT, 0]) + s("RAW " + self.ANNOUNCE))
+        self.src._handle(bytes([p.TEXT, 0]) + s("RX member=16754658 ..."))      # other log lines in between
+        self.src._handle(self.rx_announce())
+        d = self.src.page_data()
+        self.assertEqual(d["activity"][-1]["announce"], {"region": 3, "version": "0.10.9"})
+        self.assertEqual((d["announces"][0xA7E2]["region"], d["announces"][0xA7E2]["version"]), (3, "0.10.9"))
+
+    def test_announce_only_with_its_own_rx_log(self) -> None:
+        self.src._handle(bytes([p.TEXT, 0]) + s("RAW " + self.ANNOUNCE))
+        self.src._handle(self.rx_announce(counter=5))
+        self.src._handle(self.rx_announce())                                     # used up by the one above
+        self.src._handle(bytes([p.TEXT, 0]) + s("RAW " + self.ANNOUNCE[:41]))    # cut off
+        self.src._handle(self.rx_announce())
+        self.assertFalse(any("announce" in a for a in self.src.page_data()["activity"]))
+
+    def test_announce_of_another_net_is_not_kept(self) -> None:
+        self.src._handle(bytes([p.TEXT, 0]) + s("RAW " + self.ANNOUNCE))
+        self.src._handle(self.rx_announce(decision="wrong_net"))
+        self.assertEqual(self.src.page_data()["announces"], {})
 
     def test_rx_log_feeds_activity_and_heard(self) -> None:
         rx = bytes([p.RX_LOG, 0]) + struct.pack("<IIBBHhbB", 4, 77, 0, 1, 100, -90, 8, 0) + bytes([0, 0])
