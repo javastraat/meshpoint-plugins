@@ -569,7 +569,7 @@ class LocalMeshPanel {
             title = `Sent ${r.direct ? 'direct message' : `on ${esc(r.channel_name)}`}`;
             body = layer('Text', `<pre class="pdm-payload-text">${esc(r.text)}</pre>`)
                 + layer('Sent', row('To', esc(r.channel_name)) + row('Time', when(r.time)) + row('Receiver', esc(r.receiver))
-                    + row('Counter', r.counter) + row('Airtime', `${r.airtime_ms} ms`))
+                    + row('Counter', r.counter) + row('Airtime', r.airtime_ms == null ? null : `${r.airtime_ms} ms`))
                 + layer('Status', row('Status', esc(LM_SENT_TEXT[r.status] || r.status),
                     r.status === 'failed' ? 'bad' : r.status === 'sent' ? '' : 'good')
                     + row('Meaning', esc({

@@ -17,7 +17,8 @@ from src.models.signal import SignalMetrics
 from . import protocol as p
 
 
-def adapt_rx_log(payload: bytes, signal: Optional[SignalMetrics] = None) -> Optional[Packet]:
+def adapt_rx_log(payload: bytes, signal: Optional[SignalMetrics] = None,
+                 extra: Optional[dict] = None) -> Optional[Packet]:
     try:
         log = p.parse_rx_log(payload)
     except ValueError:
@@ -27,6 +28,8 @@ def adapt_rx_log(payload: bytes, signal: Optional[SignalMetrics] = None) -> Opti
         "hops": log.hops, "via": log.via, "decision": log.decision, "routed": log.routed,
         "path": [{"node": n, "snr": s} for n, s in log.path],
     }
+    if extra and "announce" in extra:   # a repeater's firmware and region: plain text over the air, so stored too
+        decoded["announce"] = extra["announce"]
     return Packet(
         packet_id=uuid.uuid4().hex[:16],
         source_id=p.member_label(log.member),

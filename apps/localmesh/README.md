@@ -75,6 +75,8 @@ pyserial is already on every Meshpoint (the core serial sources use it); no setu
   list replies), stdlib only.
 - `backend/listener.py`: the serial capture source (thread, reconnects by itself, one command at a time).
 - `backend/decode.py`: RX_LOG to a Meshpoint Packet.
+- `backend/restore.py`: after a restart of Meshpoint the lists are filled from its database (packets, messages, and the
+  last statuses of the localmesh-repeaters plugin). Not stored anywhere: members' positions from adverts.
 - `backend/repeater_status.py`: opens a repeater's status packet with the **status key** from the Settings tab
   (`PUT /api/localmesh/status-key`, admin, write-only). Run `tools/status_key.py` on your own computer to make it from the
   network key; the network key itself never goes on the Meshpoint. Unverified, like announces; the members a status

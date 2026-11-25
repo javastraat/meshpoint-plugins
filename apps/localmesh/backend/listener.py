@@ -41,6 +41,7 @@ from src.models.signal import SignalMetrics
 from . import hooks
 from . import protocol as p
 from . import repeater_status
+from . import restore
 from . import state
 from . import views
 
@@ -111,6 +112,8 @@ class LocalMeshSerialSource(CaptureSource):
         # that never sets it -- every write through it below is a best-effort
         # no-op without it, same "fails open" shape as the rest of this file.
         self.message_repo = None
+        self._started: Optional[float] = None   # start(): the database is read up to here, the rest came in live
+        self._restore_task: Optional[asyncio.Task] = None
         self.ws_manager = None   # also set in wire() -- see that file's own comment on why
         # command queue: the reader thread sends; request() adds from the event loop (deque append is thread-safe)
         self._pending: collections.deque = collections.deque()
@@ -173,11 +176,48 @@ class LocalMeshSerialSource(CaptureSource):
         if not self._port:
             logger.warning("%s: no serial_port configured, source will not run", self.name)
             return
-        self._running = True
         self._loop = asyncio.get_running_loop()
+        self._started = time.time()
+        self._running = True
         self._thread = threading.Thread(target=self._run, name=f"{self.name}-reader", daemon=True)
         self._thread.start()
         logger.info("%s: started on %s @ %d baud", self.name, self._port, self._baud)
+
+    def restore_from(self, db, *, messages: bool) -> None:
+        """From wire(): fill the lists with what the database still has. The source already runs by then."""
+        self._restore_task = asyncio.ensure_future(self._restore(db, messages))
+
+    async def _restore(self, db, messages: bool) -> None:
+        try:
+            before = self._started if self._started is not None else time.time()
+            self.apply_restored(await restore.restore(db, self.name, before=before, messages=messages,
+                                                      statuses=bool(state.status_keys())))
+        except Exception:
+            logger.warning("%s: could not restore the lists from the database", self.name, exc_info=True)
+
+    def apply_restored(self, r: dict) -> None:
+        """Older than anything that came in live meanwhile: behind it in the lists, and never over it."""
+        with self._lock:
+            for e in reversed(r["activity"]):
+                if len(self.activity) < self.activity.maxlen:
+                    self.activity.appendleft(e)
+            for member, h in r["heard"].items():
+                live = self.heard.get(member)
+                self.heard[member] = {**live, "count": live["count"] + h["count"]} if live else h
+            for node, a in r["announces"].items():
+                self.announces.setdefault(node, a)
+            for node, st in r["statuses"].items():
+                self.statuses.setdefault(node, st)
+            for x in reversed(r["sent"]):
+                if len(self.sent) < self.sent.maxlen:
+                    self.sent.appendleft(x)
+            for m in reversed(r["messages"]):
+                key = (m["member"], m["counter"], m["channel"])
+                if key not in self._message_keys and len(self.messages) < self.messages.maxlen:
+                    self._message_keys.add(key)
+                    self.messages.appendleft(m)
+            if self.last_heard is None and self.heard:
+                self.last_heard = max(h["last_heard"] for h in self.heard.values())
 
     async def stop(self) -> None:
         self._running = False
@@ -401,9 +441,10 @@ class LocalMeshSerialSource(CaptureSource):
                 now = time.time()
                 self.last_heard = now
                 log = p.parse_rx_log(payload)
-                self._note_rx(log, now)
-                if self._loop is not None:
-                    self._loop.call_soon_threadsafe(self._enqueue, payload, log.rssi, log.snr)
+                info = self._note_rx(log, now)
+                if self._loop is not None:   # an announce goes along; a status does not: it is sealed on the air
+                    extra = {"announce": info["announce"]} if "announce" in info else None
+                    self._loop.call_soon_threadsafe(self._enqueue, payload, log.rssi, log.snr, extra)
             elif t == p.MESSAGE:
                 self._note_message(p.parse_message(payload), time.time())
             elif t == p.ADVERT:
@@ -518,10 +559,11 @@ class LocalMeshSerialSource(CaptureSource):
             return {"repeater_status": st} if st else {}
         return {}
 
-    def _note_rx(self, log: p.RxLog, now: float) -> None:
+    def _note_rx(self, log: p.RxLog, now: float) -> dict:
+        """Returns what the packet itself said, if we know it (_repeater_info)."""
         if self.info and log.member == self.info.member:   # our own channel message, heard back from a repeater
             self._sent_status(log.counter, False, "repeated", only_from="sent")
-        entry = {**asdict(log), "sender": p.member_label(log.member), "time": now}
+        entry = {**asdict(log), "path": [{"node": n, "snr": s} for n, s in log.path], "sender": p.member_label(log.member), "time": now}
         info = self._repeater_info(log)
         entry.update(info)
         with self._lock:
@@ -542,12 +584,18 @@ class LocalMeshSerialSource(CaptureSource):
             h = self.heard.setdefault(log.member, {"count": 0})
             h.update(count=h["count"] + 1, last_heard=now, type=log.type, hops=log.hops, via=log.via,
                      rssi=log.rssi, snr=log.snr)
+        return info
 
     def _note_message(self, m: p.Message, now: float) -> None:
         """Keep a message once: the board's buffer is fetched again at every connect."""
         key = (m.member, m.counter, m.channel)
         with self._lock:
             if key in self._message_keys:
+                # from the database after a restart (restore.py): the board knows more (its time, the route)
+                for i, old in enumerate(self.messages):
+                    if old.get("restored") and (old["member"], old["counter"], old["channel"]) == key:
+                        self.messages[i] = {**asdict(m), "received": old["received"],
+                                            "time": m.time if m.time >= PLAUSIBLE_TIME else None}
                 return
             if len(self.messages) == self.messages.maxlen:
                 old = self.messages[0]
@@ -620,8 +668,9 @@ class LocalMeshSerialSource(CaptureSource):
         except Exception:
             logger.debug("%s: could not broadcast message_received", self.name, exc_info=True)
 
-    def _enqueue(self, payload: bytes, rssi: int, snr: float) -> None:
+    def _enqueue(self, payload: bytes, rssi: int, snr: float, extra: Optional[dict] = None) -> None:
         try:
-            self._queue.put_nowait(RawCapture(payload=payload, signal=self.signal(rssi, snr), capture_source=self.name))
+            self._queue.put_nowait(RawCapture(payload=payload, signal=self.signal(rssi, snr), capture_source=self.name,
+                                              pre_decoded=extra))
         except asyncio.QueueFull:
             logger.warning("%s: queue full, dropping a packet", self.name)

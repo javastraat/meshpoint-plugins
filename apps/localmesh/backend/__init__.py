@@ -52,13 +52,15 @@ def register(reg) -> None:
         from src.api.server import ws_manager
 
         message_repo = MessageRepository(pipeline.database)
-        for s in sources:
+        for n, s in enumerate(sources):
             s.message_repo = message_repo
             s.ws_manager = ws_manager
+            # the lists from before the restart (restore.py); the messages table does not say which receiver
+            s.restore_from(pipeline.database, messages=n == 0)
         routes.init_routes(sources)
         send_routes.init_routes(sources)
         hooks.set_sources(sources)   # for plugins that build on this one (localmesh-bot), see hooks.py
 
     reg.add_capture_source("localmesh", build, wire)
     reg.add_protocol("localmesh", capture_prefix="localmesh",
-                     adapt=lambda raw: decode.adapt_rx_log(raw.payload, signal=raw.signal))
+                     adapt=lambda raw: decode.adapt_rx_log(raw.payload, signal=raw.signal, extra=raw.pre_decoded))
