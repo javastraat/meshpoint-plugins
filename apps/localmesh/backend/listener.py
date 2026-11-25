@@ -119,6 +119,11 @@ class LocalMeshSerialSource(CaptureSource):
         return f"localmesh_{self._label}" if self._label else "localmesh"
 
     @property
+    def is_running(self) -> bool:
+        """For Meshpoint's status LED: the port is open (not while the cable is out and we keep trying)."""
+        return self._running and self._connected
+
+    @property
     def connected(self) -> bool:
         return self._connected
 

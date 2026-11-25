@@ -55,6 +55,16 @@ class TestListener(unittest.TestCase):
         self.src._tick(2.0)
         self.assertEqual(self.sent(), [p.STATUS, p.CHANNELS_GET])
 
+    def test_is_running_only_with_the_port_open(self) -> None:
+        """Meshpoint's status LED blinks "a source is down" for a source that is not running (the base class says never)."""
+        self.assertFalse(self.src.is_running)                       # not started
+        self.src._running = True
+        self.assertFalse(self.src.is_running)                       # started, port not open
+        self.src._connected = True
+        self.assertTrue(self.src.is_running)
+        self.src._close()                                           # cable out
+        self.assertFalse(self.src.is_running)
+
     def test_no_reply_times_out(self) -> None:
         self.src._queue_cmd(1, p.command(p.STATUS, 1)); self.src._queue_cmd(2, p.command(p.INFO, 2))
         self.src._tick(0.0); self.src._tick(l.REPLY_TIMEOUT_S + 0.5)
