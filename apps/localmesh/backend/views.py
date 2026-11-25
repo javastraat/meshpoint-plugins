@@ -133,6 +133,10 @@ def members(receivers: Receivers) -> list[dict]:
     return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["member"]))
 
 
+def _named_neighbors(status: dict, names: dict[int, str]) -> dict:
+    return {**status, "neighbors": [{**n, "name": names.get(n["node"], "")} for n in status["neighbors"]]}
+
+
 def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
     """The repeaters: those in the server's certificates (name, region, revoked), plus any heard that are not, with
     when they were last heard (their own status and announce packets) and whether a receiver hears them directly.
@@ -146,7 +150,7 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
         return out.setdefault(node, {
             "node": node, "member": p.REPEATER_MEMBER_BASE | node, "name": "", "region": None, "revoked": False,
             "listed": False, "count": 0, "last_heard": None, "hops": None, "rssi": None, "snr": None, "via": None,
-            "type": None, "direct": False, "receivers": [], "version": None, "announced": None,
+            "type": None, "direct": False, "receivers": [], "version": None, "announced": None, "status": None,
         })
 
     def heard_at(e: dict, t: float, **radio: Any) -> None:
@@ -166,6 +170,10 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             if label not in e["receivers"]:
                 e["receivers"].append(label)
             heard_at(e, h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"], type=h["type"])
+        for node, st in d.get("statuses", {}).items():   # its last status, when we have the status key (not proven either)
+            e = entry(node)
+            if e["status"] is None or st["time"] >= e["status"]["time"]:
+                e["status"] = st
         for node, a in d.get("announces", {}).items():   # what its last announce said (not proven, see parse_announce)
             e = entry(node)
             if e["announced"] is None or a["time"] >= e["announced"]:
@@ -181,6 +189,9 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             if label not in e["receivers"]:
                 e["receivers"].append(label)
             heard_at(e, now - n["ago_s"], hops=e["hops"], rssi=n["rssi"], snr=n["snr"], via=0, type=e["type"] or "direct")
+    for e in out.values():
+        if e["status"]:
+            e["status"] = _named_neighbors(e["status"], {n: r["name"] for n, r in out.items()})
     return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["node"]))
 
 
@@ -252,5 +263,9 @@ def activity(receivers: Receivers, limit: int = 200) -> list[dict]:
               for node, r in d.get("repeaters", {}).items() if r["name"]}
     out = [{**a, "receiver": label, "name": names.get(a["member"]) or rnames.get(a["member"], "")}
            for label, d in receivers for a in d["activity"]]
+    by_node = {m - p.REPEATER_MEMBER_BASE: name for m, name in rnames.items()}
+    for a in out:
+        if a.get("repeater_status"):
+            a["repeater_status"] = _named_neighbors(a["repeater_status"], by_node)
     out.sort(key=lambda a: -a["time"])
     return out[:limit]

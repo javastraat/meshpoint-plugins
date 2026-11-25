@@ -74,6 +74,32 @@ class LocalMeshSettingsTab {
                     </div>
                     <p class="cfg-status" data-lm-channels-status aria-live="polite"></p>
                 </article>
+                <article class="cfg-card">
+                    <header class="cfg-card__head">
+                        <h3 class="cfg-card__title">Repeater status</h3>
+                        <p class="cfg-card__hint">
+                            With the status key this page shows what repeaters report about themselves (battery,
+                            uptime, noise, airtime, neighbours). Make it on your own computer with the plugin's
+                            tools/status_key.py; it starts with lmst1-. Never enter the network key here. After a
+                            network key change, enter the new one (the old one keeps working for 24 hours).
+                        </p>
+                    </header>
+                    <label class="cfg-field">
+                        <span class="cfg-field__label">Status key</span>
+                        <input class="cfg-field__input" type="password" autocomplete="new-password" spellcheck="false"
+                               placeholder="lmst1-…" data-lm-key>
+                        <span class="cfg-field__hint" data-lm-key-state></span>
+                    </label>
+                    <div class="cfg-card__actions">
+                        <button class="terminal-button terminal-button--primary" type="button" data-lm-key-save>
+                            Save status key
+                        </button>
+                        <button class="terminal-button terminal-button--danger" type="button" data-lm-key-remove hidden>
+                            Remove
+                        </button>
+                    </div>
+                    <p class="cfg-status" data-lm-key-status aria-live="polite"></p>
+                </article>
             </div>
         `;
         this._devicesEl = this._el.querySelector('[data-lm-devices]');
@@ -81,6 +107,12 @@ class LocalMeshSettingsTab {
         this._addBtn.addEventListener('click', () => this._addRow());
         this._el.querySelector('[data-lm-save]').addEventListener('click', () => this._save());
         this._el.querySelector('[data-lm-rescan]').addEventListener('click', (e) => this._rescan(e.currentTarget));
+
+        this._el.querySelector('[data-lm-key-save]').addEventListener('click', () => {
+            const key = this._el.querySelector('[data-lm-key]').value.trim();
+            if (key) this._saveKey(key);   // an empty field does not remove the key; Remove does
+        });
+        this._el.querySelector('[data-lm-key-remove]').addEventListener('click', () => this._saveKey(''));
 
         this._channelsEl = this._el.querySelector('[data-lm-channels]');
         this._el.querySelector('[data-lm-add-channel]').addEventListener('click', () => this._addChannelRow());
@@ -93,6 +125,7 @@ class LocalMeshSettingsTab {
             this._request('GET', '/api/localmesh/status'),
         ]);
         if (settings) {
+            this._showKey(settings.status_key_set);
             this._devicesEl.innerHTML = '';
             const devices = Array.isArray(settings.devices) && settings.devices.length
                 ? settings.devices : [{ label: '', serial_port: '' }];
@@ -184,6 +217,24 @@ class LocalMeshSettingsTab {
             return null;
         }
         return channel_names;
+    }
+
+    /** The key itself never comes back from the server, only whether there is one. */
+    _showKey(isSet) {
+        this._el.querySelector('[data-lm-key]').value = '';
+        this._el.querySelector('[data-lm-key-state]').textContent = isSet ? 'A status key is set.' : 'No status key set.';
+        this._el.querySelector('[data-lm-key-remove]').hidden = !isSet;
+    }
+
+    async _saveKey(key) {
+        const status = this._el.querySelector('[data-lm-key-status]');
+        status.dataset.kind = 'pending';
+        status.textContent = 'Saving…';
+        const result = await this._request('PUT', '/api/localmesh/status-key', { key });
+        status.dataset.kind = result ? 'success' : 'error';
+        status.textContent = !result ? 'Save failed.'
+            : key ? 'Saved. New status packets are shown from now on.' : 'Removed.';
+        if (result) this._showKey(result.status_key_set);
     }
 
     async _saveChannelNames() {

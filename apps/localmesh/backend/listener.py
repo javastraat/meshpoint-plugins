@@ -9,7 +9,8 @@ Every packet the receiver hears arrives as an RX_LOG event and goes into Meshpoi
 list; STATUS_EVENTs (every 30 s) keep the topbar chip current; MESSAGE, ADVERT and CHANNEL_EVENT feed the page.
 
 A repeater's announce (region, firmware) is plain text over the air, but RX_LOG has only the header. RAWLOG SHORT makes
-the board print those packets in full, as a TEXT event just before their RX_LOG. Not saved on the board, so it is sent
+the board print those packets in full, as TEXT events just before their RX_LOG. The same goes for a repeater's status,
+which is encrypted: it is opened when the Settings tab has a status key (repeater_status.py). Not saved on the board, so it is sent
 again every minute (after a restart of the board it is off).
 
 By itself this source only sends the read commands above (and RAWLOG, which changes only what the board reports). It transmits only when the Send tab asks (an admin, through
@@ -27,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+import re
 import threading
 import time
 from dataclasses import asdict
@@ -38,6 +40,7 @@ from src.models.signal import SignalMetrics
 
 from . import hooks
 from . import protocol as p
+from . import repeater_status
 from . import state
 from . import views
 
@@ -47,6 +50,7 @@ RECONNECT_S = 10
 REPLY_TIMEOUT_S = 5
 NEIGHBORS_EVERY_S = 60
 MEMBERS_EVERY_S = 15 * 60
+_HEX = re.compile(r"^[0-9a-fA-F]+$")
 PLAUSIBLE_TIME = 1_600_000_000   # a board without a set clock reports small numbers
 
 # sequence number per command, so a reply is recognised by its number alone
@@ -92,7 +96,8 @@ class LocalMeshSerialSource(CaptureSource):
         self.repeaters: dict[int, dict] = {}     # node -> region, flags, name (REPEATERS_GET and REPEATER events)
         self._repeaters_next: dict[int, dict] = {}
         self.announces: dict[int, dict] = {}     # node -> region, version, time of its last announce heard
-        self._announce: Optional[p.Announce] = None   # from a RAW line, waiting for its RX_LOG
+        self.statuses: dict[int, dict] = {}      # node -> its last status we could open (repeater_status.read), time
+        self._raw, self._raw_open = "", False     # hex of the last RAW line, waiting for its RX_LOG
         self.channels: dict[int, str] = {}
         self._text_names: dict[int, str] = {}   # member -> the name last seen in front of its channel messages
         self.neighbors: list[dict] = []
@@ -150,6 +155,7 @@ class LocalMeshSerialSource(CaptureSource):
                 "members": {k: dict(v) for k, v in self.members.items()},
                 "channels": dict(self.channels),
                 "names": dict(self.names), "repeaters": {k: dict(v) for k, v in self.repeaters.items()},
+                "statuses": {k: dict(v) for k, v in self.statuses.items()},
                 "announces": {k: dict(v) for k, v in self.announces.items()},
                 "neighbors": [dict(n) for n in self.neighbors],
                 "sent": [dict(x) for x in self.sent],
@@ -478,24 +484,53 @@ class LocalMeshSerialSource(CaptureSource):
                     e["status"] = status
 
     def _note_text(self, line: str) -> None:
-        """The board's log lines; only a whole packet (RAW <hex>) that is an announce matters here."""
+        """The board's log lines; only a whole packet (RAW <hex>) matters here. A long one comes in several TEXT events,
+        one right after the other; its RX_LOG follows."""
         if line.startswith("RAW "):
-            try:
-                self._announce = p.parse_announce(bytes.fromhex(line[4:]))
-            except ValueError:   # a long line comes in several TEXT events; an announce always fits in one
-                self._announce = None
+            self._raw, self._raw_open = line[4:], True
+        elif self._raw_open and len(self._raw) < 600 and _HEX.match(line):
+            self._raw += line
+        else:
+            self._raw_open = False
+
+    def _take_raw(self, log: p.RxLog) -> Optional[bytes]:
+        """The packet of the last RAW line, if it is the one this RX_LOG is about."""
+        raw, self._raw, self._raw_open = self._raw, "", False
+        try:
+            frame = bytes.fromhex(raw)
+        except ValueError:
+            return None
+        k = p.parse_repeater_packet(frame)
+        return frame if k and (k.type, k.member, k.counter) == (log.type, log.member, log.counter) else None
+
+    def _repeater_info(self, log: p.RxLog) -> dict:
+        """What a repeater's announce, or its status when we have the status key, says; unverified."""
+        frame = self._take_raw(log)
+        if frame is None:
+            return {}
+        if log.type == "announce":
+            a = p.parse_announce(frame)
+            return {"announce": {"region": a.region, "version": a.version}} if a else {}
+        if log.type == "status":
+            k = p.parse_repeater_packet(frame)
+            st = repeater_status.open_status(state.status_keys(), k.member, k.counter, k.payload)
+            return {"repeater_status": st} if st else {}
+        return {}
 
     def _note_rx(self, log: p.RxLog, now: float) -> None:
         if self.info and log.member == self.info.member:   # our own channel message, heard back from a repeater
             self._sent_status(log.counter, False, "repeated", only_from="sent")
         entry = {**asdict(log), "sender": p.member_label(log.member), "time": now}
-        announce, self._announce = self._announce, None
-        if announce and log.type == "announce" and (announce.member, announce.counter) == (log.member, log.counter):
-            entry["announce"] = {"region": announce.region, "version": announce.version}
+        info = self._repeater_info(log)
+        entry.update(info)
         with self._lock:
             # not_member: what a companion says of every repeater packet of its own net (it cannot check them)
-            if "announce" in entry and log.decision in ("not_member", "forward"):
-                self.announces[log.member - p.REPEATER_MEMBER_BASE] = {**entry["announce"], "time": now}
+            if log.decision in ("not_member", "forward"):
+                node = log.member - p.REPEATER_MEMBER_BASE
+                if "announce" in info:
+                    self.announces[node] = {**info["announce"], "time": now}
+                if "repeater_status" in info:
+                    self.statuses[node] = {**info["repeater_status"], "time": now}
             self.activity.append(entry)
             h = self.heard.setdefault(log.member, {"count": 0})
             h.update(count=h["count"] + 1, last_heard=now, type=log.type, hops=log.hops, via=log.via,

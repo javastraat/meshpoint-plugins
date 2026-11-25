@@ -161,6 +161,16 @@ class TestMessages(unittest.TestCase):
             self.assertEqual((out[11]["version"], out[11]["announced"], out[11]["region"]), ("0.10.9", 8.0, 3))
             self.assertEqual((out[12]["version"], out[12]["region"], out[12]["listed"]), ("0.10.9", 4, False))
 
+    def test_repeater_status_with_neighbour_names(self) -> None:
+        a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1", "revoked": False}})
+        st = {"neighbors": [{"node": 11, "snr": 5.0}, {"node": 99, "snr": 1.0}], "time": 5.0}
+        a["statuses"] = {12: st}
+        out = {r["node"]: r for r in views.repeaters([("a", a)], now=1000.0)}
+        self.assertEqual([n["name"] for n in out[12]["status"]["neighbors"]], ["NL-AMS-1", ""])
+        self.assertIsNone(out[11]["status"])
+        a["activity"] = [{"member": p.REPEATER_MEMBER_BASE | 12, "time": 5.0, "sender": "x", "repeater_status": st}]
+        self.assertEqual(views.activity([("a", a)])[0]["repeater_status"]["neighbors"][0]["name"], "NL-AMS-1")
+
     def test_activity_names_repeaters(self) -> None:
         base = p.REPEATER_MEMBER_BASE
         a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1076", "revoked": False}},

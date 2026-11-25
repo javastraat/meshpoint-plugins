@@ -49,7 +49,8 @@ class TestSettingsRoutes(unittest.TestCase):
 
     def test_get(self) -> None:
         self.assertEqual(_run(routes.get_localmesh_settings()),
-                         {"devices": [{"serial_port": "/dev/ttyACM0", "label": "old"}], "channel_names": {}})
+                         {"devices": [{"serial_port": "/dev/ttyACM0", "label": "old"}], "channel_names": {},
+                          "status_key_set": False})
 
     def test_put_saves_cleaned_list_and_asks_for_restart(self) -> None:
         result = self._put(_dev(" /dev/serial/by-id/usb-Espressif-if00 ", " Base "), _dev("/dev/ttyACM1", "attic"))
@@ -81,6 +82,23 @@ class TestSettingsRoutes(unittest.TestCase):
         self.assertEqual(state.devices(), [{"serial_port": "/dev/ttyACM0", "label": "old"}])
         self.persist.assert_not_called()
 
+
+    def test_status_key_is_write_only(self) -> None:
+        put = lambda key: _run(routes.update_status_key(routes.StatusKeyUpdate(key=key), _claims=self.claims, audit=self.audit))
+        good = "lmst1-" + "ab" * 32
+        self.assertEqual(put(f" {good} "), {"saved": True, "status_key_set": True})
+        self.assertEqual(state.status_keys(), [b"\xab" * 32])
+        for bad in ("ab" * 32, "lmst1-" + "ab" * 31, "lmst1-" + "zz" * 32):   # the first one: a network key by mistake
+            with self.assertRaises(HTTPException) as cm:
+                put(bad)
+            self.assertEqual(cm.exception.status_code, 400)
+            self.assertNotIn("ababab", cm.exception.detail)
+        got = _run(routes.get_localmesh_settings())
+        self.assertTrue(got["status_key_set"])
+        self.assertNotIn("abab", str(got))
+        self.assertNotIn("abab", (Path(self.tmp.name) / "audit.jsonl").read_text())
+        self.assertEqual(put(""), {"saved": True, "status_key_set": False})
+        self.assertEqual(state.status_keys(), [])
 
     def test_channel_names_up_to_127(self) -> None:
         """20-11: channels run 0-127 in the firmware and the app (Test 126, Meldingen 127); it said 0-39."""

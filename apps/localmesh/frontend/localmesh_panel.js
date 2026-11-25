@@ -84,6 +84,21 @@ const LM_REPEATER_INFO = { label: 'repeater info', badge: 'data',
         + 'A receiver cannot check it and does nothing with it: normal, not an error.' };
 
 class LocalMeshPanel {
+    /** [key, value] rows of a repeater's opened status (popup, side panel, dashboard); empty without a status. */
+    static statusRows(s) {
+        if (!s) return [];
+        const h = s.uptime_h;
+        const up = h >= 48 ? `${Math.floor(h / 24)} days ${h % 24} h` : `${h} h`;
+        const near = (s.neighbors || []).map((n) => `${n.name || `node ${n.node}`} (${n.snr} dB)`).join(', ');
+        const why = Object.entries(s.reasons || {}).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v >= 255 ? '255+' : v}`).join(', ');
+        return [['Battery', s.battery_mv ? `${(s.battery_mv / 1000).toFixed(2)} V` : null],
+            ['Firmware', s.version], ['Uptime', up], ['Noise floor', `${s.noise_floor} dBm`],
+            ['Airtime', `${s.airtime_pct} %`], ['Send queue', String(s.queue)],
+            ['Packets', `${s.rx_ok} accepted, ${s.rx_rejected} refused`], ['Refused for', why],
+            ['Neighbours', `${s.neighbor_count}${near ? `: ${near}` : ''}`],
+            ['Note', 'As the packet says; this plugin cannot check that it is genuine.']];
+    }
+
     /** [key, value] rows of what a repeater's announce says (also used by the dashboard's popup); empty for other packets. */
     static announceRows(a) {
         if (!a.announce) return [];
@@ -563,6 +578,7 @@ class LocalMeshPanel {
                     + row('Meaning', esc(dec.text)))
                 + layer('Packet', row('Type', esc(r.type)) + row('Sender', esc(r.sender)) + row('Name', esc(r.name))
                     + row('Counter', r.counter) + row('Heard', when(r.time)) + row('Receiver', esc(r.receiver)))
+                + layer('Status', LocalMeshPanel.statusRows(r.repeater_status).map(([k, v]) => row(k, v && esc(v))).join(''))
                 + layer('Announce', LocalMeshPanel.announceRows(r).map(([k, v]) => row(k, esc(v))).join(''))
                 + layer('Route', row('Routed', r.routed ? 'yes (follows a learned path)' : 'no (flood)')
                     + row('Path', esc(path) || null) + radio(r));

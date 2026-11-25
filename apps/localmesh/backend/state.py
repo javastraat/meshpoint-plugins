@@ -23,12 +23,28 @@ restart needed: it is just a lookup table read at render/save time, unlike the d
 
 from __future__ import annotations
 
+import time
+from typing import Optional
+
+from . import repeater_status
+
 _devices: list[dict] = []
 _channel_names: dict[int, str] = {}
+# Opens the repeaters' status packets (repeater_status.py). A secret: never part of to_dict(), so no route returns it.
+_status_key: Optional[bytes] = None
+_status_key_prev: Optional[bytes] = None   # repeaters take the old network key for 24 h after a change
+_status_key_prev_until = 0.0
+STATUS_KEY_GRACE_S = 24 * 3600
 
 
 def init(config: dict) -> None:
-    global _devices, _channel_names
+    global _devices, _channel_names, _status_key, _status_key_prev, _status_key_prev_until
+    _status_key = repeater_status.parse_key(str(config.get("status_key") or ""))
+    _status_key_prev = repeater_status.parse_key(str(config.get("status_key_prev") or ""))
+    try:
+        _status_key_prev_until = float(config.get("status_key_prev_until") or 0)
+    except (TypeError, ValueError):
+        _status_key_prev_until = 0.0
     _devices = [dict(d) for d in (config.get("devices") or [])]
     _channel_names = _parse_channel_names(config.get("channel_names") or {})
 
@@ -96,6 +112,31 @@ def set_name(label: str, name: str) -> None:
     _persist()
 
 
+def status_keys(now: Optional[float] = None) -> list[bytes]:
+    """The keys to try on a status packet: the current one, then the previous one during its grace period."""
+    now = time.time() if now is None else now
+    keys = [_status_key] if _status_key else []
+    if _status_key_prev and now < _status_key_prev_until:
+        keys.append(_status_key_prev)
+    return keys
+
+
+def status_key_set() -> bool:
+    return _status_key is not None
+
+
+def set_status_key(key: Optional[bytes], now: Optional[float] = None) -> None:
+    """Set (the old one stays valid for 24 h) or remove (None: both go) the status key, and persist."""
+    global _status_key, _status_key_prev, _status_key_prev_until
+    now = time.time() if now is None else now
+    if key is None:
+        _status_key_prev, _status_key_prev_until = None, 0.0
+    elif _status_key and key != _status_key:
+        _status_key_prev, _status_key_prev_until = _status_key, now + STATUS_KEY_GRACE_S
+    _status_key = key
+    _persist()
+
+
 def _current_saved_config() -> dict:
     """plugins.localmesh as it is on disk now, not as it was at init(): save_section_to_yaml merges one level deep, so
     writing only our own keys would otherwise undo a later Settings -> Plugins enable/disable (same as dapnet)."""
@@ -120,4 +161,11 @@ def _persist() -> None:
 
     current = _current_saved_config()
     current.update(to_dict())
+    for name in ("status_key", "status_key_prev", "status_key_prev_until"):
+        current.pop(name, None)
+    if _status_key:
+        current["status_key"] = repeater_status.format_key(_status_key)
+    if _status_key_prev and time.time() < _status_key_prev_until:
+        current["status_key_prev"] = repeater_status.format_key(_status_key_prev)
+        current["status_key_prev_until"] = _status_key_prev_until
     save_section_to_yaml("plugins", {"localmesh": current})

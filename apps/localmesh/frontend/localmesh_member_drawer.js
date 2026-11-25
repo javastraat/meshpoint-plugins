@@ -148,6 +148,11 @@ class LocalMeshMemberDrawer {
             ['Heard by', esc((r.receivers || []).join(', '))],
         ], expanded('Last heard', true)));
 
+        if (r.status) {
+            body.appendChild(LocalMeshMemberDrawer.section('Status', [['Received', when(r.status.time)],
+                ...P.statusRows(r.status).map(([k, v]) => [k, v && esc(v)])], expanded('Status', true)));
+        }
+
         body.appendChild(LocalMeshMemberDrawer.section('Signal', r.last_heard ? [
             ['Hops left', r.hops == null ? null : `${r.hops} (counts down by one at every repeater)`],
             ['Previous hop', r.via ? `node ${r.via}` : null],
@@ -159,7 +164,7 @@ class LocalMeshMemberDrawer {
         body.appendChild(LocalMeshMemberDrawer.section('Recent packets', activity === null ? loading
             : activity.map((x) => [P.clock(x.time),
                 `${esc(x.type)} #${x.counter} · ${x.hops} hops left · `
-                + `<span class="lw-badge lw-badge--${LM_DECISION_BADGE[x.decision] || 'rejoin'}">${esc(x.decision.replace(/_/g, ' '))}</span>`]),
+                + LocalMeshMemberDrawer.decisionBadge(x)]),
         expanded('Recent packets', true)));
     }
 
@@ -223,8 +228,14 @@ class LocalMeshMemberDrawer {
         body.appendChild(LocalMeshMemberDrawer.section('Recent packets', activity === null ? loading
             : activity.map((x) => [P.clock(x.time),
                 `${esc(x.type)} #${x.counter} · ${x.hops} hops left · `
-                + `<span class="lw-badge lw-badge--${LM_DECISION_BADGE[x.decision] || 'rejoin'}">${esc(x.decision.replace(/_/g, ' '))}</span>`]),
+                + LocalMeshMemberDrawer.decisionBadge(x)]),
         expanded('Recent packets', false)));
+    }
+
+    /** The decision as the Activity tab and the popup show it (a repeater's own packets: "repeater info"). */
+    static decisionBadge(x) {
+        const dec = window.LocalMeshPanel.decisionOf(x);
+        return `<span class="lw-badge lw-badge--${dec.badge}">${LocalMeshMemberDrawer.esc(dec.label)}</span>`;
     }
 
     /** One collapsible nd-section of [label, html] rows (empty values dropped), like the core NodeDrawer's. */

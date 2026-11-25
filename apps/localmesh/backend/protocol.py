@@ -288,17 +288,29 @@ class Announce:
     member: int; counter: int; region: int; version: str
 
 
-def parse_announce(frame: bytes) -> Optional[Announce]:
-    """A repeater's announce from a whole packet as sent over the air (packet format v4, firmware src/Packet.h), or None
-    for anything else. Its payload is plain text: version 1, region, firmware (3 bytes). The HMAC in the tail needs the
-    network key, so this is what the packet says, not proof of who sent it."""
-    if len(frame) < 13 or frame[0] != (4 << 4 | PACKET_TYPES.index("announce")) or frame[1] >> 6 != 2:
-        return None                                      # 2: the 8-byte HMAC tail every announce has
-    member = int.from_bytes(frame[4:7], "big")
-    payload = frame[13 + 2 * (frame[2] >> 4 & 7):-8]     # 2 bytes per hop in the path
-    if member < REPEATER_MEMBER_BASE or len(payload) != 5 or payload[0] != 1:
+@dataclass
+class RepeaterPacket:
+    type: str; member: int; counter: int; payload: bytes
+
+
+def parse_repeater_packet(frame: bytes) -> Optional[RepeaterPacket]:
+    """A repeater's own packet as sent over the air (packet format v4, firmware src/Packet.h), or None for anything else.
+    The HMAC in the tail needs the network key, so this is what the packet says, not proof of who sent it."""
+    if len(frame) < 21 or frame[0] >> 4 != 4 or frame[1] >> 6 != 2:   # 2: the 8-byte HMAC tail these packets have
         return None
-    return Announce(member, int.from_bytes(frame[7:11], "big"), payload[1], ".".join(str(b) for b in payload[2:5]))
+    member = int.from_bytes(frame[4:7], "big")
+    start = 13 + 2 * (frame[2] >> 4 & 7)                              # 2 bytes per hop in the path
+    if member < REPEATER_MEMBER_BASE or len(frame) < start + 8:
+        return None
+    return RepeaterPacket(PACKET_TYPES[frame[0] & 15], member, int.from_bytes(frame[7:11], "big"), frame[start:-8])
+
+
+def parse_announce(frame: bytes) -> Optional[Announce]:
+    """A repeater's announce; its payload is plain text: version 1, region, firmware (3 bytes)."""
+    k = parse_repeater_packet(frame)
+    if k is None or k.type != "announce" or len(k.payload) != 5 or k.payload[0] != 1:
+        return None
+    return Announce(k.member, k.counter, k.payload[1], ".".join(str(b) for b in k.payload[2:5]))
 
 
 @dataclass

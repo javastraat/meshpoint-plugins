@@ -16,7 +16,7 @@ from src.api.audit.dependencies import get_audit_writer
 from src.api.auth.dependencies import require_admin
 from src.api.auth.jwt_session import SessionClaims
 
-from . import state
+from . import repeater_status, state
 
 router = APIRouter(prefix="/api/localmesh", tags=["config", "localmesh"])
 
@@ -33,6 +33,10 @@ class DeviceEntry(BaseModel):
 class LocalMeshSettingsUpdate(BaseModel):
     devices: list[DeviceEntry]
     channel_names: dict[str, str] = {}
+
+
+class StatusKeyUpdate(BaseModel):
+    key: str = ""   # "" removes it
 
 
 def validate_channel_names(raw: dict[str, str]) -> dict[int, str]:
@@ -75,7 +79,7 @@ def validate_devices(devices: list[DeviceEntry]) -> list[dict]:
 
 @router.get("/settings")
 async def get_localmesh_settings() -> dict:
-    return state.to_dict()
+    return {**state.to_dict(), "status_key_set": state.status_key_set()}   # never the key itself
 
 
 @router.put("/settings")
@@ -101,3 +105,22 @@ async def update_localmesh_settings(
         "saved": True, "restart_required": devices_changed,
         "devices": state.devices(), "channel_names": state.channel_names(),
     }
+
+
+@router.put("/status-key")
+async def update_status_key(
+    req: StatusKeyUpdate,
+    _claims: SessionClaims = Depends(require_admin),
+    audit: AuditLogWriter = Depends(get_audit_writer),
+) -> dict:
+    """The key that opens the repeaters' status packets. Write-only: the answer, the audit log and GET /settings only say
+    whether there is one."""
+    key = None
+    if req.key.strip():
+        key = repeater_status.parse_key(req.key)
+        if key is None:
+            raise HTTPException(400, "not a status key: it starts with lmst1- (made by tools/status_key.py; "
+                                     "never enter the network key here)")
+    with audit.timed_action(user=_claims.subject, action="localmesh.status_key_update", params={"set": key is not None}):
+        state.set_status_key(key)
+    return {"saved": True, "status_key_set": state.status_key_set()}

@@ -3,8 +3,11 @@ the source writes. Covers the one-command-at-a-time queue, member-list paging, m
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import struct
 import unittest
+from unittest import mock
 
 from plugins.apps.localmesh.backend import protocol as p
 from plugins.apps.localmesh.backend import listener as l
@@ -223,6 +226,36 @@ class TestListener(unittest.TestCase):
         self.src._handle(bytes([p.TEXT, 0]) + s("RAW " + self.ANNOUNCE[:41]))    # cut off
         self.src._handle(self.rx_announce())
         self.assertFalse(any("announce" in a for a in self.src.page_data()["activity"]))
+
+    # firmware test/test_core/vectors.h V_ST_FRAME: a sealed status of repeater 103, network key 5a..5a
+    STATUS = "4c8d0401ff00670000002a00670170663336b39f4c0f37c15888f9e6fd03bef6abb72576a4"
+    STATUS_KEY = hmac.new(b"\x5a" * 32, b"status", hashlib.sha256).digest()
+
+    def rx_status(self) -> bytes:
+        return bytes([p.RX_LOG, 0]) + struct.pack("<IIBBHhbB", 0xFF0067, 42, 12, 4, 103, -48, 45, 3) + bytes([0, 0])
+
+    def hear_status(self, *lines: str) -> dict:
+        for line in lines:
+            self.src._handle(bytes([p.TEXT, 0]) + s(line))
+        self.src._handle(self.rx_status())
+        return self.src.page_data()
+
+    def test_status_is_opened_with_the_key(self) -> None:
+        with mock.patch.object(l.state, "status_keys", return_value=[b"x" * 32, self.STATUS_KEY]):
+            d = self.hear_status("RAW " + self.STATUS[:30], self.STATUS[30:], "RX member=16711783")   # in two TEXT events
+        st = d["activity"][-1]["repeater_status"]
+        self.assertEqual((st["battery_mv"], st["noise_floor"], st["version"]), (3987, -104, "0.5.0"))
+        self.assertEqual(d["statuses"][103]["uptime_h"], 27)
+
+    def test_status_stays_closed_without_the_right_key(self) -> None:
+        for keys in ([], [b"x" * 32]):
+            with mock.patch.object(l.state, "status_keys", return_value=keys):
+                d = self.hear_status("RAW " + self.STATUS)
+            self.assertNotIn("repeater_status", d["activity"][-1])
+        with mock.patch.object(l.state, "status_keys", return_value=[self.STATUS_KEY]):
+            d = self.hear_status("RAW " + self.STATUS[:30], "RX member=1", self.STATUS[30:])   # not one after the other
+            self.assertNotIn("repeater_status", d["activity"][-1])
+        self.assertEqual(d["statuses"], {})
 
     def test_announce_of_another_net_is_not_kept(self) -> None:
         self.src._handle(bytes([p.TEXT, 0]) + s("RAW " + self.ANNOUNCE))
