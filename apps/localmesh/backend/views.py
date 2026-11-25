@@ -188,7 +188,9 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             e["direct"] = True
             if label not in e["receivers"]:
                 e["receivers"].append(label)
-            heard_at(e, now - n["ago_s"], hops=e["hops"], rssi=n["rssi"], snr=n["snr"], via=0, type=e["type"] or "direct")
+            t = n.get("at", now) - n["ago_s"]
+            if e["last_heard"] is None or t > e["last_heard"] + 5:   # not its own packet again: it passed one on
+                heard_at(e, t, hops=e["hops"], rssi=n["rssi"], snr=n["snr"], via=0, type="passed on")
     for e in out.values():
         if e["status"]:
             e["status"] = _named_neighbors(e["status"], {n: r["name"] for n, r in out.items()})

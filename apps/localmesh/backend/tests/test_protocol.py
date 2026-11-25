@@ -183,6 +183,7 @@ class TestParsers(unittest.TestCase):
     def test_decision_list_matches_firmware_count(self) -> None:
         self.assertEqual(len(p.DECISIONS), 19); self.assertEqual(p.DECISIONS[18], "out_of_region")
         self.assertEqual(len(p.PACKET_TYPES), 16)
+        self.assertEqual(p.PACKET_TYPES[4], "cert_request")   # 16-11 in the firmware (was measure)
 
 
 if __name__ == "__main__":

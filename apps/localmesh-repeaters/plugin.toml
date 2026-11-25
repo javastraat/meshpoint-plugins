@@ -1,0 +1,20 @@
+name = "localmesh-repeaters"
+version = "0.1.0"
+meshpoint_api = 1
+provides = ["service", "routes", "sidebar"]   # service: keeps every repeater status; routes: /api/localmesh-repeaters/*
+requires = "localmesh"   # gets the opened status packets through its hooks; nothing is polled or sent
+
+[frontend]
+scripts = ["frontend/localmesh_repeaters.js"]
+styles = ["frontend/localmesh_repeaters.css"]
+
+[sidebar]
+route = "localmesh-repeaters"
+label = "LocalMesh Repeaters"
+category = "radio"
+icon = "antenna"
+
+[meta]
+description = "The LocalMesh repeaters and what they report about themselves: battery, uptime, noise, airtime, packets, refusals, neighbours and firmware, kept in Meshpoint's database. Listens only: the repeaters send their status every hour by themselves. Needs the localmesh plugin with a status key."
+homepage = "https://www.localmesh.nl"
+author = "Einstein PD2EMC"

@@ -5,6 +5,8 @@ in an order this plugin does not control. So the registry lives in ``sys.modules
 gets there first creates it, the other finds it. No import between plugins, no load order.
 
     registry().sources                    the receivers (LocalMeshSerialSource), set by this plugin's wire()
+    registry().status_handlers            callables handler(source, status: dict), called for every repeater status that
+                                          could be opened (copies through other repeaters too: same node and counter)
     registry().message_handlers           callables handler(source, message: dict), called for every NEW message
 
 A handler is called on the event loop thread (scheduled from the serial reader thread), once per message: the
@@ -33,6 +35,8 @@ def registry() -> types.ModuleType:
         reg.sources = ()
         reg.message_handlers = []
         sys.modules[REGISTRY_MODULE] = reg
+    if not hasattr(reg, "status_handlers"):   # created by a plugin with an older copy of this function
+        reg.status_handlers = []
     return reg
 
 
@@ -46,3 +50,11 @@ def emit_message(source, message: dict) -> None:
             handler(source, dict(message))
         except Exception:
             logger.exception("localmesh: a message handler failed")
+
+
+def emit_repeater_status(source, status: dict) -> None:
+    for handler in list(registry().status_handlers):
+        try:
+            handler(source, dict(status))
+        except Exception:
+            logger.exception("localmesh: a repeater status handler failed")

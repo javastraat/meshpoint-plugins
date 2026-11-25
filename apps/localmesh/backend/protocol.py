@@ -27,7 +27,7 @@ REPLY, MESSAGE, RX_LOG, STATUS_EVENT, DELIVERY, ADVERT, DELIVERY_FAILED, TRACE, 
 
 ROLES = ["repeater", "companion", "bridge", "observer"]
 # packet types over the air (firmware src/Packet.h, packet format v4)
-PACKET_TYPES = ["channel", "cert", "block", "admin", "measure", "direct", "ack", "advert", "trace", "rekey",
+PACKET_TYPES = ["channel", "cert", "block", "admin", "cert_request", "direct", "ack", "advert", "trace", "rekey",
                 "rekey_ack", "repeater_cert", "status", "announce", "channel_key", "test"]
 # what a board decided about a packet (firmware lm::Decision, same order)
 DECISIONS = ["forward", "deliver", "wrong_net", "not_member", "blocked", "replay", "bad_signature", "budget_exceeded",

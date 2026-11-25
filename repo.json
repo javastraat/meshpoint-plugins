@@ -167,6 +167,23 @@
       "requires": "localmesh"
     },
     {
+      "id": "localmesh-repeaters",
+      "kind": "app",
+      "path": "apps/localmesh-repeaters",
+      "version": "0.1.0",
+      "meshpoint_api": 1,
+      "provides": [
+        "service",
+        "routes",
+        "sidebar"
+      ],
+      "description": "The LocalMesh repeaters and what they report about themselves: battery, uptime, noise, airtime, packets, refusals, neighbours and firmware, kept in Meshpoint's database. Listens only: the repeaters send their status every hour by themselves. Needs the localmesh plugin with a status key.",
+      "author": "Einstein PD2EMC",
+      "homepage": "https://www.localmesh.nl",
+      "has_setup": false,
+      "requires": "localmesh"
+    },
+    {
       "id": "offline-map",
       "kind": "app",
       "path": "apps/offline-map",

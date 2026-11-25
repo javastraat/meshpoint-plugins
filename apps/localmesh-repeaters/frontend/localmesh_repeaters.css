@@ -1,0 +1,31 @@
+/* LocalMesh Repeaters. The cards are the core's repeaters.css (rp-*), the tiles and tabs lorawan.css (lw-*). */
+
+.section[data-section="localmesh-repeaters"] { overflow-y: auto; }
+
+.lmr-wrap { overflow-x: auto; margin-bottom: 1rem; }
+.lmr-ov { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.lmr-ov th {
+    text-align: left; font-weight: 500; font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-muted, #888); padding: 0.3rem 0.6rem; white-space: nowrap;
+}
+.lmr-ov td { padding: 0.45rem 0.6rem; border-top: 1px solid var(--border, #2a2a2a); white-space: nowrap; font-family: var(--font-mono, monospace); }
+.lmr-ov__row { cursor: pointer; }
+.lmr-ov__row:hover { background: var(--overlay-weak, rgba(255, 255, 255, 0.05)); }
+.lmr-ov__row--sel { background: var(--overlay-weak, rgba(255, 255, 255, 0.06)); box-shadow: inset 3px 0 0 #ff6b35; }
+.lmr-ov td.lmr-name { font-family: inherit; font-weight: 600; }
+.lmr-warn { color: var(--accent-amber, #f59e0b); }
+
+.lmr-lamp { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted, #888); }
+.lmr-lamp--ok { background: var(--accent-green, #00e5a0); }
+.lmr-lamp--late { background: var(--accent-amber, #f59e0b); }
+.lmr-lamp--bad { background: var(--accent-red, #ef4444); }
+
+.lmr-alert {
+    margin: 0.4rem 0; padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.78rem;
+    color: var(--accent-amber, #f59e0b); background: rgba(245, 158, 11, 0.1);
+}
+.lmr-note { padding: 0 1rem 0.8rem; font-size: 0.75rem; color: var(--text-muted, #888); }
+
+.lmr-settings { padding: 1rem; display: grid; gap: 1rem; max-width: 640px; }
+.lmr-settings input[type="number"] { width: 7rem; }
+.lmr-hide { display: flex; gap: 0.5rem; align-items: center; padding: 0.15rem 0; }

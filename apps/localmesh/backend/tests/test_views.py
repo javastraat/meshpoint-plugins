@@ -151,6 +151,15 @@ class TestMessages(unittest.TestCase):
         self.assertFalse(out[99]["listed"])                                         # heard, but not in the certificates
         self.assertEqual([r["node"] for r in views.repeaters([("base", a)], now=1000.0)], [12, 11, 99])
 
+    def test_neighbour_time_counts_from_when_the_list_was_fetched(self) -> None:
+        base = p.REPEATER_MEMBER_BASE
+        own = {"count": 1, "last_heard": 900.0, "type": "status", "hops": 4, "via": 11, "rssi": -80, "snr": 3.0}
+        n = {"node": 11, "snr": 2.0, "rssi": -70, "ago_s": 10, "count": 5}
+        same = views.repeaters([("a", data(heard={base | 11: own}, neighbors=[{**n, "at": 912.0}]))], now=960.0)[0]
+        self.assertEqual((same["last_heard"], same["type"]), (900.0, "status"))          # its own status, not 50 s later
+        later = views.repeaters([("a", data(heard={base | 11: own}, neighbors=[{**n, "at": 950.0}]))], now=960.0)[0]
+        self.assertEqual((later["last_heard"], later["type"], later["rssi"]), (940.0, "passed on", -70))
+
     def test_repeater_firmware_from_the_latest_announce(self) -> None:
         a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1", "revoked": False}})
         a["announces"] = {11: {"region": 9, "version": "0.10.8", "time": 5.0}, 12: {"region": 4, "version": "0.10.9", "time": 6.0}}

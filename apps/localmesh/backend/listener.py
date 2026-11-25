@@ -443,7 +443,8 @@ class LocalMeshSerialSource(CaptureSource):
             with self._lock:
                 self.channels = channels
         elif seq == SEQ_NEIGHBORS:
-            self.neighbors = [asdict(n) for n in p.parse_neighbors(payload)]
+            now = time.time()   # ago_s counts from here, not from when the page asks
+            self.neighbors = [{**asdict(n), "at": now} for n in p.parse_neighbors(payload)]
         elif seq == SEQ_MEMBERS:
             total, page = p.parse_members(payload)
             for m in page:
@@ -531,6 +532,12 @@ class LocalMeshSerialSource(CaptureSource):
                     self.announces[node] = {**info["announce"], "time": now}
                 if "repeater_status" in info:
                     self.statuses[node] = {**info["repeater_status"], "time": now}
+                    if self._loop is not None:   # for plugins that build on this one (localmesh-repeaters)
+                        known = self.repeaters.get(node) or {}
+                        self._loop.call_soon_threadsafe(hooks.emit_repeater_status, self, {
+                            **info["repeater_status"], "node": node, "counter": log.counter, "time": now,
+                            "name": known.get("name", ""), "region": known.get("region"), "hops": log.hops,
+                            "via": log.via, "rssi": log.rssi, "snr": log.snr})
             self.activity.append(entry)
             h = self.heard.setdefault(log.member, {"count": 0})
             h.update(count=h["count"] + 1, last_heard=now, type=log.type, hops=log.hops, via=log.via,

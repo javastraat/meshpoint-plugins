@@ -247,6 +247,26 @@ class TestListener(unittest.TestCase):
         self.assertEqual((st["battery_mv"], st["noise_floor"], st["version"]), (3987, -104, "0.5.0"))
         self.assertEqual(d["statuses"][103]["uptime_h"], 27)
 
+    def test_opened_status_goes_to_the_hooks(self) -> None:
+        got = []
+        class Loop:
+            def call_soon_threadsafe(self, fn, *args):
+                if fn is hooks.emit_repeater_status: fn(*args)
+        handler = lambda source, st: got.append((source, st))
+        hooks.registry().status_handlers.append(handler)
+        self.src._loop = Loop()
+        self.src.repeaters = {103: {"node": 103, "region": 1, "flags": 0, "name": "NL-AMS-103"}}
+        try:
+            with mock.patch.object(l.state, "status_keys", return_value=[self.STATUS_KEY]):
+                self.hear_status("RAW " + self.STATUS)
+            with mock.patch.object(l.state, "status_keys", return_value=[]):
+                self.hear_status("RAW " + self.STATUS)
+        finally:
+            hooks.registry().status_handlers.remove(handler)
+        self.assertEqual(len(got), 1)
+        st = got[0][1]
+        self.assertEqual((st["node"], st["counter"], st["name"], st["battery_mv"], st["rssi"]), (103, 42, "NL-AMS-103", 3987, -48))
+
     def test_status_stays_closed_without_the_right_key(self) -> None:
         for keys in ([], [b"x" * 32]):
             with mock.patch.object(l.state, "status_keys", return_value=keys):
@@ -272,7 +292,9 @@ class TestListener(unittest.TestCase):
 
     def test_neighbors_reply(self) -> None:
         self.src._handle(reply(l.SEQ_NEIGHBORS, bytes([1]) + struct.pack("<HbhII", 100, 8, -60, 3, 50)))
-        self.assertEqual(self.src.snapshot()["neighbors"], [{"node": 100, "snr": 2.0, "rssi": -60, "ago_s": 3, "count": 50}])
+        [n] = self.src.snapshot()["neighbors"]
+        self.assertGreater(n.pop("at"), 0)                                       # when the list came in
+        self.assertEqual([n], [{"node": 100, "snr": 2.0, "rssi": -60, "ago_s": 3, "count": 50}])
 
 
     def _info(self, name: bytes = b"") -> bytes:
