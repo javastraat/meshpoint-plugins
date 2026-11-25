@@ -79,7 +79,8 @@ async def restore(db, source_name: str, *, before: float, messages: bool, status
         e = packet_entry(r)
         if e:
             out["heard"][e["member"]] = {"count": r["n"], "last_heard": e["time"], **{k: e[k] for k in (
-                "type", "hops", "via", "rssi", "snr")}}
+                "type", "hops", "via", "rssi", "snr")}, "heard_directly": p.heard_directly(
+                    e["routed"], e["path"], e["via"], e["member"])}
 
     for r in await rows(f"SELECT {cols} FROM packets WHERE id IN (SELECT MAX(id) FROM packets WHERE {mine} "
                         "AND packet_type = 'localmesh_announce' AND decoded_payload LIKE '%\"announce\": {%' "

@@ -261,6 +261,14 @@ class RxLog:
     routed: bool = False; path: list = field(default_factory=list)   # [(node, snr), ...]
 
 
+def heard_directly(routed: bool, path: list, via: int, member: int) -> Optional[bool]:
+    """Did the sender itself transmit the packet we heard? None when a packet does not tell (a routed one carries its
+    whole route). Every repeater that passes a flood on adds itself to the path."""
+    if member >= REPEATER_MEMBER_BASE:
+        return via == member - REPEATER_MEMBER_BASE
+    return None if routed else not path
+
+
 def parse_rx_log(p: bytes) -> RxLog:
     r = Reader(p)
     member, counter, t, hops, via, rssi, snr, dec = r.u32(), r.u32(), r.u8(), r.u8(), r.u16(), r.i16(), r.i8() / 4, r.u8()

@@ -169,6 +169,12 @@ class TestParsers(unittest.TestCase):
                     head[:4] + b"\x00\x00\x04" + head[7:] + body + tail):                   # from a member
             self.assertIsNone(p.parse_announce(bad))
 
+    def test_heard_directly(self) -> None:
+        rep = p.REPEATER_MEMBER_BASE | 7
+        self.assertEqual([p.heard_directly(*a) for a in (
+            (False, [], 5, 4), (False, [(7, 2.0)], 7, 4), (True, [(7, 2.0)], 7, 4), (False, [], 7, rep), (False, [], 8, rep))],
+            [True, False, None, True, False])
+
     def test_limits_and_clip(self) -> None:
         self.assertEqual(p.channel_text_max(""), 151)
         self.assertEqual(p.channel_text_max("Meshpoint"), 151 - 11)

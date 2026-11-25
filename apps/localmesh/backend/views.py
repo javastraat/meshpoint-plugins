@@ -71,7 +71,7 @@ def members(receivers: Receivers) -> list[dict]:
         return out.setdefault(member, {
             "member": member, "name": "", "lat": None, "lon": None, "blocked": False, "national": False,
             "listed": False, "own": False, "own_receiver": None, "count": 0, "last_heard": None, "hops": None, "rssi": None, "snr": None, "via": None,
-            "type": None, "receivers": [],
+            "type": None, "heard_directly": None, "receivers": [],
         })
 
     def set_position(member: int, lat: float, lon: float, t: int) -> None:
@@ -121,7 +121,7 @@ def members(receivers: Receivers) -> list[dict]:
                 e["receivers"].append(label)
             if e["last_heard"] is None or h["last_heard"] >= e["last_heard"]:
                 e.update(last_heard=h["last_heard"], hops=h["hops"], rssi=h["rssi"], snr=h["snr"], via=h["via"],
-                         type=h["type"])
+                         type=h["type"], heard_directly=h.get("heard_directly"))
     for label, d in receivers:   # the receiver itself is a member too: "this Meshpoint", with its own name
         own = d.get("own_member")
         if own:

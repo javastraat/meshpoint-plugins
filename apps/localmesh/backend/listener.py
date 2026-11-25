@@ -583,7 +583,8 @@ class LocalMeshSerialSource(CaptureSource):
             self.activity.append(entry)
             h = self.heard.setdefault(log.member, {"count": 0})
             h.update(count=h["count"] + 1, last_heard=now, type=log.type, hops=log.hops, via=log.via,
-                     rssi=log.rssi, snr=log.snr)
+                     rssi=log.rssi, snr=log.snr,
+                     heard_directly=p.heard_directly(log.routed, log.path, log.via, log.member))
         return info
 
     def _note_message(self, m: p.Message, now: float) -> None:

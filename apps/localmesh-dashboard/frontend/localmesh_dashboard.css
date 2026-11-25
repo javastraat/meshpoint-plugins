@@ -103,34 +103,9 @@
 }
 .rt-tele-popup__tag--closed { color: var(--accent-red, #ef4444); }
 
-/* ---- Members list (right column, #lmd-members-list *is* the
-   .panel__body -- core already gives it flex:1/overflow:auto
-   scrolling). ---- */
-.lmd-member-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    padding: 0.35rem 0.75rem;
-    cursor: pointer;
-    border-bottom: 1px solid var(--border, #2a2a2a);
-}
-.lmd-member-row:last-child { border-bottom: none; }
-.lmd-member-row:hover { background: var(--overlay-weak, rgba(255, 255, 255, 0.06)); }
-.lmd-member-row__name {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.82rem;
-    color: var(--text-primary, #eee);
-}
-.lmd-member-row__time {
-    flex: 0 0 auto;
-    font-size: 0.72rem;
-    color: var(--text-muted, #888);
-    white-space: nowrap;
-}
+/* ---- Members / Repeaters list: the core's node cards (node_cards.css, nc-*); only the protocol badge is ours, in
+   LocalMesh orange. ---- */
+.lmd-proto { background: rgba(255, 107, 53, 0.15); color: #ff6b35; }
 
 /* ---- Live Activity ticker column widths -- localmesh.css's own lm-*
    column classes (lm-time/lm-hops/lm-signal/...) aren't reachable from
@@ -139,7 +114,9 @@
    prefix instead of guessing at reuse. ---- */
 .lmd-col-time { width: 7rem; }
 .lmd-col-type { width: 6rem; }
-.lmd-col-from { width: 10rem; }
+.lmd-col-from { width: 14rem; }
+.lmd-col-path { width: 12rem; }
 .lmd-col-hops { width: 5rem; }
-.lmd-col-signal { width: 8rem; }
+.lmd-col-signal { width: 10rem; }
 .lmd-col-badge { width: 9rem; }
+.lmd-details { color: var(--accent-cyan, #06b6d4); }

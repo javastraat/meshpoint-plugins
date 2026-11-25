@@ -21,7 +21,7 @@
  * for the identical reasoning (and plugins/apps/hello-world for the
  * minimal "sidebar" pattern both follow). No new backend routes: reads
  * the localmesh plugin's already-public /api/localmesh/{status,members,
- * messages,activity}.
+ * messages,activity,repeaters,packet-stats}.
  *
  * localmesh has no WebSocket broadcasts of its own (unlike reticulum's
  * reticulum_announce/_peer/_telemetry) -- its capture source only feeds
@@ -56,6 +56,11 @@ const LMD_TICKER_LIMIT = 60;
 // Members list (right column) cap -- same reasoning as reticulum-
 // dashboard's RTD_PEER_LIST_LIMIT.
 const LMD_MEMBER_LIST_LIMIT = 150;
+const LMD_ONLINE_S = 2 * 3600;   // as the core's node cards
+const LMD_LOW_MV = 3600;
+const LMD_SORTS = { members: ['last_heard', 'signal', 'name'], repeaters: ['last_heard', 'signal', 'name', 'battery'] };
+const LMD_SORT_TEXT = { last_heard: 'Last heard', signal: 'Signal', name: 'Name', battery: 'Battery' };
+const LMD_FILTERS = ['all', 'direct', 'relayed'];
 
 class LocalMeshDashboard {
     constructor() {
@@ -70,6 +75,8 @@ class LocalMeshDashboard {
         this._activitySeen = new Set();   // composite keys already rendered, for diff-driven flashing
         this._seeded = false;
         this._memberSearchQuery = '';
+        this._sortBy = this._loadPref('lmdSort', Object.keys(LMD_SORT_TEXT), 'last_heard');
+        this._filter = this._loadPref('lmdFilter', LMD_FILTERS, 'all');
         this._drawer = window.LocalMeshMemberDrawer ? new window.LocalMeshMemberDrawer() : null;
         this._homeLat = null;
         this._homeLon = null;
@@ -115,6 +122,31 @@ class LocalMeshDashboard {
                         <div class="stat-card__value" id="lmd-stat-airtime">--</div>
                         <div class="stat-card__sub" id="lmd-stat-airtime-sub"></div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-card__label">Packets</div>
+                        <div class="stat-card__value" id="lmd-stat-packets">--</div>
+                        <div class="stat-card__sub">24h / total</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__label">Packets / min</div>
+                        <div class="stat-card__value" id="lmd-stat-ppm">--</div>
+                        <div class="stat-card__sub">last 10 min</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__label">Avg RSSI</div>
+                        <div class="stat-card__value" id="lmd-stat-rssi">--</div>
+                        <div class="stat-card__sub">24h</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__label">Weakest battery</div>
+                        <div class="stat-card__value" id="lmd-stat-battery">--</div>
+                        <div class="stat-card__sub" id="lmd-stat-battery-sub">no status yet</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__label">Firmware</div>
+                        <div class="stat-card__value" id="lmd-stat-firmware">--</div>
+                        <div class="stat-card__sub" id="lmd-stat-firmware-sub">repeaters</div>
+                    </div>
                 </section>
 
                 <div class="dashboard__main">
@@ -155,6 +187,14 @@ class LocalMeshDashboard {
                                            placeholder="Search..." autocomplete="off" spellcheck="false">
                                 </div>
                             </div>
+                            <div class="nc-controls" role="group" aria-label="Sort and filter">
+                                <select id="lmd-sort" class="nc-controls__sort" aria-label="Sort by"></select>
+                                <div class="nc-controls__filter" role="group" aria-label="Filter">
+                                    <button type="button" class="nc-pill" data-lmd-filter="all">All</button>
+                                    <button type="button" class="nc-pill" data-lmd-filter="direct">Direct</button>
+                                    <button type="button" class="nc-pill" data-lmd-filter="relayed">Relayed</button>
+                                </div>
+                            </div>
                             <div class="panel__body" id="lmd-members-list"></div>
                             <p class="lw-empty" id="lmd-members-empty" style="display:none">
                                 No LocalMesh members heard yet.
@@ -167,17 +207,18 @@ class LocalMeshDashboard {
                     <div class="panel">
                         <div class="panel__header">
                             <span>Live Activity</span>
+                            <span class="packet-count" id="lmd-ticker-count">0</span>
                         </div>
                         <div class="panel__body lw-table-wrap">
                             <table class="lw-table lmd-ticker-table">
                                 <colgroup>
                                     <col class="lmd-col-time"><col class="lmd-col-type"><col class="lmd-col-from">
-                                    <col class="lmd-col-hops"><col class="lmd-col-signal"><col class="lmd-col-badge">
+                                    <col class="lmd-col-path"><col class="lmd-col-hops"><col class="lmd-col-signal"><col class="lmd-col-badge"><col>
                                 </colgroup>
                                 <thead>
                                     <tr>
                                         <th>Time</th><th>Type</th><th>From</th>
-                                        <th>Hops left</th><th>Signal</th><th>Decision</th>
+                                        <th>Path</th><th>Hops left</th><th>Signal</th><th>Decision</th><th>Details</th>
                                     </tr>
                                 </thead>
                                 <tbody id="lmd-ticker-tbody"></tbody>
@@ -204,6 +245,18 @@ class LocalMeshDashboard {
             this._renderMembersList();
         });
         this._syncListTabs();
+        this._q('#lmd-sort')?.addEventListener('change', (e) => {
+            this._sortBy = e.target.value;
+            this._savePref('lmdSort', this._sortBy);
+            this._renderMembersList();
+        });
+        this._root.querySelectorAll('[data-lmd-filter]').forEach((b) => b.addEventListener('click', () => {
+            this._filter = b.dataset.lmdFilter;
+            this._savePref('lmdFilter', this._filter);
+            this._syncFilter();
+            this._renderMembersList();
+        }));
+        this._syncFilter();
 
         this._syncBasemapBtn(this._basemapLight);
         this._q('#lmd-map-basemap-btn')?.addEventListener('click', () => this._toggleBasemap());
@@ -233,7 +286,9 @@ class LocalMeshDashboard {
     /** Called by the router (via registerSidebarPage) when the page becomes active. */
     show() {
         this._load();
+        clearInterval(this._refreshTimer);
         this._refreshTimer = setInterval(() => this._load(), 10_000);
+        requestAnimationFrame(() => this._mapResized());   // it may have been measured while the page was hidden
     }
 
     hide() {
@@ -243,8 +298,8 @@ class LocalMeshDashboard {
 
     async _load() {
         await Promise.all([
-            this._loadStatus(), this._loadMembers(), this._loadMessages24h(),
-            this._loadActivity(), this._loadHomeLocation(),
+            this._loadStatus(), this._loadMessages24h(), this._loadHomeLocation(), this._loadPacketStats(),
+            this._loadMembers().then(() => this._loadActivity()),   // the rows use the repeaters' names
         ]);
     }
 
@@ -322,6 +377,36 @@ class LocalMeshDashboard {
         this._setText('lmd-stat-airtime-sub', `${(air[0].used / 1000).toFixed(1)} s of ${Math.round(air[0].limit / 1000)} s`);
     }
 
+    async _loadPacketStats() {
+        try {
+            const r = await fetch('/api/localmesh/packet-stats', { credentials: 'same-origin' });
+            if (!r.ok) return;   // an older localmesh plugin
+            const s = await r.json();
+            if (s.total == null) return;
+            this._setText('lmd-stat-packets', `${s.day} / ${s.total}`);
+            this._setText('lmd-stat-ppm', s.per_minute);
+            this._setText('lmd-stat-rssi', s.avg_rssi == null ? '--' : `${s.avg_rssi} dBm`);
+        } catch (_) {}
+    }
+
+    /** Weakest battery and firmware, from the repeaters' last status and announce. */
+    _renderRepeaterCards() {
+        const P = window.LocalMeshPanel;
+        const weak = this._repeaters.filter((r) => r.status && r.status.battery_mv)
+            .sort((a, b) => a.status.battery_mv - b.status.battery_mv)[0];
+        this._setText('lmd-stat-battery', weak ? `${(weak.status.battery_mv / 1000).toFixed(2)} V` : '--');
+        this._setText('lmd-stat-battery-sub', weak ? (weak.name || `repeater ${weak.node}`) : 'no status yet');
+        const known = this._repeaters.map((r) => (P && P.repeaterHealth ? P.repeaterHealth(r).firmware : '')).filter(Boolean);
+        const num = (v) => v.split('.').map(Number);
+        const newest = [...known].sort((a, b) => {
+            const x = num(a); const y = num(b);
+            return y[0] - x[0] || y[1] - x[1] || y[2] - x[2];
+        })[0];
+        this._setText('lmd-stat-firmware', newest || '--');
+        this._setText('lmd-stat-firmware-sub', newest
+            ? `${known.filter((v) => v === newest).length} of ${known.length} repeaters` : 'repeaters');
+    }
+
     async _loadMembers() {
         try {
             const [r, rr] = await Promise.all([
@@ -333,6 +418,7 @@ class LocalMeshDashboard {
                 const day = Date.now() / 1000 - 86400;
                 this._setText('lmd-stat-repeaters',
                     `${this._repeaters.filter((x) => x.last_heard && x.last_heard >= day).length} / ${this._repeaters.length}`);
+                this._renderRepeaterCards();
             }
             if (!r.ok) return;
             this._members = await r.json();
@@ -383,95 +469,190 @@ class LocalMeshDashboard {
             btn.classList.toggle('lw-tab--active', active);
             btn.setAttribute('aria-selected', active ? 'true' : 'false');
         });
+        this._syncSort();
+    }
+
+    _loadPref(key, allowed, fallback) {
+        try {
+            const v = localStorage.getItem(`meshpoint.${key}`);
+            return allowed.includes(v) ? v : fallback;
+        } catch (_) { return fallback; }
+    }
+
+    _savePref(key, value) {
+        try { localStorage.setItem(`meshpoint.${key}`, value); } catch (_) { /* private mode */ }
+    }
+
+    _syncFilter() {
+        this._root?.querySelectorAll('[data-lmd-filter]').forEach((b) => {
+            const on = b.dataset.lmdFilter === this._filter;
+            b.classList.toggle('nc-pill--active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+    }
+
+    /** The sort choices of the list that shows (only repeaters have a battery). */
+    _syncSort() {
+        const sel = this._q('#lmd-sort');
+        if (!sel) return;
+        const keys = LMD_SORTS[this._listView];
+        sel.innerHTML = keys.map((k) => `<option value="${k}">Sort: ${LMD_SORT_TEXT[k]}</option>`).join('');
+        sel.value = this._sort();
+    }
+
+    _sort() { return LMD_SORTS[this._listView].includes(this._sortBy) ? this._sortBy : 'last_heard'; }
+
+    /** Filter and sort; a list that does not say whether something was heard directly leaves it out of both. */
+    _arrange(rows, direct, name) {
+        const kept = rows.filter((r) => this._filter === 'all' || direct(r) === (this._filter === 'direct'));
+        const by = {
+            last_heard: (a, b) => (b.last_heard || 0) - (a.last_heard || 0),
+            signal: (a, b) => (b.rssi ?? -999) - (a.rssi ?? -999),
+            name: (a, b) => name(a).localeCompare(name(b), undefined, { numeric: true, sensitivity: 'base' }),
+            battery: (a, b) => (a.status?.battery_mv || 99999) - (b.status?.battery_mv || 99999),   // weakest first
+        }[this._sort()];
+        return [...kept].sort(by);
+    }
+
+    _showList(rows, html, emptyText) {
+        const list = this._q('#lmd-members-list');
+        const empty = this._q('#lmd-members-empty');
+        if (!list) return;
+        list.innerHTML = rows.slice(0, LMD_MEMBER_LIST_LIMIT).map(html).join('');
+        if (empty) {
+            empty.style.display = rows.length ? 'none' : '';
+            empty.textContent = emptyText;
+        }
     }
 
     _renderRepeatersList() {
-        const list = this._q('#lmd-members-list');
-        const empty = this._q('#lmd-members-empty');
-        if (!list) return;
         const q = this._memberSearchQuery;
-        const rows = q
-            ? this._repeaters.filter((r) => (r.name || '').toLowerCase().includes(q) || String(r.node).includes(q))
-            : this._repeaters;
-        if (!rows.length) {
-            list.innerHTML = '';
-            if (empty) {
-                empty.style.display = '';
-                empty.textContent = q ? 'No repeaters match that search.' : 'No repeaters known yet.';
-            }
-            return;
-        }
-        if (empty) empty.style.display = 'none';
-        const P = window.LocalMeshPanel;
-        const esc = P ? P.esc : (s) => String(s ?? '');
-        const ago = P ? P.ago : () => '--';
-        // firmware, battery and uptime in the tooltip (an older localmesh plugin has no repeaterHealth)
-        const health = (r) => {
-            const h = P && P.repeaterHealth ? P.repeaterHealth(r) : null;
-            return !h ? '' : [h.firmware && `firmware ${h.firmware}`, h.battery && `battery ${h.battery}`,
-                h.uptime && `up ${h.uptime}`, h.title].filter(Boolean).map((x) => `, ${x}`).join('');
-        };
-        list.innerHTML = rows.slice(0, LMD_MEMBER_LIST_LIMIT).map((r) => `
-            <div class="lmd-member-row" data-node="${esc(r.node)}" title="Repeater ${esc(r.node)}${r.region != null ? `, region ${esc(r.region)}` : ''}${esc(health(r))}">
-                <span class="lmd-member-row__name">${esc(r.name || `Repeater ${r.node}`)}</span>
-                ${r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>' : ''}
-                ${r.direct ? '<span class="lw-badge lw-badge--join">direct</span>' : ''}
-                <span class="lmd-member-row__time">${r.last_heard ? esc(ago(r.last_heard)) : '--'}</span>
-            </div>
-        `).join('');
+        const found = this._repeaters.filter((r) => !q || (r.name || '').toLowerCase().includes(q) || String(r.node).includes(q));
+        const rows = this._arrange(found, (r) => (r.last_heard ? !!r.direct : null), (r) => r.name || `Repeater ${r.node}`);
+        this._showList(rows, (r) => this._repeaterCard(r),
+            q || this._filter !== 'all' ? 'No repeaters match.' : 'No repeaters known yet.');
     }
 
     _renderMembersList() {
-        if (this._listView === 'repeaters') return this._renderRepeatersList();
-        const list = this._q('#lmd-members-list');
-        const empty = this._q('#lmd-members-empty');
-        if (!list) return;
-        if (!this._members.length) {
-            list.innerHTML = '';
-            if (empty) empty.style.display = '';
-            return;
-        }
+        if (this._listView === 'repeaters') { this._renderRepeatersList(); return; }
         const q = this._memberSearchQuery;
-        // Unfiltered this list is the *entire roster* (listed + ever
-        // heard) -- fine at 42 members, not at 2000: most "listed"
-        // members on a real network were never actually heard by this
-        // specific receiver, and a glanceable live view has no business
-        // showing them at all (same reasoning as reticulum-dashboard's
-        // own Peers list, which is implicitly "peers heard/announced",
-        // not "every theoretically possible peer"). Default view: only
-        // members heard at least once or with a known name (the board
-        // remembers names across restarts), newest first (already
-        // the API's own sort). A search query reaches the full roster
-        // though -- if you know a name/number to look for, you shouldn't
-        // need it to have been heard recently to find it.
-        const filtered = q
-            ? this._members.filter((m) =>
-                (m.name || '').toLowerCase().includes(q) || String(m.member).includes(q))
-            // own's last_heard is never set (a receiver doesn't hear itself), so it needs its own clause here
-            : this._members.filter((m) => m.last_heard != null || m.own || m.name);
-        if (!filtered.length) {
-            list.innerHTML = '';
-            if (empty) {
-                empty.style.display = '';
-                empty.textContent = q ? 'No members match that search.' : 'No members heard yet.';
-            }
-            return;
-        }
-        if (empty) empty.style.display = 'none';
-        const P = window.LocalMeshPanel;
-        const esc = P ? P.esc : (s) => String(s ?? '');
-        const ago = P ? P.ago : () => '--';
-        // Already last_heard DESC from the API -- same assumption
-        // localmesh_panel.js's own Members tab relies on.
-        list.innerHTML = filtered.slice(0, LMD_MEMBER_LIST_LIMIT).map((m) => `
-            <div class="lmd-member-row" data-member="${esc(m.member)}" title="Member ${esc(m.member)}">
-                <span class="lmd-member-row__name">${esc(m.name || `Member ${m.member}`)}</span>
-                ${m.blocked ? '<span class="lw-badge lw-badge--undecrypted">blocked</span>' : ''}
-                ${m.own ? '<span class="lw-badge lw-badge--data">this Meshpoint</span>' : ''}
-                <span class="lmd-member-row__time">${m.last_heard ? esc(ago(m.last_heard)) : '--'}</span>
-            </div>
-        `).join('');
+        // By default only members heard at least once or with a known name, not the whole roster; a search reaches all
+        // of it. The receiver's own last_heard is never set (it does not hear itself).
+        const found = this._members.filter((m) => (q
+            ? (m.name || '').toLowerCase().includes(q) || String(m.member).includes(q)
+            : m.last_heard != null || m.own || m.name));
+        const rows = this._arrange(found, (m) => m.heard_directly ?? null, (m) => m.name || `Member ${m.member}`);
+        this._showList(rows, (m) => this._memberCard(m),
+            q || this._filter !== 'all' ? 'No members match.' : 'No members heard yet.');
     }
+
+    // --- cards, with the core's own classes (node_cards.css, nc-*) ---
+
+    _chip(text, cls = '', title = '') {
+        return `<span class="nc-chip${cls ? ` nc-chip--${cls}` : ''}"${title ? ` title="${this._attr(title)}"` : ''}>${text}</span>`;
+    }
+
+    _chipRow(chips, cls = '') {
+        const kept = chips.filter(Boolean);
+        return kept.length ? `<div class="nc-card__row${cls}">${kept.join('')}</div>` : '';
+    }
+
+    _signalChips(x) {
+        if (x.rssi == null) return [];
+        const q = x.rssi > -80 ? ['Excellent', 'excellent'] : x.rssi >= -100 ? ['Good', 'good']
+            : x.rssi >= -115 ? ['Fair', 'fair'] : ['Poor', 'poor'];   // same limits as the core's node cards
+        const level = x.rssi > -80 ? 5 : x.rssi >= -100 ? 4 : x.rssi >= -115 ? 3 : x.rssi >= -125 ? 2 : 1;
+        const bars = [1, 2, 3, 4, 5].map((i) => `<span class="nc-bar nc-bar--h${i}${i <= level ? ' active' : ''}"></span>`).join('');
+        return [this._chip(`<span class="nc-bars">${bars}</span> ${Math.round(x.rssi)} dBm`, `signal nc-chip--${q[1]}`, 'of the last hop'),
+            x.snr == null ? '' : this._chip(`SNR ${Number(x.snr).toFixed(1)} dB`),
+            this._chip(q[0], `quality nc-chip--${q[1]}`)];
+    }
+
+    _card({ attr, label, color, name, heard, badges, rows }) {
+        const ago = window.LocalMeshPanel ? window.LocalMeshPanel.ago : () => '--';
+        const online = heard && Date.now() / 1000 - heard < LMD_ONLINE_S;
+        return `<div class="nc-card" ${attr}>
+            <div class="nc-card__top">
+                <div class="nc-avatar" style="background:${color}">${this._esc(label)}</div>
+                <div class="nc-card__identity">
+                    <div class="nc-card__name"><span class="nc-online nc-online--${online ? 'on' : 'off'}" title="${online ? 'Heard' : 'Not heard'} within 2 hours"></span> ${this._esc(name)}</div>
+                    <div class="nc-card__heard">${heard ? this._esc(ago(heard)) : '--'}</div>
+                </div>
+                ${badges}<span class="nc-proto lmd-proto">LM</span>
+            </div>${rows}</div>`;
+    }
+
+    _memberCard(m) {
+        const name = m.name || `Member ${m.member}`;
+        const badges = (m.blocked ? '<span class="lw-badge lw-badge--undecrypted">blocked</span>' : '')
+            + (m.own ? '<span class="lw-badge lw-badge--data">this Meshpoint</span>' : '');
+        const how = m.heard_directly === true ? 'direct' : m.heard_directly === false ? `via ${this._esc(this._nodeName(m.via))}` : '';
+        const km = this._distance(m);
+        return this._card({
+            attr: `data-member="${Number(m.member)}"`, label: this._initials(name), color: this._color(`m${m.member}`), name,
+            heard: m.last_heard, badges,
+            rows: this._chipRow([...this._signalChips(m), how && this._chip(how)])
+                + this._chipRow([m.count ? this._chip(`${Number(m.count)} packet${m.count === 1 ? '' : 's'}`, 'telem') : '',
+                    m.type ? this._chip(`last: ${this._esc(m.type.replace(/_/g, ' '))}`, 'telem') : '',
+                    km == null ? '' : this._chip(`&#x25CE; ${km}`, 'telem')])
+                + this._chipRow([m.national ? this._chip('NATIONAL', 'band') : '', this._chip(`member ${Number(m.member)}`, 'id')],
+                    ' nc-card__row--meta'),
+        });
+    }
+
+    _repeaterCard(r) {
+        const P = window.LocalMeshPanel;
+        const name = r.name || `Repeater ${r.node}`;
+        const s = r.status;
+        const h = P && P.repeaterHealth ? P.repeaterHealth(r) : { firmware: '', battery: '', uptime: '', title: '' };
+        const badges = r.revoked ? '<span class="lw-badge lw-badge--undecrypted">revoked</span>' : '';
+        const how = !r.last_heard ? '' : r.direct ? 'direct' : r.via ? `via ${this._esc(this._nodeName(r.via))}` : 'relayed';
+        return this._card({
+            attr: `data-node="${Number(r.node)}"`, label: this._initials(name), color: this._color(`r${r.node}`), name,
+            heard: r.last_heard, badges,
+            rows: this._chipRow([...this._signalChips(r), how && this._chip(how)])
+                + this._chipRow(!s ? [] : [
+                    h.battery && this._chip(`&#9889; ${this._esc(h.battery)}`, s.battery_mv < LMD_LOW_MV ? 'poor' : 'telem', h.title),
+                    this._chip(`up ${this._esc(h.uptime)}`, 'telem', h.title),
+                    this._chip(`noise ${Number(s.noise_floor)} dBm`, 'telem', h.title),
+                    this._chip(`air ${Number(s.airtime_pct)}%`, 'telem', h.title),
+                    this._chip(`${(s.neighbors || []).length} neighbours`, 'telem', 'heard by it in the last 25 hours (10 at most)')])
+                + this._chipRow([h.firmware ? this._chip(this._esc(h.firmware), 'meta') : '',
+                    r.region == null ? '' : this._chip(`REGION ${Number(r.region)}`, 'band'),
+                    this._chip(`node ${Number(r.node)}`, 'id')], ' nc-card__row--meta'),
+        });
+    }
+
+    /** "NL-AMS-1057" -> "1057", "Einstein Tag" -> "ET", "Albert" -> "ALBE". */
+    _initials(name) {
+        const parts = name.split(/[\s\-_.]+/).filter(Boolean);
+        const number = [...parts].reverse().find((x) => /^\d{2,}$/.test(x));
+        if (number) return number.slice(-5);
+        return (parts.length > 1 ? parts.map((x) => [...x][0]).join('') : name).slice(0, 4).toUpperCase();
+    }
+
+    _color(key) {
+        let hash = 0;
+        for (let i = 0; i < key.length; i++) hash = key.charCodeAt(i) * 31 + ((hash << 5) - hash);
+        return `hsl(${Math.abs(hash) % 360}, 55%, 45%)`;
+    }
+
+    _nodeName(node) {
+        const r = this._repeaters.find((x) => x.node === node);
+        return (r && r.name) || `node ${node}`;
+    }
+
+    _distance(m) {
+        if (m.lat == null || m.lon == null || this._homeLat == null || this._homeLon == null) return null;
+        const rad = Math.PI / 180;
+        const a = Math.sin((m.lat - this._homeLat) * rad / 2) ** 2 + Math.cos(this._homeLat * rad) * Math.cos(m.lat * rad)
+            * Math.sin((m.lon - this._homeLon) * rad / 2) ** 2;
+        const km = 12742 * Math.asin(Math.sqrt(Math.min(1, a)));
+        if (km < 0.05) return null;
+        return window.MeshpointDisplayUnits ? window.MeshpointDisplayUnits.formatDistanceKm(km) : `${km.toFixed(1)} km`;
+    }
+
+    _attr(s) { return this._esc(s).replace(/"/g, '&quot;'); }
 
     // --- Located-members map ---------------------------------------------
     // Ported from reticulum_dashboard.js's own telemetry map (same
@@ -501,14 +682,14 @@ class LocalMeshDashboard {
             // own _renderTelemetryMap(): Leaflet reads the container's real
             // size when constructed, and measuring in the same synchronous
             // tick as unhiding it can catch a stale (zero-size) layout.
-            requestAnimationFrame(() => this._initMap(el, located));
+            requestAnimationFrame(() => this._initMap(el));
             return;
         }
         this._updateMemberMarkers(located);
         if (wasHidden) requestAnimationFrame(() => this._map && this._map.invalidateSize());
     }
 
-    _initMap(el, located) {
+    _initMap(el) {
         if (this._map || el.hidden) return;
         this._map = L.map(el, { scrollWheelZoom: true });
         const tileOpts = {
@@ -524,9 +705,15 @@ class LocalMeshDashboard {
         });
         this._memberMarkers = L.layerGroup().addTo(this._map);
         this._renderHomeMarker();
-        this._updateMemberMarkers(located);
-        if (!located.length && this._homeLat != null) this._centerOnHome();
-        requestAnimationFrame(() => this._map && this._map.invalidateSize());
+        // now, not when this was scheduled: the members may have come in since
+        this._updateMemberMarkers(this._members.filter((m) => m.lat != null && m.lon != null));
+        // The box gets its real size only after the layout (and 0 while the page is hidden): measure again whenever it
+        // changes, or Leaflet draws half a map.
+        if (window.ResizeObserver) {
+            this._mapObserver = new ResizeObserver(() => this._mapResized());
+            this._mapObserver.observe(el);
+        }
+        requestAnimationFrame(() => this._mapResized());
     }
 
     _renderHomeMarker() {
@@ -553,23 +740,44 @@ class LocalMeshDashboard {
     }
 
     _updateMemberMarkers(located) {
+        this._located = located;
         this._memberMarkers.clearLayers();
+        const now = Date.now() / 1000;
         located.forEach((m) => {
             // A click opens the member's side panel, as a click in the list does; the name shows on hover.
-            L.marker([m.lat, m.lon])
-                .bindTooltip(m.name || `Member ${m.member}`, { direction: 'top', offset: [0, -28] })
+            const recent = m.last_heard && now - m.last_heard < LMD_ONLINE_S;
+            L.circleMarker([m.lat, m.lon], { radius: 6, fillColor: '#ff6b35', fillOpacity: 0.85,
+                color: recent ? '#00e5a0' : '#ffffff', weight: recent ? 2 : 1 })
+                .bindTooltip(this._esc(m.name || `Member ${m.member}`), { direction: 'top', offset: [0, -6] })
                 .on('click', () => this._openMemberDrawer(m))
                 .addTo(this._memberMarkers);
         });
-        this._fitBounds(located);
+        this._fit();
     }
 
-    _fitBounds(located) {
+    _mapResized() {
+        const el = this._q('#lmd-member-map');
+        if (!this._map || !el || !el.clientWidth || !el.clientHeight) return;
+        this._map.invalidateSize();
+        this._fit();
+    }
+
+    /** Show everything, once per set of members on the map: not again at every poll, which would undo the user's zoom. */
+    _fit() {
+        const el = this._q('#lmd-member-map');
+        const located = this._located || [];
+        const key = located.length ? located.map((m) => m.member).sort().join() : `home ${this._homeLat}`;
         if (!this._map) return;
-        const bounds = located.map((m) => [m.lat, m.lon]);
-        if (!bounds.length) return;
-        if (bounds.length === 1) this._map.setView(bounds[0], 12);
-        else this._map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+        if (!el.clientWidth || !el.clientHeight) {   // no size yet: Leaflet needs some view, _mapResized() does it right
+            if (!this._map._loaded) this._map.setView([this._homeLat ?? 52.2, this._homeLon ?? 5.3], 10);
+            return;
+        }
+        if (key === this._fittedFor) return;
+        this._fittedFor = key;
+        const points = located.map((m) => [m.lat, m.lon]);
+        if (!points.length) this._centerOnHome();
+        else if (points.length === 1) this._map.setView(points[0], 12);
+        else this._map.fitBounds(points, { padding: [30, 30], maxZoom: 13 });
     }
 
     // --- Map header actions (basemap / home / expand) ---------------------
@@ -619,7 +827,7 @@ class LocalMeshDashboard {
             btn.textContent = expanded ? '⤡' : '⤢';
             btn.title = expanded ? 'Collapse map' : 'Expand map';
         }
-        setTimeout(() => this._map && this._map.invalidateSize(), 50);
+        setTimeout(() => this._mapResized(), 50);
     }
 
     // --- Live activity ticker ---------------------------------------------
@@ -670,6 +878,7 @@ class LocalMeshDashboard {
         }
         if (empty) empty.style.display = 'none';
         tbody.innerHTML = rows.map((a) => this._rowHtml(a)).join('');
+        this._syncCount();
     }
 
     _prependTickerRow(a) {
@@ -696,6 +905,7 @@ class LocalMeshDashboard {
         while (tbody.children.length > LMD_TICKER_LIMIT) {
             tbody.removeChild(tbody.lastChild);
         }
+        this._syncCount();
     }
 
     _rowHtml(a) {
@@ -713,11 +923,33 @@ class LocalMeshDashboard {
             <td class="lw-time">${esc(clock(a.time))}</td>
             <td>${esc(a.type)}</td>
             <td>${from}</td>
+            <td>${esc(this._pathText(a))}</td>
             <td class="lw-r">${a.hops}</td>
             <td>${esc(signal(a.rssi, a.snr))}</td>
             <td><span class="lw-badge lw-badge--${dec.badge}">${esc(dec.label)}</span></td>
+            <td class="lmd-details">${esc(this._detailText(a))}</td>
         `;
     }
+
+    _pathText(a) {
+        const nodes = (a.path || []).map((h) => this._nodeName(h.node));
+        if (nodes.length) return nodes.join(' → ');
+        return a.member >= 0xFF0000 && a.via && a.via !== a.member - 0xFF0000 ? `via ${this._nodeName(a.via)}` : 'direct';
+    }
+
+    /** What we know of the contents: a repeater's announce or opened status; nothing for the rest (encrypted). */
+    _detailText(a) {
+        const s = a.repeater_status;
+        if (s) {
+            const up = s.uptime_h >= 48 ? `${Math.floor(s.uptime_h / 24)} d` : `${s.uptime_h} h`;
+            return [s.battery_mv ? `${(s.battery_mv / 1000).toFixed(2)} V` : '', `up ${up}`, s.version,
+                `${(s.neighbors || []).length} neighbours`].filter(Boolean).join(', ');
+        }
+        if (a.announce) return `${a.announce.version}, region ${a.announce.region}`;
+        return '--';
+    }
+
+    _syncCount() { this._setText('lmd-ticker-count', this._activity.length); }
 
     /** Same detail popup styling (pdm-*) the localmesh plugin's own
      * Activity tab row click opens (localmesh_panel.js's own

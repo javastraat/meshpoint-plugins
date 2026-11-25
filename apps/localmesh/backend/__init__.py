@@ -57,7 +57,7 @@ def register(reg) -> None:
             s.ws_manager = ws_manager
             # the lists from before the restart (restore.py); the messages table does not say which receiver
             s.restore_from(pipeline.database, messages=n == 0)
-        routes.init_routes(sources)
+        routes.init_routes(sources, pipeline.database)
         send_routes.init_routes(sources)
         hooks.set_sources(sources)   # for plugins that build on this one (localmesh-bot), see hooks.py
 
