@@ -34,8 +34,9 @@ class FakeDB:
 
 
 class Source:
-    def __init__(self, repeaters, statuses=None): self._r, self._s = repeaters, statuses or {}
-    def page_data(self): return {"repeaters": self._r, "statuses": self._s}
+    def __init__(self, repeaters, statuses=None, activity=()): self._r, self._s, self._a = repeaters, statuses or {}, activity
+    def page_data(self): return {"repeaters": self._r, "statuses": self._s, "activity": list(self._a)}
+    def snapshot(self): return {"label": "base"}
 
 
 def st(node=7, counter=1, t=NOW, up=10, **kw):
@@ -140,6 +141,28 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         r7, r5, r8 = out["repeaters"]
         self.assertEqual(r7["status"]["neighbors"], [{"node": 8, "snr": 3.0, "name": "NL-8"}])
         self.assertEqual((r5["hidden"], r5["listed"], r8["status"]), (True, False, None))
+
+    async def test_overview_uses_what_localmesh_knows(self):
+        import types
+        packet = lambda counter, t, node=8: {"member": 0xFF0000 | node, "counter": counter, "time": t, "type": "status",
+                                             "hops": 2, "via": 7, "rssi": -80, "snr": 3.0, "decision": "x"}
+        self.reg.sources = (Source({}, activity=[packet(1, 10.0), packet(2, 20.0), packet(2, 21.0), packet(5, 30.0, node=99),
+                                                 {**packet(1, 40.0), "member": 4}]),)
+        views = types.ModuleType("meshpoint_plugin_localmesh.views")
+        views.repeaters = lambda receivers: [
+            {"node": 8, "name": "NL-8", "listed": True, "revoked": False, "region": 1, "last_heard": 20.0, "rssi": -80,
+             "snr": 3.0, "via": 7, "direct": False, "count": 12, "type": "status", "version": "0.10.7", "announced": 15.0}]
+        sys.modules[views.__name__] = views
+        try:
+            await self.svc.add(st(node=5, t=NOW - 8 * 86400))                              # unknown to localmesh, and old
+            await self.svc.add(st(node=6))
+            rows = {r["node"]: r for r in self.svc.overview()["repeaters"]}
+        finally:
+            del sys.modules[views.__name__]
+        self.assertEqual(set(rows), {8, 6})
+        self.assertEqual((rows[8]["heard"]["count"], rows[8]["heard"]["version"], rows[8]["status"]), (12, "0.10.7", None))
+        self.assertEqual([x["counter"] for x in rows[8]["recent"]], [2, 1])                # a copy counts once
+        self.assertIsNone(rows[6]["heard"])
 
     async def test_old_samples_go(self):
         await self.svc.add(st(counter=1, t=NOW - 40 * 86400)); await self.svc.add(st(counter=2))

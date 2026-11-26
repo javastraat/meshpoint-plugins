@@ -23,6 +23,10 @@ PRUNE_EVERY_S = 86400
 CATCH_UP_EVERY_S = 30         # what the hook missed (a status that came in before this service had started)
 RESTART_SLACK_H = 2          # whole hours and delays on the way: less than this is not a restart
 MILLIS_WRAP_H = 2 ** 32 / 3_600_000   # the board's uptime starts again at 0 after 49.7 days without a restart
+UNLISTED_KEEP_S = 7 * 86400  # as localmesh's views.repeaters
+REPEATER_MEMBER_BASE = 0xFF0000
+RECENT = 8
+HEARD_KEYS = ("last_heard", "rssi", "snr", "via", "direct", "count", "type", "version", "announced")
 LATE_COPY_S = 600            # an older counter within this time is a copy that took a detour
 
 
@@ -150,25 +154,28 @@ class RepeaterService:
         await self._store.prune(time.time() - self.config["keep_days"] * 86400)
 
     def overview(self) -> dict[str, Any]:
-        """Every repeater we know: from the server's certificates (the receivers' lists) and from a status."""
-        known: dict[int, dict] = {}
-        for source in registry().sources:
-            for node, r in source.page_data().get("repeaters", {}).items():
-                known.setdefault(node, r)
+        """Every repeater we know: what localmesh knows of it (certificate, last heard, its packets) and its last status."""
+        heard = heard_repeaters()
         names = {n: d.get("name", "") for n, d in self.latest.items()}
-        names.update({n: r["name"] for n, r in known.items() if r.get("name")})
+        names.update({n: r["name"] for n, r in heard.items() if r.get("name")})
+        recent = recent_packets(set(heard))
+        now = time.time()
         out = []
-        for node in set(known) | set(self.latest):
-            cert = known.get(node)
+        for node in set(heard) | set(self.latest):
+            r = heard.get(node, {})
             st = self.latest.get(node)
-            if cert and cert.get("revoked") and st is None:
+            if r.get("revoked") and st is None:
                 continue
+            if not r and st and now - st["time"] > UNLISTED_KEEP_S:
+                continue   # an old one localmesh does not know any more
             if st:
                 st = {**st, "neighbors": [{**n, "name": names.get(n["node"], "")} for n in st.get("neighbors", [])]}
-            out.append({"node": node, "name": names.get(node, ""), "listed": cert is not None,
-                        "revoked": bool(cert and cert.get("revoked")), "hidden": node in self.config["hidden"],
-                        "region": cert["region"] if cert else (st or {}).get("region"), "status": st})
-        out.sort(key=lambda r: (r["status"] is None, r["name"] or "~", r["node"]))
+            out.append({"node": node, "name": names.get(node, ""), "listed": bool(r.get("listed")),
+                        "revoked": bool(r.get("revoked")), "hidden": node in self.config["hidden"],
+                        "region": r["region"] if r.get("region") is not None else (st or {}).get("region"), "status": st,
+                        "heard": {k: r.get(k) for k in HEARD_KEYS} if r.get("last_heard") else None,
+                        "recent": recent.get(node, [])})
+        out.sort(key=lambda r: (r["status"] is None and r["heard"] is None, r["name"] or "~", r["node"]))
         return {"repeaters": out, "settings": dict(self.config), "status_key_set": status_key_set(),
                 "localmesh_too_old": localmesh_too_old()}
 
@@ -184,3 +191,34 @@ def localmesh_too_old() -> bool:
     """A localmesh without the status hook opens statuses but never hands them over."""
     hooks = sys.modules.get("meshpoint_plugin_localmesh.hooks")
     return hooks is not None and not hasattr(hooks, "emit_repeater_status")
+
+
+def heard_repeaters() -> dict[int, dict]:
+    """localmesh's own list of repeaters (its views.repeaters, the same the LocalMesh page shows), by node."""
+    sources = registry().sources
+    views = sys.modules.get("meshpoint_plugin_localmesh.views")
+    try:
+        if views is not None:
+            return {r["node"]: r for r in views.repeaters([(s.snapshot()["label"], s.page_data()) for s in sources])}
+    except Exception:
+        logger.exception("localmesh-repeaters: could not read localmesh's repeaters")
+    out: dict[int, dict] = {}
+    for s in sources:   # at least the certificates
+        for node, r in s.page_data().get("repeaters", {}).items():
+            out.setdefault(node, {**r, "listed": True})
+    return out
+
+
+def recent_packets(nodes: set[int]) -> dict[int, list[dict]]:
+    """Each repeater's own last packets, newest first (from the receivers' Activity lists)."""
+    out: dict[int, list[dict]] = {}
+    rows = [a for s in registry().sources for a in s.page_data().get("activity", [])
+            if a["member"] - REPEATER_MEMBER_BASE in nodes]
+    seen: set = set()
+    for a in sorted(rows, key=lambda a: -a["time"]):
+        node, key = a["member"] - REPEATER_MEMBER_BASE, (a["member"], a["counter"])
+        if key in seen or len(out.setdefault(node, [])) >= RECENT:   # the same one again, through another repeater
+            continue
+        seen.add(key)
+        out[node].append({k: a.get(k) for k in ("time", "type", "counter", "hops", "via", "rssi", "snr")})
+    return out

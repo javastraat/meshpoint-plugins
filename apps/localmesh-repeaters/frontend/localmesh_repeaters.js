@@ -110,11 +110,11 @@ class LocalMeshRepeatersPage {
         const text = this._failed ? 'Could not load the repeaters.'
             : this._data.localmesh_too_old ? 'The localmesh plugin is too old to pass on what it receives: update it and restart Meshpoint.'
             : this._data.status_key_set === false ? 'No status key: enter one on the LocalMesh page (Settings, Repeater status) to see what the repeaters report.'
-            : !heard.length ? 'No status received yet. Repeaters send one every hour.' : '';
+            : !heard.length ? 'No status received yet: battery, uptime and so on fill in as they come (one per repeater per hour).' : '';
         empty.textContent = text;
         empty.style.display = text ? '' : 'none';
 
-        const sel = reps.find((r) => r.node === this._selected) || heard[0] || reps[0];
+        const sel = reps.find((r) => r.node === this._selected) || heard[0] || reps.find((r) => r.heard) || reps[0];
         this._q('[data-lmr-overview]').innerHTML = reps.length ? this._overview(reps, sel, now) : '';
         this._q('[data-lmr-cards]').innerHTML = sel ? this._cards(sel, now) : '';
         this._q('[data-lmr-note]').textContent = heard.length
@@ -122,9 +122,10 @@ class LocalMeshRepeatersPage {
     }
 
     _lamp(r, now) {
-        if (!r.status) return ['', 'no status received'];
-        const age = now - r.status.time;
-        return age < LMR_LATE_S ? ['lmr-lamp--ok', 'reporting']
+        const t = Math.max(r.status ? r.status.time : 0, r.heard ? r.heard.last_heard : 0);
+        if (!t) return ['', 'not heard'];
+        const age = now - t;
+        return age < LMR_LATE_S ? ['lmr-lamp--ok', r.status && now - r.status.time < LMR_LATE_S ? 'reporting' : 'heard']
             : age < LMR_SILENT_S ? ['lmr-lamp--late', 'late'] : ['lmr-lamp--bad', 'silent'];
     }
 
@@ -134,20 +135,26 @@ class LocalMeshRepeatersPage {
         const rows = reps.map((r) => {
             const s = r.status;
             const [lamp, word] = this._lamp(r, now);
-            const cells = s ? `
+            const h = r.heard;
+            const firmware = this._firmware(r);
+            const first = `
+                <td>${h ? this._ago(h.last_heard) : '--'}</td>
+                <td>${h && h.rssi != null ? `${this._esc(Math.round(h.rssi))} dBm` : '--'}</td>
+                <td>${this._esc(this._route(r))}</td>`;
+            const cells = first + (s ? `
                 <td class="${s.battery_mv && s.battery_mv < LMR_LOW_MV ? 'lmr-warn' : ''}">${this._volt(s.battery_mv)}</td>
                 <td>${this._esc(s.noise_floor)} dBm</td>
                 <td>${this._esc(s.airtime_pct)} %</td>
                 <td>${this._esc((s.neighbors || []).length)} / ${this._esc(s.neighbor_count)}</td>
                 <td class="${this._restarted(s, now) ? 'lmr-warn' : ''}">${this._dur(s.uptime_h)}${this._restarted(s, now) ? ' ⚠' : ''}</td>
-                <td>${this._esc(s.version)}</td>
-                <td>${this._ago(s.time)}</td>` : '<td>--</td>'.repeat(7);
+                <td>${this._esc(firmware || '--')}</td>
+                <td>${this._ago(s.time)}</td>` : `${'<td>--</td>'.repeat(5)}<td>${this._esc(firmware || '--')}</td><td>--</td>`);
             return `<tr class="lmr-ov__row${r === sel ? ' lmr-ov__row--sel' : ''}" data-lmr-node="${r.node}">
                 <td><span class="lmr-lamp ${lamp}" title="${word}"></span></td>
                 <td class="lmr-name">${this._esc(this._name(r))}${r.revoked ? ' <span class="lw-badge lw-badge--undecrypted">revoked</span>' : ''}</td>
                 ${cells}</tr>`;
         }).join('');
-        return `<table class="lmr-ov"><tr><th></th><th>Repeater</th><th>Battery</th><th>Noise</th><th>Airtime</th>
+        return `<table class="lmr-ov"><tr><th></th><th>Repeater</th><th>Last heard</th><th title="of the last hop">Signal</th><th>Route</th><th>Battery</th><th>Noise</th><th>Airtime</th>
             <th title="heard in the last 25 h (10 at most) / known">Neighbours</th><th>Uptime</th><th>Firmware</th><th>Last status</th></tr>${rows}</table>`;
     }
 
@@ -170,12 +177,21 @@ class LocalMeshRepeatersPage {
                 ['Battery', s && s.battery_mv ? this._volt(s.battery_mv) : null],
                 ['Uptime', s ? this._dur(s.uptime_h) : null],
                 ['Restarts seen', s ? s.restarts : null],
-                ['Firmware', s ? s.version : null],
+                ['Firmware', this._firmware(r)],
+                ['Last heard', r.heard ? `${this._ago(r.heard.last_heard)}${r.heard.type ? ` (${r.heard.type.replace(/_/g, ' ')})` : ''}` : null],
+                ['Packets heard', r.heard && r.heard.count ? this._num(r.heard.count) : null],
+                ['Announced', r.heard && r.heard.announced ? this._ago(r.heard.announced) : null],
                 ['Region', r.region],
                 ['Certificate', r.revoked ? 'revoked' : r.listed ? 'in the server certificates' : 'not in the certificates'],
-                ['Status', s ? `${word}, received ${this._ago(s.time)}` : 'none received yet'],
+                ['Status', s ? `received ${this._ago(s.time)}` : 'none received yet'],
             ])}</div></div>`;
-        if (!s) return `<div class="rp-repeater">${main}</div>`;
+        const packets = card('Recent packets', rows((r.recent || []).map((x) => [this._clock(x.time),
+            `${x.type.replace(/_/g, ' ')} · ${x.rssi} dBm${x.via && x.via !== r.node ? ` · via ${this._nodeName(x.via)}` : ''}`])));
+        if (!s) {
+            const hd = r.heard;
+            return `<div class="rp-repeater">${main}${hd ? card('Radio', rows([['Reached us', this._route(r)],
+                ['Signal of the last hop', hd.rssi != null ? `${hd.rssi} dBm · ${hd.snr} dB` : null]])) : ''}${packets}</div>`;
+        }
         const reasons = Object.entries(s.reasons || {}).map(([k, v]) => [k.replace(/_/g, ' '), v >= 255 ? '255 or more' : v]);
         const direct = s.via === r.node;
         const near = [...(s.neighbors || [])].sort((a, b) => b.snr - a.snr)
@@ -188,7 +204,25 @@ class LocalMeshRepeatersPage {
             ${card('Traffic', rows([['Packets accepted', this._num(s.rx_ok)], ['Packets refused', this._num(s.rx_rejected)],
                 ...reasons.map(([k, v]) => [`Refused: ${k}`, v])]), reasons.length ? 'reasons since its previous status' : '')}
             ${card('Neighbours', rows(near), `${near.length} in the last 25 h · ${s.neighbor_count} known`)}
+            ${packets}
         </div>`;
+    }
+
+    /** From its last status or announce, whichever is newer. */
+    _firmware(r) {
+        const h = r.heard || {};
+        return r.status && r.status.time >= (h.announced || 0) ? r.status.version : h.version || '';
+    }
+
+    _route(r) {
+        const h = r.heard;
+        return !h ? '--' : h.direct ? 'direct' : h.via && h.via !== r.node ? `via ${this._nodeName(h.via)}` : 'relayed';
+    }
+
+    _clock(t) {
+        const d = new Date(t * 1000);
+        const time = d.toLocaleTimeString();
+        return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString()} ${time}`;
     }
 
     _nodeName(node) {

@@ -137,6 +137,9 @@ def _named_neighbors(status: dict, names: dict[int, str]) -> dict:
     return {**status, "neighbors": [{**n, "name": names.get(n["node"], "")} for n in status["neighbors"]]}
 
 
+UNLISTED_KEEP_S = 7 * 86400   # a repeater that is not in the server's certificates (any more) stays this long
+
+
 def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
     """The repeaters: those in the server's certificates (name, region, revoked), plus any heard that are not, with
     when they were last heard (their own status and announce packets) and whether a receiver hears them directly.
@@ -191,6 +194,7 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             t = n.get("at", now) - n["ago_s"]
             if e["last_heard"] is None or t > e["last_heard"] + 5:   # not its own packet again: it passed one on
                 heard_at(e, t, hops=e["hops"], rssi=n["rssi"], snr=n["snr"], via=0, type="passed on")
+    out = {n: e for n, e in out.items() if e["listed"] or now - (e["last_heard"] or 0) < UNLISTED_KEEP_S}
     for e in out.values():
         if e["status"]:
             e["status"] = _named_neighbors(e["status"], {n: r["name"] for n, r in out.items()})

@@ -151,6 +151,13 @@ class TestMessages(unittest.TestCase):
         self.assertFalse(out[99]["listed"])                                         # heard, but not in the certificates
         self.assertEqual([r["node"] for r in views.repeaters([("base", a)], now=1000.0)], [12, 11, 99])
 
+    def test_old_repeaters_that_are_not_in_the_certificates_go(self) -> None:
+        base, day = p.REPEATER_MEMBER_BASE, 86400.0
+        heard = lambda t: {"count": 1, "last_heard": t, "type": "status", "hops": 1, "via": 1, "rssi": -80, "snr": 3.0}
+        a = data(repeaters={1: {"node": 1, "region": 1, "flags": 0, "name": "NL-1", "revoked": False}},
+                 heard={base | 1: heard(0.0), base | 2: heard(9 * day), base | 3: heard(2 * day)})
+        self.assertEqual({r["node"] for r in views.repeaters([("a", a)], now=10 * day)}, {1, 2})
+
     def test_neighbour_time_counts_from_when_the_list_was_fetched(self) -> None:
         base = p.REPEATER_MEMBER_BASE
         own = {"count": 1, "last_heard": 900.0, "type": "status", "hops": 4, "via": 11, "rssi": -80, "snr": 3.0}
