@@ -401,13 +401,19 @@ class ReticulumBrowserPanel {
             // identified Link -- the backend re-identifies a Link it replaced
             // since (5-min idle sweep, failed request, node restart), which
             // the isNewNode check above can't see on the same node
-            const r = await fetch('/api/reticulum/nomad/page', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: hash, path, field_data: fieldData || null, identify: this._autoIdOn }),
-                signal: controller.signal,
-            });
+            // Plain reads are GET (a viewer may only read on a strict core);
+            // a form post or an identified fetch acts on the node: POST (admin).
+            const r = (!fieldData && !this._autoIdOn)
+                ? await fetch('/api/reticulum/nomad/page' + '?' + new URLSearchParams({ destination_hash: hash, path }), {
+                    credentials: 'same-origin', signal: controller.signal,
+                })
+                : await fetch('/api/reticulum/nomad/page', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ destination_hash: hash, path, field_data: fieldData || null, identify: this._autoIdOn }),
+                    signal: controller.signal,
+                });
             const data = await r.json().catch(() => ({}));
             if (!r.ok || !data.ok) {
                 this._pageEl.textContent = data.error || `Failed (HTTP ${r.status})`;
@@ -515,11 +521,8 @@ class ReticulumBrowserPanel {
     async _downloadFile(hash, path) {
         this._status('pending', `Downloading ${path.split('/').pop()}…`);
         try {
-            const r = await fetch('/api/reticulum/nomad/file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            const r = await fetch('/api/reticulum/nomad/file' + '?' + new URLSearchParams({ destination_hash: hash, path }), {
                 credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: hash, path }),
             });
             if (!r.ok) {
                 const err = await r.json().catch(() => ({}));
@@ -648,12 +651,9 @@ class ReticulumBrowserPanel {
      * error worth surfacing. */
     async _checkMeshpointInfo(tab, hash) {
         try {
-            const r = await fetch('/api/reticulum/nomad/page', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: hash, path: '/page/info.mu', field_data: null }),
-            });
+            const r = await fetch('/api/reticulum/nomad/page?' + new URLSearchParams({
+                destination_hash: hash, path: '/page/info.mu',
+            }), { credentials: 'same-origin' });
             const data = await r.json().catch(() => ({}));
             const detected = !!(r.ok && data.ok && (data.content || '').includes('Meshpoint node'));
             if (tab.hash !== hash) return; // navigated elsewhere in this tab while the check was in flight

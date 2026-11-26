@@ -1,5 +1,5 @@
 name = "reticulum-browser"
-version = "0.1.0"
+version = "0.1.1"
 meshpoint_api = 1
 provides = ["sidebar"]    # a whole top-level sidebar page of its own --
                            # no "routes": reads the reticulum plugin's

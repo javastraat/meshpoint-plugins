@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import mimetypes
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -78,20 +78,7 @@ class PageRequest(BaseModel):
 _IDENTIFY_ADMIN_ONLY = "Only meshpoint admins can identify"
 
 
-@router.post("/page")
-async def nomad_page(
-    req: PageRequest, claims: SessionClaims = Depends(require_auth),
-):
-    """Fetch one NomadNet page. Returns `{ok, content}` (Micron markup) or
-    `{ok: false, error}` -- a fetch failure is a 200 with `ok: false`, not
-    an HTTP error, so the Browse tab can show it inline. `identify` from a
-    non-admin is a 403."""
-    if req.identify and claims.role != ROLE_ADMIN:
-        raise HTTPException(403, _IDENTIFY_ADMIN_ONLY)
-    identity = _service.identity if (req.identify and _service is not None) else None
-    result = await nomad.fetch_page(
-        req.destination_hash, req.path or "/page/index.mu", req.field_data, identity=identity,
-    )
+def _page_response(result) -> dict:
     return {
         "ok": result.ok,
         "content": result.content,
@@ -99,6 +86,37 @@ async def nomad_page(
         "destination_hash": result.destination_hash,
         "path": result.path,
     }
+
+
+@router.get("/page")
+async def nomad_page_read(
+    destination_hash: str = Query(..., min_length=1),
+    path: str = "/page/index.mu",
+    _claims: SessionClaims = Depends(require_auth),
+):
+    """Fetch one NomadNet page anonymously: a read, so open to viewers.
+    Returns `{ok, content}` (Micron markup) or `{ok: false, error}` -- a fetch
+    failure is a 200 with `ok: false` so the Browse tab can show it inline.
+    Form submissions (`field_data`) and identified fetches use POST /page."""
+    result = await nomad.fetch_page(destination_hash, path or "/page/index.mu", None, identity=None)
+    return _page_response(result)
+
+
+@router.post("/page")
+async def nomad_page(
+    req: PageRequest, claims: SessionClaims = Depends(require_auth),
+):
+    """Fetch a page while submitting a form (`field_data`) or identified.
+    Both act on the remote node, so on a core where viewers may only read
+    this is admin only (the router-level guard refuses a viewer's POST);
+    `identify` from a non-admin is a 403 on any core. Plain page reads: GET."""
+    if req.identify and claims.role != ROLE_ADMIN:
+        raise HTTPException(403, _IDENTIFY_ADMIN_ONLY)
+    identity = _service.identity if (req.identify and _service is not None) else None
+    result = await nomad.fetch_page(
+        req.destination_hash, req.path or "/page/index.mu", req.field_data, identity=identity,
+    )
+    return _page_response(result)
 
 
 class FingerprintRequest(BaseModel):
@@ -124,13 +142,13 @@ async def nomad_fingerprint(
 
 @router.post("/disconnect")
 async def nomad_disconnect(
-    req: FingerprintRequest, _claims: SessionClaims = Depends(require_auth),
+    req: FingerprintRequest, _claims: SessionClaims = Depends(require_admin),
 ):
     """Tear down the cached Link to this node (see `nomad.py`'s
     `drop_link()`) -- the only way to make a node "forget" an identify,
-    since RNS has no reverse of `link.identify()`. Open to viewers: a
-    browsing action, not an edit to this node's own hosted content. Affects every consumer of the shared Link cache for
-    that destination, not just the caller."""
+    since RNS has no reverse of `link.identify()`. Admin only: it affects
+    every consumer of the shared Link cache for that destination, not just
+    the caller (was open to viewers before core made viewers read-only)."""
     dropped = nomad.drop_link(req.destination_hash)
     return {"dropped": dropped}
 
@@ -160,13 +178,28 @@ class FileRequest(BaseModel):
     path: str = Field(..., min_length=1)
 
 
+@router.get("/file")
+async def nomad_file_read(
+    destination_hash: str = Query(..., min_length=1),
+    path: str = Query(..., min_length=1),
+    _claims: SessionClaims = Depends(require_auth),
+):
+    """Fetch a `/file/...` path: a read, so open to viewers (GET)."""
+    return await _file_response(destination_hash, path)
+
+
 @router.post("/file")
 async def nomad_file(
     req: FileRequest, _claims: SessionClaims = Depends(require_auth),
 ):
-    """Fetch a `/file/...` path -- returns the raw bytes as an attachment,
-    or a 502 with the failure reason."""
-    result = await nomad.fetch_file(req.destination_hash, req.path)
+    """Same as GET /file, kept for older Browse tabs (admin on a core where
+    viewers may only read)."""
+    return await _file_response(req.destination_hash, req.path)
+
+
+async def _file_response(destination_hash: str, path: str):
+    """The raw bytes as an attachment, or a 502 with the failure reason."""
+    result = await nomad.fetch_file(destination_hash, path)
     if not result.ok:
         raise HTTPException(502, result.error or "download failed")
     name = result.file_name or "downloaded_file"

@@ -291,11 +291,9 @@ class ReticulumQuickBrowseModal {
         const bodyEl = this._overlay.querySelector('.pdm-modal__body');
         if (bodyEl) bodyEl.innerHTML = '<p class="lw-panel__limit">Loading…</p>';
         try {
-            const r = await fetch('/api/reticulum/nomad/page', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            // A plain read: GET, so a viewer can use it on a strict core.
+            const r = await fetch('/api/reticulum/nomad/page' + '?' + new URLSearchParams({ destination_hash: hash, path }), {
                 credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: hash, path, field_data: null }),
             });
             const data = await r.json().catch(() => ({}));
             if (!this._overlay) return; // closed while the fetch was in flight

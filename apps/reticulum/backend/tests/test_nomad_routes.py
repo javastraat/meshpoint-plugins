@@ -348,17 +348,49 @@ class TestBrowseAuthGating(unittest.TestCase):
         self.assertTrue(r.json()["ok"])
         self.assertEqual(r.json()["lxmf_hash"], "abc123")
 
-    def test_viewer_can_disconnect(self) -> None:
-        """Open to viewers -- a browsing action, not an edit to this
-        node's own hosted content. nomad.drop_link() is real
-        here (not stubbed, unlike fetch_page/fetch_file/identify_link
-        above): it's pure dict bookkeeping, no RNS Link involved when
-        nothing's actually cached for this hash."""
+    def test_viewer_is_refused_disconnect(self) -> None:
+        """Admin only since core made viewers read-only (meshpoint TODO 37b):
+        dropping a cached Link affects every consumer of it, not just the
+        caller."""
         r = self._viewer_client().post("/api/reticulum/nomad/disconnect", json={
+            "destination_hash": "ab" * 16,
+        })
+        self.assertEqual(r.status_code, 403, r.text)
+
+    def test_admin_can_disconnect(self) -> None:
+        """nomad.drop_link() is real here (pure dict bookkeeping)."""
+        r = self._admin_client().post("/api/reticulum/nomad/disconnect", json={
             "destination_hash": "ab" * 16,
         })
         self.assertEqual(r.status_code, 200, r.text)
         self.assertFalse(r.json()["dropped"])  # nothing was cached for this hash
+
+    def test_viewer_can_read_a_page_with_get(self) -> None:
+        """Plain page reads are GET, so a viewer keeps browsing on a core
+        that refuses viewer POSTs; always anonymous, never a form post."""
+        r = self._viewer_client().get("/api/reticulum/nomad/page", params={
+            "destination_hash": "ab" * 16, "path": "/page/x.mu",
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["ok"])
+        self.assertIsNone(self.fetched_identity)
+
+    def test_get_page_has_no_identify_or_form_parameters(self) -> None:
+        from plugins.apps.reticulum.backend import nomad_routes
+
+        nomad_routes._service.identity = object()
+        r = self._admin_client().get("/api/reticulum/nomad/page", params={
+            "destination_hash": "ab" * 16, "identify": "true",
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(self.fetched_identity)  # identify ignored on GET
+
+    def test_viewer_can_download_a_file_with_get(self) -> None:
+        r = self._viewer_client().get("/api/reticulum/nomad/file", params={
+            "destination_hash": "ab" * 16, "path": "/file/x.txt",
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.content, b"x")
 
     def test_viewer_can_check_link_count(self) -> None:
         """Same auth tier as /disconnect -- read-only,

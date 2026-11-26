@@ -2,13 +2,11 @@
  * Reticulum plugin page: "Browse" tab -- a minimal NomadNet browser.
  *
  * Lists `nomadnetwork.node` peers, fetches a node's pages via
- * POST /api/reticulum/nomad/page, renders the Micron markup with
- * window.MicronParser (reticulum_micron.js), and lets you follow links
- * and submit page forms. Back/forward history, same-node (`:/path`) and
- * cross-node (`<hash>:/path`) links.
- *
- * Admin-only (like Send/Settings) -- POST /api/reticulum/nomad/page
- * requires admin, and browsing establishes real RNS Links.
+ * GET /api/reticulum/nomad/page (plain reads, open to viewers), renders the
+ * Micron markup with window.MicronParser (reticulum_micron.js), and lets you
+ * follow links and submit page forms (POST, admin on a core where viewers
+ * may only read). Back/forward history, same-node (`:/path`) and
+ * cross-node (`<hash>:/path`) links. Browsing establishes real RNS Links.
  *
  * The node picker filters live (the network carries 1000+ nomadnetwork.node
  * announces, capped at 300 server-side) and keeps a per-browser favourites
@@ -270,12 +268,15 @@ class ReticulumNomadTab {
         this._status('pending', `Fetching ${hash.slice(0, 8)}… ${path}`);
         this._addrEl.value = `${hash}:${path}`;
         try {
-            const r = await fetch('/api/reticulum/nomad/page', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: hash, path, field_data: fieldData || null }),
-            });
+            // Plain reads are GET; a form post acts on the node: POST (admin).
+            const r = !fieldData
+                ? await fetch('/api/reticulum/nomad/page' + '?' + new URLSearchParams({ destination_hash: hash, path }), { credentials: 'same-origin' })
+                : await fetch('/api/reticulum/nomad/page', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ destination_hash: hash, path, field_data: fieldData }),
+                });
             const data = await r.json().catch(() => ({}));
             if (!r.ok || !data.ok) {
                 this._status('error', data.error || `Failed (HTTP ${r.status})`);
@@ -347,11 +348,8 @@ class ReticulumNomadTab {
     async _downloadFile(hash, path) {
         this._status('pending', `Downloading ${path.split('/').pop()}…`);
         try {
-            const r = await fetch('/api/reticulum/nomad/file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            const r = await fetch('/api/reticulum/nomad/file' + '?' + new URLSearchParams({ destination_hash: hash, path }), {
                 credentials: 'same-origin',
-                body: JSON.stringify({ destination_hash: hash, path }),
             });
             if (!r.ok) {
                 const err = await r.json().catch(() => ({}));
