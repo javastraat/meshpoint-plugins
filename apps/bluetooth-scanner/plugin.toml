@@ -1,5 +1,5 @@
 name = "bluetooth-scanner"
-version = "0.2.2"
+version = "0.2.3"
 meshpoint_api = 1
 provides = ["listener", "routes", "sidebar"]
 
