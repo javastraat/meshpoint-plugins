@@ -272,3 +272,24 @@ class TestTelemetryConfig(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestOperatorLxmfAddress(unittest.TestCase):
+    """rnode_discovery_lxmf_address: the operator contact published with a
+    discoverable RNode (upstream a890b318, TODO 36)."""
+
+    def test_defaults_to_empty(self) -> None:
+        self.assertEqual(ReticulumUpdate(**_REQUIRED).rnode_discovery_lxmf_address, "")
+
+    def test_normalised_to_lowercase(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED, rnode_discovery_lxmf_address="  " + "AB" * 16 + " ")
+        self.assertEqual(m.rnode_discovery_lxmf_address, "ab" * 16)
+
+    def test_angle_brackets_from_copy_paste_are_dropped(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED, rnode_discovery_lxmf_address="<" + "cd" * 16 + ">")
+        self.assertEqual(m.rnode_discovery_lxmf_address, "cd" * 16)
+
+    def test_wrong_length_or_not_hex_rejected(self) -> None:
+        for bad in ("ab" * 15, "ab" * 17, "zz" * 16):
+            with self.subTest(bad=bad), self.assertRaises(ValidationError):
+                ReticulumUpdate(**_REQUIRED, rnode_discovery_lxmf_address=bad)

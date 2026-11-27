@@ -88,14 +88,23 @@ def _text(v) -> Optional[str]:
     return v if isinstance(v, str) and v else None
 
 
+def _operator(value) -> Optional[str]:
+    """The announced operator LXMF address (32 hex), else None."""
+    text = str(value or "").strip().lower()
+    if len(text) == 32 and all(c in "0123456789abcdef" for c in text):
+        return text
+    return None
+
+
 def _entry(info: dict, now: float) -> Optional[dict]:
-    """One stored file -> the dashboard's dict, or ``None`` when it has no
-    usable location or is past RNS's own 7-day removal age."""
+    """One stored file -> the dashboard's dict, or ``None`` when it is past
+    RNS's own 7-day removal age. Interfaces without a usable location (TCP
+    backbones, RNodes that publish none, (0, 0)) are listed with
+    latitude/longitude None (upstream a890b318); the map skips those."""
     lat, lon = _num(info.get("latitude")), _num(info.get("longitude"))
-    if lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180):
-        return None
-    if lat == 0 and lon == 0:
-        return None
+    if (lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180)
+            or (lat == 0 and lon == 0)):
+        lat = lon = None
     last = _num(info.get("last_heard")) or _num(info.get("received"))
     if last is None:
         return None
@@ -118,6 +127,7 @@ def _entry(info: dict, now: float) -> Optional[dict]:
         "last_heard": last,
         "heard_count": int(info["heard_count"]) if isinstance(info.get("heard_count"), int) else None,
         "status": _status(age),
+        "operator_lxmf_address": _operator(info.get("operator_lxmf_address")),
     }
     out.update(destinations_of(out["network_id"]))
     if out["type"] == "RNodeInterface":
@@ -141,7 +151,7 @@ def read_discovered(
     now: Optional[float] = None,
     unpackb: Optional[Callable[[bytes], object]] = None,
 ) -> list[dict]:
-    """Every discovered interface with a location, most recently heard
+    """Every discovered interface, most recently heard
     first. A missing directory (setting just turned on, nothing heard yet)
     is an empty list; an unreadable file is logged and skipped."""
     path = storage_dir(config_dir)

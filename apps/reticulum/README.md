@@ -117,6 +117,12 @@ own location, unrelated to repeater/relay hardware like the SenseCAP P1.
 Can take minutes to hours to appear after enabling; a node drops off the
 map again after roughly 7 days without an announce once disabled.
 
+**Operator contact** (optional): an LXMF address in *Operator contact* is
+written as `discovery_lxmf_address` (RNS 1.5.4+) and sent with the
+announce, so whoever hears the radio can message its operator. *Use this
+Meshpoint's address* fills in this node's own address; blank publishes
+none. An invalid value is left out of rnsd's config rather than breaking it.
+
 ### Discovered repeaters (opt-in)
 
 Settings tab → **Show discovered repeaters on the dashboard map**
@@ -130,7 +136,11 @@ keeps one msgpack file per interface under
 entries after 7 days; RNS's own `list_discovered_interfaces()` deletes
 files as a side effect, so it isn't used), keeps only whitelisted fields
 (never `ifac_netkey` or the ready-made `config_entry` that contains it),
-drops entries without a location, and marks each available (< 24 h),
+lists entries without a location too (TCP backbones, RNodes that publish
+none; `latitude`/`longitude` null, the map skips them), carries the
+announced `operator_lxmf_address` (32 hex, else null; the map popup's
+**Contact operator** opens a draft in Messages for admins, sending
+nothing), and marks each available (< 24 h),
 unknown (< 3 d) or stale (< 7 d), like RNS. `GET /api/reticulum/discovered`
 returns `{enabled, interfaces}` (30 s cache); the `reachable_on`/`port` of
 TCP/backbone nodes only for admins. Each entry also carries the `lxmf` and

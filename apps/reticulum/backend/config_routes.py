@@ -179,6 +179,7 @@ class ReticulumUpdate(BaseModel):
     rnode_interface_mode: InterfaceMode = "full"
     rnode_discoverable: bool = False
     rnode_discovery_name: str = ""
+    rnode_discovery_lxmf_address: str = ""
     rnode_latitude: Optional[float] = Field(None, ge=-90, le=90)
     rnode_longitude: Optional[float] = Field(None, ge=-180, le=180)
     rnode_announce_interval_min: int = Field(360, ge=5, le=1440)
@@ -232,6 +233,17 @@ class ReticulumUpdate(BaseModel):
             raise ValueError("rnode_discovery_name must be a single line")
         if len(cleaned) > 32:
             raise ValueError("rnode_discovery_name must be 32 characters or fewer")
+        return cleaned
+
+    @field_validator("rnode_discovery_lxmf_address")
+    @classmethod
+    def _operator_address_ok(cls, value: str) -> str:
+        cleaned = _clean_dest_hash(value)
+        if cleaned is None or (cleaned and len(cleaned) != 32):
+            raise ValueError(
+                "rnode_discovery_lxmf_address must be an LXMF address "
+                "(32 hex characters) or blank"
+            )
         return cleaned
 
     @field_validator("telemetry_collector")
@@ -370,6 +382,7 @@ async def update_reticulum(
         "rnode_interface_mode": req.rnode_interface_mode,
         "rnode_discoverable": req.rnode_discoverable,
         "rnode_discovery_name": req.rnode_discovery_name,
+        "rnode_discovery_lxmf_address": req.rnode_discovery_lxmf_address,
         "rnode_latitude": req.rnode_latitude,
         "rnode_longitude": req.rnode_longitude,
         "rnode_announce_interval_min": req.rnode_announce_interval_min,

@@ -209,3 +209,30 @@ class TestDiscoverInterfaces(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestDiscoveryOperatorAddress(unittest.TestCase):
+    """discovery_lxmf_address in the discoverable RNode block (TODO 36; RNS
+    1.5.4+ sends it with the announce and stores it as operator_lxmf_address)."""
+
+    def _block(self, **over) -> str:
+        rc = dict(w._DEFAULTS, rnode_discoverable=True, **over)
+        return w._discoverable_block(rc, "Meshpoint", 52.37, 4.89)
+
+    def test_written_when_set(self) -> None:
+        self.assertIn(f"    discovery_lxmf_address = {'ab' * 16}\n",
+                      self._block(rnode_discovery_lxmf_address="AB" * 16))
+
+    def test_absent_when_blank_or_invalid(self) -> None:
+        for value in ("", "nothex", "ab" * 15):
+            with self.subTest(value=value):
+                self.assertNotIn("discovery_lxmf_address", self._block(rnode_discovery_lxmf_address=value))
+
+    def test_rest_of_the_block_unchanged(self) -> None:
+        block = self._block(rnode_discovery_name="Olympic", rnode_announce_interval_min=60)
+        self.assertEqual(block, "    discoverable = Yes\n    discovery_name = Olympic\n"
+                                "    latitude = 52.37\n    longitude = 4.89\n    announce_interval = 60\n")
+
+    def test_off_gives_no_block(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_discoverable=False, rnode_discovery_lxmf_address="ab" * 16)
+        self.assertEqual(w._discoverable_block(rc, "Meshpoint", 52.37, 4.89), "")

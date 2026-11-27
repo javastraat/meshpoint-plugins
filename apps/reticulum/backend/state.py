@@ -24,6 +24,7 @@ user a migration diff moving their real ``reticulum:`` values here:
         rnode_interface_mode: full
         rnode_discoverable: false
         rnode_discovery_name: ""
+        rnode_discovery_lxmf_address: ""   # operator contact in the discovery announce
         rnode_latitude: null
         rnode_longitude: null
         rnode_announce_interval_min: 360
@@ -116,6 +117,9 @@ _DEFAULTS: dict[str, Any] = {
     # comment for the full story.
     "rnode_discoverable": False,
     "rnode_discovery_name": "",
+    # Operator LXMF address published with a discoverable RNode (32 hex,
+    # blank = none). Others see it as the interface's operator contact.
+    "rnode_discovery_lxmf_address": "",
     "rnode_latitude": None,
     "rnode_longitude": None,
     "rnode_announce_interval_min": 360,

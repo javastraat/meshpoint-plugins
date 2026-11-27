@@ -91,11 +91,21 @@ class TestReadDiscovered(unittest.TestCase):
         got = {e["name"]: e["status"] for e in self._read()}
         self.assertEqual(got, {"fresh": "available", "unknown": "unknown", "stale": "stale"})
 
-    def test_no_location_or_null_island_is_skipped(self) -> None:
-        self._put("a", _rnode(latitude=None, longitude=None))
-        self._put("b", _rnode(latitude=0.0, longitude=0.0))
-        self._put("c", _rnode(latitude=95.0))
-        self.assertEqual(self._read(), [])
+    def test_no_usable_location_is_listed_without_one(self) -> None:
+        # TCP backbones and RNodes that don't publish a position are still
+        # listed (upstream a890b318); the map skips them, the list doesn't.
+        self._put("a", _rnode(name="none", latitude=None, longitude=None))
+        self._put("b", _rnode(name="null-island", latitude=0.0, longitude=0.0))
+        self._put("c", _rnode(name="bad", latitude=95.0))
+        got = {e["name"]: (e["latitude"], e["longitude"]) for e in self._read()}
+        self.assertEqual(got, {"none": (None, None), "null-island": (None, None), "bad": (None, None)})
+
+    def test_operator_address_is_kept_when_valid(self) -> None:
+        self._put("a", _rnode(name="op", operator_lxmf_address="EF" * 16))
+        self._put("b", _rnode(name="bad", operator_lxmf_address="not-hex"))
+        self._put("c", _rnode(name="none"))
+        got = {e["name"]: e["operator_lxmf_address"] for e in self._read()}
+        self.assertEqual(got, {"op": "ef" * 16, "bad": None, "none": None})
 
     def test_broken_file_is_skipped_not_fatal(self) -> None:
         self._put("bad", "{not json")

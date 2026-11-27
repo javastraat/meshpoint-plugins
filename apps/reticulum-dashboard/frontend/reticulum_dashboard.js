@@ -942,6 +942,13 @@ class ReticulumDashboard {
         // Discovered interfaces below the telemetry peers, so a peer pin on
         // top of a repeater stays clickable.
         this._discMarkers = L.layerGroup().addTo(this._teleMap);
+        // "Contact operator" buttons live in popup HTML strings: one delegated listener.
+        this._teleMap.getContainer().addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-rtd-contact]');
+            if (!btn) return;
+            this._teleMap.closePopup();
+            this.composeMessageTo(btn.dataset.rtdContact, `${btn.dataset.rtdContactName} (operator)`);
+        });
         this._teleMarkers = L.layerGroup().addTo(this._teleMap);
         this._renderHomeMarker(); // in case home loaded before the map existed
         this._updateTelemetryMarkers(located);
@@ -1093,12 +1100,21 @@ class ReticulumDashboard {
         if (d.software) tags.push(tag([d.software, d.version].filter(Boolean).join(' ')));
         if (d.transport) tags.push(tag('transport'));
         if (d.reachable_on) tags.push(tag(`${d.reachable_on}${d.port ? ':' + d.port : ''}`));
+        // Operator contact from the announce (RNS discovery_lxmf_address,
+        // upstream a890b318): opens a draft in Messages, sends nothing.
+        const op = /^[0-9a-f]{32}$/.test(d.operator_lxmf_address || '') ? d.operator_lxmf_address : null;
+        const contact = op ? `
+                <div class="rt-tele-popup__operator">
+                    <span>Operator <code>${this._esc(op.slice(0, 8))}…</code></span>
+                    ${this._isAdmin ? `<button type="button" class="terminal-button rtd-disc-contact"
+                        data-rtd-contact="${op}" data-rtd-contact-name="${this._esc(d.name).replace(/"/g, '&quot;').replace(/'/g, '&#39;')}">Contact operator</button>` : ''}
+                </div>` : '';
         return `
             <div class="rt-tele-popup">
                 <div class="rt-tele-popup__head">
                     <span class="rt-tele-popup__name">${this._esc(d.name)}</span>
                 </div>
-                <div class="rt-tele-popup__tags">${tags.join('')}</div>
+                <div class="rt-tele-popup__tags">${tags.join('')}</div>${contact}
             </div>`;
     }
 

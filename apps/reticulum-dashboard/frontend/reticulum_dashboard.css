@@ -135,6 +135,16 @@
 }
 .rt-tele-popup__tag--open { color: var(--accent-green, #00e5a0); }
 .rt-tele-popup__tag--closed { color: var(--accent-red, #ef4444); }
+.rt-tele-popup__operator {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 0.72rem;
+    color: var(--text-secondary, #aaa);
+}
+.rtd-disc-contact { font-size: 0.72rem; padding: 2px 8px; }
 
 /* ---- Peers list (right column, #rtd-peers-list *is* the .panel__body --
    core already gives it flex:1/overflow:auto scrolling). ---- */

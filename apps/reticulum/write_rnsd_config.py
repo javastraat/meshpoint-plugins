@@ -210,6 +210,9 @@ _DEFAULTS = {
     "rnode_interface_mode": "full",
     "rnode_discoverable": False,
     "rnode_discovery_name": "",
+    # Operator contact sent with the discovery announce (RNS 1.5.4+ stores it
+    # as operator_lxmf_address on every node that hears it). Blank = none.
+    "rnode_discovery_lxmf_address": "",
     "rnode_latitude": None,
     "rnode_longitude": None,
     "rnode_announce_interval_min": 360,
@@ -261,6 +264,41 @@ def _sanitise_discovery_name(name, fallback: str) -> str:
     return cleaned[:32] or fallback
 
 
+def _discovery_lxmf_address(value) -> str:
+    """A 32-hex LXMF address (lowercase), or "" -- an invalid one is
+    dropped with a note rather than handed to rnsd, which would only log
+    an error for it (ExecStartPre must never fail)."""
+    address = str(value or "").strip().strip("<>").lower()
+    if not address:
+        return ""
+    if len(address) == 32 and all(c in "0123456789abcdef" for c in address):
+        return address
+    print(f"plugins.reticulum.rnode_discovery_lxmf_address {value!r} is not a 32-hex LXMF address -- not published")
+    return ""
+
+
+def _discoverable_block(rc: dict, fallback_name: str, lat, lon) -> str:
+    """The RNode interface's discovery lines, or "" when not discoverable.
+    ``lat``/``lon`` are the Configuration pin, used when the plugin's own
+    rnode_latitude/longitude are blank."""
+    if not rc["rnode_discoverable"]:
+        return ""
+    name = _sanitise_discovery_name(rc["rnode_discovery_name"], fallback_name)
+    if rc["rnode_latitude"] not in (None, "") and rc["rnode_longitude"] not in (None, ""):
+        lat, lon = rc["rnode_latitude"], rc["rnode_longitude"]
+    interval = max(5, int(rc["rnode_announce_interval_min"] or 360))
+    lines = ["    discoverable = Yes", f"    discovery_name = {name}"]
+    if lat is not None and lon is not None:
+        lines.append(f"    latitude = {lat}")
+        lines.append(f"    longitude = {lon}")
+    lines.append(f"    announce_interval = {interval}")
+    address = _discovery_lxmf_address(rc.get("rnode_discovery_lxmf_address"))
+    if address:
+        lines.append(f"    discovery_lxmf_address = {address}")
+    print(f"reticulum: RNode discoverable as {name!r} (rmap.world)")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     from src.config import load_config
 
@@ -286,23 +324,10 @@ def main() -> int:
             "with no RNode interface."
         )
     else:
-        discoverable_block = ""
-        if rc["rnode_discoverable"]:
-            name = _sanitise_discovery_name(
-                rc["rnode_discovery_name"], cfg.device.device_name or "Meshpoint",
-            )
-            lat = rc["rnode_latitude"]
-            lon = rc["rnode_longitude"]
-            if lat in (None, "") or lon in (None, ""):
-                lat, lon = cfg.device.latitude, cfg.device.longitude
-            interval = max(5, int(rc["rnode_announce_interval_min"] or 360))
-            lines = ["    discoverable = Yes", f"    discovery_name = {name}"]
-            if lat is not None and lon is not None:
-                lines.append(f"    latitude = {lat}")
-                lines.append(f"    longitude = {lon}")
-            lines.append(f"    announce_interval = {interval}")
-            discoverable_block = "\n".join(lines) + "\n"
-            print(f"reticulum: RNode discoverable as {name!r} (rmap.world)")
+        discoverable_block = _discoverable_block(
+            rc, cfg.device.device_name or "Meshpoint",
+            cfg.device.latitude, cfg.device.longitude,
+        )
 
         rnode_block = _RNODE_TEMPLATE.format(
             rnode_serial_port=rc["rnode_serial_port"],

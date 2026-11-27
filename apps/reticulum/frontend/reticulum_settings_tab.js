@@ -210,6 +210,21 @@ class ReticulumSettingsTab {
                                 Leave name/latitude/longitude blank to use this device's
                                 own display name and Configuration &rarr; GPS pin.
                             </span>
+                            <div class="cfg-row">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Operator contact (LXMF address)</span>
+                                    <input class="cfg-field__input" type="text" maxlength="34"
+                                           spellcheck="false" autocomplete="off"
+                                           placeholder="(none -- 32 hex characters)"
+                                           data-rt-rnode-discovery-lxmf>
+                                </label>
+                                <button type="button" class="terminal-button"
+                                        data-rt-rnode-discovery-lxmf-own>Use this Meshpoint's address</button>
+                            </div>
+                            <span class="cfg-field__hint">
+                                Sent with the announce so whoever hears this radio can message
+                                its operator. Leave blank to publish no contact.
+                            </span>
                             <label class="cfg-field cfg-field--toggle">
                                 <input type="checkbox" data-rt-discover-interfaces>
                                 <span class="cfg-field__label">Show discovered repeaters on the dashboard map</span>
@@ -580,6 +595,7 @@ class ReticulumSettingsTab {
         this._rnodeDiscoveryLat = this._q('[data-rt-rnode-discovery-lat]');
         this._rnodeDiscoveryLon = this._q('[data-rt-rnode-discovery-lon]');
         this._rnodeDiscoveryInterval = this._q('[data-rt-rnode-discovery-interval]');
+        this._rnodeDiscoveryLxmf = this._q('[data-rt-rnode-discovery-lxmf]');
         this._discoverInterfaces = this._q('[data-rt-discover-interfaces]');
         this._backboneMode = this._q('[data-rt-backbone-mode]');
         this._backboneEnabled = this._q('[data-rt-backbone-enabled]');
@@ -637,6 +653,7 @@ class ReticulumSettingsTab {
         this._q('[data-rt-disconnect-links]').addEventListener('click', () => this._disconnectAllLinks());
         this._q('[data-rt-telemetry-send]')?.addEventListener('click', (e) => this._sendTelemetry(e.currentTarget));
         this._loadLinkCount();
+        this._q('[data-rt-rnode-discovery-lxmf-own]')?.addEventListener('click', () => this._useOwnLxmfAddress());
         this._rnodeDiscoverable.addEventListener('change', () => {
             // Reticulum forces a discoverable RNodeInterface into Access
             // point mode unless it's already gateway/access_point/internal
@@ -851,6 +868,7 @@ class ReticulumSettingsTab {
         if (this._rnodeDiscoveryLat) this._rnodeDiscoveryLat.value = rt.rnode_latitude ?? '';
         if (this._rnodeDiscoveryLon) this._rnodeDiscoveryLon.value = rt.rnode_longitude ?? '';
         if (this._rnodeDiscoveryInterval) this._rnodeDiscoveryInterval.value = rt.rnode_announce_interval_min ?? 360;
+        if (this._rnodeDiscoveryLxmf) this._rnodeDiscoveryLxmf.value = rt.rnode_discovery_lxmf_address || '';
         if (this._discoverInterfaces) this._discoverInterfaces.checked = !!rt.discover_interfaces;
         if (this._backboneMode) this._backboneMode.value = rt.backbone_interface_mode || 'internal';
         if (this._backboneEnabled) this._backboneEnabled.checked = rt.backbone_enabled !== false;
@@ -925,6 +943,21 @@ class ReticulumSettingsTab {
         }
         sel.innerHTML = opts.join('');
         sel.value = saved;
+    }
+
+    /** Fill the operator contact with this Meshpoint's own LXMF address
+     * (from /api/reticulum/status); only fills the field, Save stores it. */
+    async _useOwnLxmfAddress() {
+        let address = null;
+        try {
+            const r = await fetch('/api/reticulum/status', { credentials: 'same-origin' });
+            if (r.ok) address = (await r.json()).own_address;
+        } catch (_) { /* handled below */ }
+        if (address && this._rnodeDiscoveryLxmf) {
+            this._rnodeDiscoveryLxmf.value = String(address).replace(/[<>]/g, '');
+        } else {
+            this._setStatus('error', 'Reticulum is not running yet, so this Meshpoint has no LXMF address to use.');
+        }
     }
 
     async _loadPropagationStatus() {
@@ -1139,6 +1172,7 @@ class ReticulumSettingsTab {
             rnode_longitude: (this._rnodeDiscoveryLon?.value ?? '') !== ''
                 ? Number(this._rnodeDiscoveryLon.value) : null,
             rnode_announce_interval_min: Number(this._rnodeDiscoveryInterval?.value) || 360,
+            rnode_discovery_lxmf_address: (this._rnodeDiscoveryLxmf?.value || '').trim(),
             discover_interfaces: !!this._discoverInterfaces?.checked,
             backbone_enabled: backboneEnabled,
             backbone_host: this._backboneHost.value.trim() || 'node.reticulumnet.nl',

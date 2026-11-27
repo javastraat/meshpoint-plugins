@@ -313,7 +313,8 @@ class ReticulumPeerDrawer {
             const isRNode = disc.type === 'RNodeInterface';
             const status = { available: 'available', unknown: 'not heard for a day', stale: 'stale (3+ days)' }[disc.status] || disc.status;
             slot.appendChild(_rtSection('Location & radio (announced)', [
-                { label: 'Location', value: osm(disc.latitude, disc.longitude) },
+                // Listed without a location too (TCP backbones, no position published).
+                { label: 'Location', value: disc.latitude != null && disc.longitude != null ? osm(disc.latitude, disc.longitude) : null },
                 { label: 'Height', value: disc.height ? `${Math.round(disc.height)} m` : null },
                 { label: 'Frequency', value: isRNode && disc.frequency ? `${(disc.frequency / 1e6).toFixed(3)} MHz` : null },
                 { label: 'Bandwidth', value: isRNode && disc.bandwidth ? `${disc.bandwidth / 1000} kHz` : null },
@@ -321,6 +322,7 @@ class ReticulumPeerDrawer {
                 { label: 'Interface', value: _rtEsc(isRNode ? 'RNode' : disc.type) },
                 { label: 'Software', value: disc.software ? _rtEsc([disc.software, disc.version].filter(Boolean).join(' ')) : null },
                 { label: 'Transport', value: disc.transport ? 'Yes' : 'No' },
+                { label: 'Operator', value: disc.operator_lxmf_address ? `<code>${_rtEsc(disc.operator_lxmf_address)}</code>` : null },
                 { label: 'Last heard', value: disc.last_heard ? _rtEsc(`${_rtFullTime(disc.last_heard * 1000)} (${status})`) : null },
             ], true));
         }
