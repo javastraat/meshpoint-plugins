@@ -210,7 +210,7 @@ class ReticulumSettingsTab {
                                 Leave name/latitude/longitude blank to use this device's
                                 own display name and Configuration &rarr; GPS pin.
                             </span>
-                            <div class="cfg-row">
+                            <div class="rt-operator-row">
                                 <label class="cfg-field">
                                     <span class="cfg-field__label">Operator contact (LXMF address)</span>
                                     <input class="cfg-field__input" type="text" maxlength="34"
