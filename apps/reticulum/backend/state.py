@@ -25,6 +25,8 @@ user a migration diff moving their real ``reticulum:`` values here:
         rnode_discoverable: false
         rnode_discovery_name: ""
         rnode_discovery_lxmf_address: ""   # operator contact in the discovery announce
+        rnode_airtime_limit_short: null    # optional caps in percent, null = none
+        rnode_airtime_limit_long: null
         rnode_latitude: null
         rnode_longitude: null
         rnode_announce_interval_min: 360
@@ -120,6 +122,10 @@ _DEFAULTS: dict[str, Any] = {
     # Operator LXMF address published with a discoverable RNode (32 hex,
     # blank = none). Others see it as the interface's operator contact.
     "rnode_discovery_lxmf_address": "",
+    # Optional RNode airtime caps in percent (RNS airtime_limit_short ~15 s,
+    # airtime_limit_long ~1 h). None = no cap. 869.4-869.65 MHz allows 10 %.
+    "rnode_airtime_limit_short": None,
+    "rnode_airtime_limit_long": None,
     "rnode_latitude": None,
     "rnode_longitude": None,
     "rnode_announce_interval_min": 360,
@@ -191,6 +197,23 @@ def init(config: dict) -> None:
     if "rnode_serial_port" in config:
         merged["rnode_serial_port"] = config.get("rnode_serial_port") or ""
     _config = merged
+
+
+_region_provider = lambda: ""  # noqa: E731 -- set by register()'s build()
+
+
+def set_region_provider(provider) -> None:
+    """Where device_region() reads core's radio.region (a callable, so a
+    region change in Configuration is seen without a restart)."""
+    global _region_provider
+    _region_provider = provider
+
+
+def device_region() -> str:
+    try:
+        return str(_region_provider() or "")
+    except Exception:  # noqa: BLE001 -- profiles fall back to ours
+        return ""
 
 
 def display_name() -> str:

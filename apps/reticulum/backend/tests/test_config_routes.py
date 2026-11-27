@@ -293,3 +293,22 @@ class TestOperatorLxmfAddress(unittest.TestCase):
         for bad in ("ab" * 15, "ab" * 17, "zz" * 16):
             with self.subTest(bad=bad), self.assertRaises(ValidationError):
                 ReticulumUpdate(**_REQUIRED, rnode_discovery_lxmf_address=bad)
+
+
+class TestAirtimeLimits(unittest.TestCase):
+    """Optional RNode airtime caps (percent), blank = RNS default (TODO 41)."""
+
+    def test_default_blank(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED)
+        self.assertIsNone(m.rnode_airtime_limit_short)
+        self.assertIsNone(m.rnode_airtime_limit_long)
+
+    def test_percent_accepted(self) -> None:
+        m = ReticulumUpdate(**_REQUIRED, rnode_airtime_limit_short=15, rnode_airtime_limit_long=10.0)
+        self.assertEqual((m.rnode_airtime_limit_short, m.rnode_airtime_limit_long), (15.0, 10.0))
+
+    def test_out_of_range_rejected(self) -> None:
+        for field in ("rnode_airtime_limit_short", "rnode_airtime_limit_long"):
+            for bad in (0, -1, 100.5):
+                with self.subTest(field=field, bad=bad), self.assertRaises(ValidationError):
+                    ReticulumUpdate(**_REQUIRED, **{field: bad})

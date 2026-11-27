@@ -180,6 +180,8 @@ class ReticulumUpdate(BaseModel):
     rnode_discoverable: bool = False
     rnode_discovery_name: str = ""
     rnode_discovery_lxmf_address: str = ""
+    rnode_airtime_limit_short: Optional[float] = Field(None, gt=0, le=100)
+    rnode_airtime_limit_long: Optional[float] = Field(None, gt=0, le=100)
     rnode_latitude: Optional[float] = Field(None, ge=-90, le=90)
     rnode_longitude: Optional[float] = Field(None, ge=-180, le=180)
     rnode_announce_interval_min: int = Field(360, ge=5, le=1440)
@@ -383,6 +385,8 @@ async def update_reticulum(
         "rnode_discoverable": req.rnode_discoverable,
         "rnode_discovery_name": req.rnode_discovery_name,
         "rnode_discovery_lxmf_address": req.rnode_discovery_lxmf_address,
+        "rnode_airtime_limit_short": req.rnode_airtime_limit_short,
+        "rnode_airtime_limit_long": req.rnode_airtime_limit_long,
         "rnode_latitude": req.rnode_latitude,
         "rnode_longitude": req.rnode_longitude,
         "rnode_announce_interval_min": req.rnode_announce_interval_min,
@@ -407,6 +411,15 @@ async def update_reticulum(
     from . import nomad
     nomad.set_timeouts(req.nomad_timeout_s)
     return {"saved": True, "restart_required": True}
+
+
+@router.get("/reticulum/radio-profiles")
+async def radio_profiles(_claims: SessionClaims = Depends(require_admin)):
+    """RNode starting profiles, the one for this Meshpoint's region
+    preselected (TODO 41). Read-only: Apply in the Settings tab only fills
+    the form."""
+    from . import regional
+    return regional.describe(state.device_region())
 
 
 @router.post("/reticulum/restart-rnsd")

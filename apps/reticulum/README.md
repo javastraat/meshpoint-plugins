@@ -87,6 +87,35 @@ The **RNode firmware flasher** and the **Heltec-V4 Reticulum-node firmware
 card** stay in core (Configuration → Firmware) — they're hardware
 provisioning, usable with or without this plugin.
 
+### Radio starting profiles and airtime caps
+
+Settings tab → RNode radio → **Starting profile** + **Apply** fills
+frequency, bandwidth, SF, CR and TX power from a profile (`backend/regional.py`,
+`GET /api/config/reticulum/radio-profiles`, admin). Nothing is saved until
+you click Save; saved values are never moved by a region change.
+
+| Profile | MHz | kHz | SF | CR | dBm |
+|---|---:|---:|---:|---:|---:|
+| NL / our network (the plugin defaults) | 869.463 | 125 | 8 | 5 | 20 |
+| EU (upstream) | 869.525 | 125 | 7 | 5 | 7 |
+| US | 915.000 | 500 | 7 | 5 | 7 |
+| ANZ | 916.000 | 500 | 7 | 5 | 7 |
+| IN | 866.000 | 125 | 7 | 5 | 7 |
+| KR | 921.900 | 125 | 7 | 5 | 7 |
+| SG | 923.000 | 125 | 7 | 5 | 7 |
+
+The Meshpoint's `radio.region` picks the preselected one (EU_868 → NL,
+anything unknown → NL). They are starting values, not official channels or
+a permission to transmit: peers need the same settings, and local band,
+power and duty-cycle rules still apply. Profiles after upstream
+KMX415/meshpoint `regional.py`, with ours added.
+
+**Airtime caps** (`rnode_airtime_limit_short` / `_long`, percent, blank =
+none) are written as RNS's `airtime_limit_short` (about 15 s) and
+`airtime_limit_long` (about an hour); the RNode itself stops transmitting
+above them. Not set by any profile: 869.4–869.65 MHz allows 10 %, so
+upstream's 1 %/hour default would be needlessly strict here.
+
 ### rmap.world discovery (opt-in)
 
 Settings tab → RNode radio → **Show on rmap.world** writes

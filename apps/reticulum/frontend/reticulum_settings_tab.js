@@ -117,6 +117,17 @@ class ReticulumSettingsTab {
                                     ↻ Rescan USB
                                 </button>
                             </label>
+                            <div class="rt-operator-row">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Starting profile</span>
+                                    <select class="cfg-field__input" data-rt-radio-profile></select>
+                                </label>
+                                <button type="button" class="terminal-button"
+                                        data-rt-radio-profile-apply>Apply</button>
+                            </div>
+                            <span class="cfg-field__hint" data-rt-radio-profile-note>
+                                Fills frequency, bandwidth, SF, CR and TX power below; review, then Save.
+                            </span>
                             <div class="cfg-row">
                                 <label class="cfg-field">
                                     <span class="cfg-field__label">Frequency (Hz)</span>
@@ -152,6 +163,25 @@ class ReticulumSettingsTab {
                                            min="5" max="8" step="1" data-rt-cr>
                                 </label>
                             </div>
+                            <div class="cfg-row">
+                                <label class="cfg-field cfg-field--narrow">
+                                    <span class="cfg-field__label">Airtime cap, short (%)</span>
+                                    <input class="cfg-field__input" type="number"
+                                           min="0.1" max="100" step="0.1" placeholder="(no cap)"
+                                           data-rt-airtime-short>
+                                </label>
+                                <label class="cfg-field cfg-field--narrow">
+                                    <span class="cfg-field__label">Airtime cap, long (%)</span>
+                                    <input class="cfg-field__input" type="number"
+                                           min="0.1" max="100" step="0.1" placeholder="(no cap)"
+                                           data-rt-airtime-long>
+                                </label>
+                            </div>
+                            <span class="cfg-field__hint">
+                                Optional: the RNode itself stops transmitting above this share of airtime,
+                                over about 15 seconds (short) and an hour (long). Blank = no cap.
+                                869.4&ndash;869.65 MHz allows 10&nbsp;%.
+                            </span>
                             <label class="cfg-field">
                                 <span class="cfg-field__label">Interface mode</span>
                                 <select class="cfg-field__input" data-rt-rnode-mode>
@@ -588,6 +618,11 @@ class ReticulumSettingsTab {
         this._txPower = this._q('[data-rt-tx-power]');
         this._sf = this._q('[data-rt-sf]');
         this._cr = this._q('[data-rt-cr]');
+        this._radioProfile = this._q('[data-rt-radio-profile]');
+        this._radioProfileNote = this._q('[data-rt-radio-profile-note]');
+        this._radioProfiles = [];
+        this._airtimeShort = this._q('[data-rt-airtime-short]');
+        this._airtimeLong = this._q('[data-rt-airtime-long]');
         this._rnodeMode = this._q('[data-rt-rnode-mode]');
         this._rnodeDiscoverable = this._q('[data-rt-rnode-discoverable]');
         this._rnodeDiscoveryFields = this._q('[data-rt-rnode-discovery-fields]');
@@ -648,6 +683,7 @@ class ReticulumSettingsTab {
 
         this._form.addEventListener('submit', (e) => this._onSubmit(e));
         this._frequency.addEventListener('input', () => this._renderFrequencyHint());
+        this._q('[data-rt-radio-profile-apply]')?.addEventListener('click', () => this._applyRadioProfile());
         this._q('[data-rt-rescan-usb]').addEventListener('click', (e) => this._rescanUsb(e.currentTarget));
         this._q('[data-rt-restart-rnsd]').addEventListener('click', () => this._restartRnsd());
         this._q('[data-rt-disconnect-links]').addEventListener('click', () => this._disconnectAllLinks());
@@ -815,6 +851,7 @@ class ReticulumSettingsTab {
         const rt = await this._request('GET', '/api/config/reticulum');
         this._pendingPort = (rt && rt.rnode_serial_port) || '';
         this._render(rt || {});
+        this._loadRadioProfiles();
 
         this._request('GET', '/api/config').then((config) => {
             this._portUsage = this._buildPortUsageMap(config || {});
@@ -862,6 +899,8 @@ class ReticulumSettingsTab {
         if (this._txPower) this._txPower.value = rt.rnode_tx_power ?? 20;
         if (this._sf) this._sf.value = rt.rnode_spreading_factor ?? 8;
         if (this._cr) this._cr.value = rt.rnode_coding_rate ?? 5;
+        if (this._airtimeShort) this._airtimeShort.value = rt.rnode_airtime_limit_short ?? '';
+        if (this._airtimeLong) this._airtimeLong.value = rt.rnode_airtime_limit_long ?? '';
         if (this._rnodeMode) this._rnodeMode.value = rt.rnode_interface_mode || 'full';
         if (this._rnodeDiscoverable) this._rnodeDiscoverable.checked = !!rt.rnode_discoverable;
         if (this._rnodeDiscoveryName) this._rnodeDiscoveryName.value = rt.rnode_discovery_name || '';
@@ -943,6 +982,43 @@ class ReticulumSettingsTab {
         }
         sel.innerHTML = opts.join('');
         sel.value = saved;
+    }
+
+    /** Starting profiles (GET /api/config/reticulum/radio-profiles), the one
+     * for this Meshpoint's region preselected. Only fills the dropdown. */
+    async _loadRadioProfiles() {
+        if (!this._radioProfile) return;
+        const info = await this._request('GET', '/api/config/reticulum/radio-profiles');
+        if (!info || !Array.isArray(info.profiles)) return;
+        this._radioProfiles = info.profiles;
+        this._radioProfile.textContent = '';
+        for (const p of info.profiles) {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            const s = p.settings;
+            opt.textContent = `${p.label} — ${(s.rnode_frequency_hz / 1e6).toFixed(3)} MHz, `
+                + `${s.rnode_bandwidth_hz / 1000} kHz, SF${s.rnode_spreading_factor}, CR${s.rnode_coding_rate}, `
+                + `${s.rnode_tx_power} dBm`;
+            this._radioProfile.appendChild(opt);
+        }
+        this._radioProfile.value = info.selected;
+        if (this._radioProfileNote && info.note) {
+            this._radioProfileNote.textContent = `This Meshpoint's region: ${info.region}. ${info.note}`;
+        }
+    }
+
+    /** Copy the chosen profile into the radio fields. Saves nothing. */
+    _applyRadioProfile() {
+        const p = this._radioProfiles.find((x) => x.id === this._radioProfile?.value);
+        if (!p) return;
+        const s = p.settings;
+        this._frequency.value = s.rnode_frequency_hz;
+        this._bandwidth.value = String(s.rnode_bandwidth_hz);
+        this._sf.value = s.rnode_spreading_factor;
+        this._cr.value = s.rnode_coding_rate;
+        this._txPower.value = s.rnode_tx_power;
+        this._renderFrequencyHint();
+        this._setStatus('success', `${p.label} filled in. Check the values, then Save (and restart rnsd).`);
     }
 
     /** Fill the operator contact with this Meshpoint's own LXMF address
@@ -1173,6 +1249,8 @@ class ReticulumSettingsTab {
                 ? Number(this._rnodeDiscoveryLon.value) : null,
             rnode_announce_interval_min: Number(this._rnodeDiscoveryInterval?.value) || 360,
             rnode_discovery_lxmf_address: (this._rnodeDiscoveryLxmf?.value || '').trim(),
+            rnode_airtime_limit_short: (this._airtimeShort?.value ?? '') !== '' ? Number(this._airtimeShort.value) : null,
+            rnode_airtime_limit_long: (this._airtimeLong?.value ?? '') !== '' ? Number(this._airtimeLong.value) : null,
             discover_interfaces: !!this._discoverInterfaces?.checked,
             backbone_enabled: backboneEnabled,
             backbone_host: this._backboneHost.value.trim() || 'node.reticulumnet.nl',

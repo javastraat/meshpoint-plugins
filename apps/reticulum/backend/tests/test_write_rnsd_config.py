@@ -236,3 +236,24 @@ class TestDiscoveryOperatorAddress(unittest.TestCase):
     def test_off_gives_no_block(self) -> None:
         rc = dict(w._DEFAULTS, rnode_discoverable=False, rnode_discovery_lxmf_address="ab" * 16)
         self.assertEqual(w._discoverable_block(rc, "Meshpoint", 52.37, 4.89), "")
+
+
+class TestAirtimeLimits(unittest.TestCase):
+    """airtime_limit_short/long in the RNode block only when set (TODO 41)."""
+
+    def test_absent_by_default(self) -> None:
+        self.assertEqual(w._rnode_extra_lines(dict(w._DEFAULTS), "Meshpoint", None, None), "")
+
+    def test_written_when_set(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_airtime_limit_short=15, rnode_airtime_limit_long=10)
+        self.assertEqual(w._rnode_extra_lines(rc, "Meshpoint", None, None),
+                         "    airtime_limit_short = 15.0\n    airtime_limit_long = 10.0\n")
+
+    def test_invalid_is_left_out(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_airtime_limit_short="abc", rnode_airtime_limit_long=250)
+        self.assertEqual(w._rnode_extra_lines(rc, "Meshpoint", None, None), "")
+
+    def test_comes_before_the_discovery_lines(self) -> None:
+        rc = dict(w._DEFAULTS, rnode_airtime_limit_long=10, rnode_discoverable=True)
+        lines = w._rnode_extra_lines(rc, "Meshpoint", 52.37, 4.89)
+        self.assertTrue(lines.startswith("    airtime_limit_long = 10.0\n    discoverable = Yes\n"), lines)

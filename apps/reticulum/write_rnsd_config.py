@@ -213,6 +213,10 @@ _DEFAULTS = {
     # Operator contact sent with the discovery announce (RNS 1.5.4+ stores it
     # as operator_lxmf_address on every node that hears it). Blank = none.
     "rnode_discovery_lxmf_address": "",
+    # Optional RNode airtime caps in percent (short ~15 s, long ~1 h window);
+    # None = RNS's own default (no cap).
+    "rnode_airtime_limit_short": None,
+    "rnode_airtime_limit_long": None,
     "rnode_latitude": None,
     "rnode_longitude": None,
     "rnode_announce_interval_min": 360,
@@ -299,6 +303,33 @@ def _discoverable_block(rc: dict, fallback_name: str, lat, lon) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _airtime_lines(rc: dict) -> list[str]:
+    """airtime_limit_short/long lines for the set, valid (0 < x <= 100) caps;
+    anything else is left out with a note (ExecStartPre must never fail)."""
+    lines = []
+    for key, option in (("rnode_airtime_limit_short", "airtime_limit_short"),
+                        ("rnode_airtime_limit_long", "airtime_limit_long")):
+        value = rc.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            percent = float(value)
+        except (TypeError, ValueError):
+            percent = -1.0
+        if not 0 < percent <= 100:
+            print(f"plugins.reticulum.{key} {value!r} is not a percentage (0-100] -- left out")
+            continue
+        lines.append(f"    {option} = {percent}")
+    return lines
+
+
+def _rnode_extra_lines(rc: dict, fallback_name: str, lat, lon) -> str:
+    """Everything after the RNode block's radio settings: airtime caps,
+    then the discovery lines."""
+    airtime = _airtime_lines(rc)
+    return ("\n".join(airtime) + "\n" if airtime else "") + _discoverable_block(rc, fallback_name, lat, lon)
+
+
 def main() -> int:
     from src.config import load_config
 
@@ -324,7 +355,7 @@ def main() -> int:
             "with no RNode interface."
         )
     else:
-        discoverable_block = _discoverable_block(
+        discoverable_block = _rnode_extra_lines(
             rc, cfg.device.device_name or "Meshpoint",
             cfg.device.latitude, cfg.device.longitude,
         )

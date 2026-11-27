@@ -71,6 +71,8 @@ def register(reg) -> None:
 
     def build(context):
         peer_repo = ReticulumPeerRepository(context.pipeline.database)
+        # Radio profiles preselect by the Meshpoint's own region, read live.
+        state.set_region_provider(lambda: getattr(context.config.radio, "region", ""))
 
         def _telemetry_cfg() -> dict:
             """plugins.reticulum.telemetry_* plus, when opted in, the
