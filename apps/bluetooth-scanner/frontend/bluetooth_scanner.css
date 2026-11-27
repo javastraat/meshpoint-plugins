@@ -37,6 +37,10 @@
     gap: 12px;
     padding: 4px clamp(16px, 3vw, 32px) 16px;
 }
+/* On a Meshpoint with the shared plugin-page look (css/plugin_pages.css) the
+ * page itself has the side padding, and .lw-stats loses its own there; do the
+ * same so the cards line up with the title. */
+.section[data-plugin-page] .bts-stats { padding: 0 0 20px; }
 
 .lw-table--bluetooth col.col-id   { width: 160px; }
 .lw-table--bluetooth col.col-name { width: auto; }
