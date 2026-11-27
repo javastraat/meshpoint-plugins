@@ -109,7 +109,7 @@ class TestRtlListener(unittest.IsolatedAsyncioTestCase):
             set(st),
             {
                 "running", "frequency_hz", "frequency_mhz", "mode",
-                "station_label", "squelch", "gain", "volume", "audio_level",
+                "deemphasis_us", "region", "station_label", "squelch", "gain", "volume", "audio_level",
                 "rds_ps", "rds_rt", "rds_pty", "rds_bler", "listeners",
                 "last_error", "dongle_owner",
             },
@@ -171,6 +171,100 @@ class TestRtlListener(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sdr_registry.current_owner(), "radio")
         await lis.stop()
         self.assertIsNone(sdr_registry.current_owner())
+
+
+class TestFmDeemphasis(unittest.IsolatedAsyncioTestCase):
+    """Broadcast FM de-emphasis in ffmpeg on both wfm paths, 50 or 75 us by
+    the Meshpoint's region. Without RDS the pipeline used rtl_fm's own
+    -E deemp, fixed at 75 us (US), so Dutch stations sounded dull (method
+    after upstream KMX415/meshpoint; no chooser, unknown region = 50 us)."""
+
+    def setUp(self) -> None:
+        sdr_registry._owner = None
+        self.patchers = [
+            mock.patch("shutil.which", return_value="/usr/local/bin/rtl_fm"),
+            mock.patch("os.killpg"),
+            mock.patch("os.getpgid", return_value=1),
+        ]
+        for p in self.patchers:
+            p.start()
+
+    def tearDown(self) -> None:
+        for p in self.patchers:
+            p.stop()
+        sdr_registry._owner = None
+
+    async def _pipeline(self, mode: str, rds: bool, **kw) -> str:
+        spawn = mock.AsyncMock(return_value=_FakeProc(_reader()))
+        lis = RtlListener(**kw)
+        lis._has_redsea = rds
+        with mock.patch("asyncio.create_subprocess_exec", new=spawn), \
+             mock.patch.object(radio_listener, "_START_CHECK_SECS", 0.02):
+            await lis.tune(frequency_hz=98_000_000, mode=mode)
+        await lis.stop()
+        return " ".join(str(a) for a in spawn.call_args.args)
+
+    async def test_wfm_without_rds_uses_50us_in_ffmpeg(self) -> None:
+        cmd = await self._pipeline("wfm", rds=False)
+        self.assertNotIn("deemp", cmd.split("|")[0])  # not rtl_fm's fixed 75 us
+        self.assertIn("aemphasis=mode=reproduction:type=50fm", cmd)
+
+    async def test_wfm_with_rds_still_50us(self) -> None:
+        cmd = await self._pipeline("wfm", rds=True)
+        self.assertIn("aemphasis=mode=reproduction:type=50fm", cmd)
+
+    async def test_us_and_kr_get_75us_on_both_paths(self) -> None:
+        for region in ("US", "KR", "us"):
+            for rds in (False, True):
+                with self.subTest(region=region, rds=rds):
+                    cmd = await self._pipeline("wfm", rds=rds, region=region)
+                    self.assertIn("aemphasis=mode=reproduction:type=75fm", cmd)
+
+    async def test_eu_and_unknown_get_50us(self) -> None:
+        for region in ("EU_868", "ANZ", "UNKNOWN", ""):
+            with self.subTest(region=region):
+                cmd = await self._pipeline("wfm", rds=False, region=region)
+                self.assertIn("type=50fm", cmd)
+
+    async def test_override_wins_and_a_bad_one_is_ignored(self) -> None:
+        cmd = await self._pipeline("wfm", rds=False, region="EU_868", deemphasis_us=75)
+        self.assertIn("type=75fm", cmd)
+        cmd = await self._pipeline("wfm", rds=False, region="US", deemphasis_us="50")
+        self.assertIn("type=50fm", cmd)
+        cmd = await self._pipeline("wfm", rds=False, region="US", deemphasis_us=60)
+        self.assertIn("type=75fm", cmd)
+
+    def test_status_shows_the_value_in_use(self) -> None:
+        st = RtlListener(region="US").status()
+        self.assertEqual((st["deemphasis_us"], st["region"]), (75, "US"))
+        self.assertEqual(RtlListener().status()["deemphasis_us"], 50)
+
+    def test_register_passes_region_and_override(self) -> None:
+        from plugins.apps.radio import backend as radio_backend
+
+        class _Reg:
+            radio_region = "US"
+            config = {"deemphasis_us": 50}
+
+            def add_router(self, router):
+                pass
+
+            def add_listener(self, name, build, wire=None):
+                self.built = build()
+
+        reg = _Reg()
+        radio_backend.register(reg)
+        self.assertEqual(reg.built.deemphasis_us, 50)   # override beats US
+        reg.config = {}
+        radio_backend.register(reg)
+        self.assertEqual(reg.built.deemphasis_us, 75)
+
+    async def test_narrow_modes_get_no_deemphasis(self) -> None:
+        for mode in ("nfm", "am", "usb", "lsb"):
+            with self.subTest(mode=mode):
+                cmd = await self._pipeline(mode, rds=False)
+                self.assertNotIn("aemphasis", cmd)
+                self.assertNotIn("deemp", cmd)
 
 
 if __name__ == "__main__":  # pragma: no cover

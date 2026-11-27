@@ -1,5 +1,5 @@
 name = "radio"
-version = "1.0.1"
+version = "1.0.2"
 meshpoint_api = 1
 provides = ["listener", "routes", "hook"]
 

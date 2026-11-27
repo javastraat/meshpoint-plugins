@@ -45,10 +45,37 @@ _MODES = {
     "lsb": {"rtl_mode": "lsb", "sample_args": ["-s", "16000", "-r", "16000"], "audio_rate": 16000},
     "wfm": {
         "rtl_mode": "wbfm",
-        "sample_args": ["-s", "200000", "-r", "32000", "-E", "deemp"],
+        # No "-E deemp": rtl_fm's de-emphasis is fixed at 75 us; ffmpeg does
+        # it instead, 50 or 75 us by region (deemphasis_for), like the RDS path.
+        "sample_args": ["-s", "200000", "-r", "32000"],
         "audio_rate": 32000,
     },
 }
+
+# Broadcast FM de-emphasis for both wfm paths (with and without RDS), done in
+# ffmpeg (rtl_fm's own -E deemp is fixed at 75 us). 75 us in the Americas and
+# South Korea, 50 us almost everywhere else. Taken from the Meshpoint's
+# radio.region (reg.radio_region); plugins.radio.deemphasis_us (50 or 75)
+# overrides it. Unlike upstream KMX415/meshpoint there is no chooser and an
+# unknown region plays with 50 us instead of refusing to start.
+_DEEMPHASIS_75_REGIONS = frozenset({"US", "KR"})
+
+
+def deemphasis_for(region, override=None) -> int:
+    """50 or 75 (microseconds) for this Meshpoint region; a valid override wins."""
+    try:
+        forced = int(override) if override not in (None, "") else None
+    except (TypeError, ValueError):
+        forced = None
+    if forced in (50, 75):
+        return forced
+    if override not in (None, ""):
+        logger.warning("plugins.radio.deemphasis_us %r is not 50 or 75 -- using the region's value", override)
+    return 75 if str(region or "").strip().upper() in _DEEMPHASIS_75_REGIONS else 50
+
+
+def _wfm_deemphasis(us: int) -> str:
+    return f"aemphasis=mode=reproduction:type={us}fm"
 
 # R820T tuner range. Frequencies outside are rejected before touching rtl_fm.
 MIN_FREQ_HZ = 24_000_000
@@ -96,7 +123,9 @@ _RDS_FILE = "/tmp/meshpoint_rds.jsonl"  # PrivateTmp: shared within the service
 class RtlListener:
     """Owns the rtl_fm|ffmpeg pipeline and the subscriber fan-out."""
 
-    def __init__(self) -> None:
+    def __init__(self, region: str = "UNKNOWN", deemphasis_us=None) -> None:
+        self.region = str(region or "UNKNOWN").upper()
+        self.deemphasis_us: int = deemphasis_for(self.region, deemphasis_us)
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._reader_task: Optional[asyncio.Task] = None
         self._stderr_task: Optional[asyncio.Task] = None
@@ -209,6 +238,8 @@ class RtlListener:
             "frequency_hz": self.frequency_hz,
             "frequency_mhz": round(self.frequency_hz / 1e6, 6),
             "mode": self.mode,
+            "deemphasis_us": self.deemphasis_us,  # FM (wfm) de-emphasis in use
+            "region": self.region,
             "station_label": self.station_label,
             "squelch": self.squelch,
             "gain": self.gain,
@@ -246,7 +277,7 @@ class RtlListener:
             # MPX -> mono audio: strip pilot/stereo/RDS subcarriers (>15 kHz),
             # apply EU 50us de-emphasis, then the usual level/limiter/meter.
             af = (
-                f"lowpass=f=15000,aemphasis=mode=reproduction:type=50fm,"
+                f"lowpass=f=15000,{_wfm_deemphasis(self.deemphasis_us)},"
                 f"volume={self.volume:.3f},alimiter=limit=0.9:level=false,ebur128"
             )
             out_rate = _RDS_OUTPUT_RATE
@@ -259,7 +290,8 @@ class RtlListener:
                 "-f", str(self.frequency_hz),
             ]
             af = (
-                f"volume={self.volume:.3f},alimiter=limit=0.9:level=false,ebur128"
+                (f"{_wfm_deemphasis(self.deemphasis_us)}," if self.mode == "wfm" else "")
+                + f"volume={self.volume:.3f},alimiter=limit=0.9:level=false,ebur128"
             )
             out_rate = in_rate
 

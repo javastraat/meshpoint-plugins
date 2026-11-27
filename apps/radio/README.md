@@ -26,6 +26,14 @@ Everything that made Radio the biggest tab on the old page came along:
   meter.
 - **Preset stations picker** — category tabs, search, ★ favorites, and
   green "now playing" dots on the tuned channel and its category.
+- **FM de-emphasis by region** — broadcast FM (WFM) gets 75 µs in the US
+  and South Korea and 50 µs everywhere else (Europe included), taken from
+  the Meshpoint's own `radio.region`; done in `ffmpeg` on both the plain and
+  the RDS path (`rtl_fm`'s own `-E deemp` is fixed at 75 µs, so it isn't
+  used). Override with `plugins.radio.deemphasis_us: 50` or `75` in
+  `local.yaml`. `GET /api/listener/status` shows `deemphasis_us` and
+  `region`. Needs a core that passes `reg.radio_region`; an older one
+  gives 50 µs.
 
 ⚠️ **Behaviour change:** Radio used to be always-on, no config gate. It now
 ships `locked = true` in its `plugin.toml` (git-tracked, so it won't offer
