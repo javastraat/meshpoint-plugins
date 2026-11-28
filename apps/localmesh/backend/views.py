@@ -133,6 +133,26 @@ def members(receivers: Receivers) -> list[dict]:
     return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["member"]))
 
 
+def _node_names(receivers: list) -> dict[int, str]:
+    """Node id -> name, for a repeater's neighbour list. A repeater's from the server's certificates; a member's (a
+    companion is a neighbour too) when a receiver heard that member's own transmission, the only time a packet carries
+    its node id (as previous hop). A repeater's name wins: a companion may share its node number (firmware review R24)."""
+    names = _names(receivers)
+    heard: list[tuple[float, int, int]] = []   # (time, node, member)
+    for _label, d in receivers:
+        for member, h in d["heard"].items():
+            if _is_member(member) and h.get("heard_directly") and h.get("via"):
+                heard.append((h.get("last_heard") or 0, h["via"], member))
+        for a in d["activity"]:
+            if _is_member(a["member"]) and a.get("via") and p.heard_directly(
+                    a.get("routed", False), a.get("path") or [], a["via"], a["member"]):
+                heard.append((a.get("time") or 0, a["via"], a["member"]))
+    out = {node: names.get(member) or f"member {member}" for _t, node, member in sorted(heard)}   # newest wins
+    for _label, d in receivers:
+        out.update({node: r["name"] for node, r in d.get("repeaters", {}).items() if r["name"]})
+    return out
+
+
 def _named_neighbors(status: dict, names: dict[int, str]) -> dict:
     return {**status, "neighbors": [{**n, "name": names.get(n["node"], "")} for n in status["neighbors"]]}
 
@@ -195,9 +215,10 @@ def repeaters(receivers: Receivers, now: float | None = None) -> list[dict]:
             if e["last_heard"] is None or t > e["last_heard"] + 5:   # not its own packet again: it passed one on
                 heard_at(e, t, hops=e["hops"], rssi=n["rssi"], snr=n["snr"], via=0, type="passed on")
     out = {n: e for n, e in out.items() if e["listed"] or now - (e["last_heard"] or 0) < UNLISTED_KEEP_S}
+    node_names = {**_node_names(receivers), **{n: r["name"] for n, r in out.items() if r["name"]}}
     for e in out.values():
         if e["status"]:
-            e["status"] = _named_neighbors(e["status"], {n: r["name"] for n, r in out.items()})
+            e["status"] = _named_neighbors(e["status"], node_names)
     return sorted(out.values(), key=lambda e: (-(e["last_heard"] or 0), e["node"]))
 
 
@@ -269,7 +290,7 @@ def activity(receivers: Receivers, limit: int = 200) -> list[dict]:
               for node, r in d.get("repeaters", {}).items() if r["name"]}
     out = [{**a, "receiver": label, "name": names.get(a["member"]) or rnames.get(a["member"], "")}
            for label, d in receivers for a in d["activity"]]
-    by_node = {m - p.REPEATER_MEMBER_BASE: name for m, name in rnames.items()}
+    by_node = _node_names(receivers)
     for a in out:
         if a.get("repeater_status"):
             a["repeater_status"] = _named_neighbors(a["repeater_status"], by_node)

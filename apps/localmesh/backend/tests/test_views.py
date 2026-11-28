@@ -187,6 +187,27 @@ class TestMessages(unittest.TestCase):
         a["activity"] = [{"member": p.REPEATER_MEMBER_BASE | 12, "time": 5.0, "sender": "x", "repeater_status": st}]
         self.assertEqual(views.activity([("a", a)])[0]["repeater_status"]["neighbors"][0]["name"], "NL-AMS-1")
 
+    def test_neighbour_names_of_members_heard_directly(self) -> None:
+        # A repeater's neighbours are every node it heard directly, companions too. A member's node id is known when
+        # this receiver heard that member's own transmission (flood, empty path: via is the sender itself).
+        base = p.REPEATER_MEMBER_BASE
+        st = {"neighbors": [{"node": 27723, "snr": 11.25}, {"node": 15662, "snr": 12.25},
+                            {"node": 11, "snr": 4.5}, {"node": 26196, "snr": 3.25}], "time": 5.0}
+        a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1", "revoked": False}},
+                 adverts={4: {"name": "Albert"}, 6: {"name": "Twin"}},
+                 heard={6: {"count": 1, "last_heard": 3.0, "via": 11, "heard_directly": True}},  # node 11 is a repeater
+                 statuses={12: st},
+                 activity=[{"member": 4, "time": 1.0, "via": 27723, "routed": False, "path": []},
+                           {"member": 5, "time": 2.0, "via": 15662, "routed": False, "path": []},   # no name known
+                           {"member": 7, "time": 2.5, "via": 26196, "routed": False, "path": [{"node": 26196}]},
+                           {"member": base | 12, "time": 5.0, "sender": "x", "repeater_status": st}])
+        a["names"] = {}
+        out = {r["node"]: r for r in views.repeaters([("a", a)], now=1000.0)}
+        expect = ["Albert", "member 5", "NL-AMS-1", ""]   # a forwarded packet tells nothing; a repeater name wins
+        self.assertEqual([n["name"] for n in out[12]["status"]["neighbors"]], expect)
+        row = [r for r in views.activity([("a", a)]) if r.get("repeater_status")][0]
+        self.assertEqual([n["name"] for n in row["repeater_status"]["neighbors"]], expect)
+
     def test_activity_names_repeaters(self) -> None:
         base = p.REPEATER_MEMBER_BASE
         a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1076", "revoked": False}},
