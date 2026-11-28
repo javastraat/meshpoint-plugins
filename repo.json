@@ -6,7 +6,7 @@
       "id": "acars",
       "kind": "app",
       "path": "apps/acars",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "meshpoint_api": 1,
       "provides": [
         "listener",
