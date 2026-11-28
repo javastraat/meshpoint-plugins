@@ -64,9 +64,11 @@ plugins:
     device: 0                                    # default: 0 (RTL-SDR device index)
 ```
 
-An unset or invalid `freqs` (missing key, not a list, all-blank entries) falls
+An unset or empty `freqs` (missing key, not a list, all-blank entries) falls
 back to the default EU channel set rather than starting acarsdec with no
-channels at all.
+channels at all. Entries that are set must be 1 to 8 numbers in MHz between
+118 and 137; anything else (`131.725MHz`, `1317.25`) makes Start stop with a
+clear message in the tab instead of handing it to acarsdec.
 
 ## Layout
 

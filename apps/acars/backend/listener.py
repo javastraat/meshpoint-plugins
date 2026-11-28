@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -47,6 +48,10 @@ _OWNER = "acars"
 # still one region's channels by default, but now overridable per-deployment
 # instead of a recompile-to-change constant.
 _DEFAULT_FREQUENCIES = ["131.525", "131.725", "131.800", "131.825"]
+# ACARS uses the VHF airband; acarsdec takes at most 8 channels.
+_MIN_MHZ = 118.0
+_MAX_MHZ = 137.0
+_MAX_CHANNELS = 8
 _DEFAULT_GAIN = "34"  # not AGC -- airband AGC overloads on strong ground stations
 _DEFAULT_DEVICE = "0"
 
@@ -65,6 +70,30 @@ def _normalize_frequencies(value) -> list:
         return list(_DEFAULT_FREQUENCIES)
     freqs = [str(f).strip() for f in value if str(f).strip()]
     return freqs or list(_DEFAULT_FREQUENCIES)
+
+
+def _frequency_error(freqs: list) -> str:
+    """Why ``freqs`` can't be handed to acarsdec, or "" if they can.
+
+    A typo in ``plugins.acars.freqs`` (``131.725MHz``, ``1317.25``) used to
+    go straight to acarsdec, which then failed with a vague error or
+    listened on nothing. Checked at Start, not at load, so a bad value never
+    stops the plugin from loading; the tab shows the message instead.
+    Range and channel limit after upstream KMX415/meshpoint-plugins.
+    """
+    if len(freqs) > _MAX_CHANNELS:
+        return f"Choose one to {_MAX_CHANNELS} ACARS frequencies in MHz (plugins.acars.freqs)"
+    for f in freqs:
+        try:
+            mhz = float(f)
+        except ValueError:
+            return f"ACARS frequency {f!r} is not a number in MHz (plugins.acars.freqs)"
+        if not math.isfinite(mhz) or not _MIN_MHZ <= mhz <= _MAX_MHZ:
+            return (
+                f"ACARS frequencies must be between {_MIN_MHZ:g} and {_MAX_MHZ:g} MHz, "
+                f"got {f} (plugins.acars.freqs)"
+            )
+    return ""
 
 
 class AcarsListener:
@@ -94,6 +123,9 @@ class AcarsListener:
         currently claimed by another listener."""
         if shutil.which("acarsdec") is None:
             raise RuntimeError("acarsdec not found on PATH")
+        error = _frequency_error(self._frequencies)
+        if error:
+            raise RuntimeError(error)
 
         async with self._lock:
             if self.running:

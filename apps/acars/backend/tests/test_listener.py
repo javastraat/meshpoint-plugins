@@ -184,5 +184,44 @@ class TestNormalizeFrequencies(unittest.TestCase):
         )
 
 
+class TestFrequencyCheck(unittest.IsolatedAsyncioTestCase):
+    """A bad plugins.acars.freqs is refused at Start with a clear message,
+    before acarsdec runs or the dongle is claimed (TODO 37g)."""
+
+    def setUp(self) -> None:
+        sdr_registry._owner = None
+        self.which = mock.patch("shutil.which", return_value="/usr/local/bin/acarsdec")
+        self.which.start()
+
+    def tearDown(self) -> None:
+        self.which.stop()
+        sdr_registry._owner = None
+
+    async def _refused(self, freqs, fragment: str) -> None:
+        lis = AcarsListener(frequencies=freqs)
+        exec_mock = mock.AsyncMock()
+        with mock.patch("asyncio.create_subprocess_exec", new=exec_mock):
+            with self.assertRaises(RuntimeError) as ctx:
+                await lis.start()
+        self.assertIn(fragment, str(ctx.exception))
+        exec_mock.assert_not_called()
+        self.assertIsNone(sdr_registry.current_owner())
+
+    async def test_unit_suffix_refused(self) -> None:
+        await self._refused(["131.725MHz"], "not a number")
+
+    async def test_out_of_band_refused(self) -> None:
+        await self._refused(["1317.25"], "between 118 and 137 MHz")
+        await self._refused(["117.9"], "between 118 and 137 MHz")
+        await self._refused(["nan"], "between 118 and 137 MHz")
+
+    async def test_more_than_eight_refused(self) -> None:
+        await self._refused([str(130 + i / 10) for i in range(9)], "one to 8")
+
+    def test_defaults_and_band_edges_pass(self) -> None:
+        self.assertEqual(acars_listener._frequency_error(acars_listener._DEFAULT_FREQUENCIES), "")
+        self.assertEqual(acars_listener._frequency_error(["118", "137.000", 136.9]), "")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
