@@ -292,6 +292,8 @@ def activity(receivers: Receivers, limit: int = 200) -> list[dict]:
            for label, d in receivers for a in d["activity"]]
     by_node = _node_names(receivers)
     for a in out:
+        a["via_name"] = by_node.get(a.get("via"), "") if a.get("via") else ""
+        a["path"] = [{**h, "name": by_node.get(h["node"], "")} for h in a.get("path") or []]
         if a.get("repeater_status"):
             a["repeater_status"] = _named_neighbors(a["repeater_status"], by_node)
     out.sort(key=lambda a: -a["time"])

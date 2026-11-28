@@ -96,6 +96,17 @@ class LocalMeshPanel {
             title: s ? `status received ${LocalMeshPanel.ago(s.time)}, not verified` : '' };
     }
 
+    /** A node as text: "NL-AMS-1057 (node 42978)" when its name is known, else "node 42978". */
+    static nodeLabel(node, name) {
+        return name ? `${name} (node ${node})` : `node ${node}`;
+    }
+
+    /** A packet's path as text, every hop with its name if known and its SNR (popup, dashboard). */
+    static pathText(path) {
+        return (path || []).map((h) => (h.name ? `${h.name} (node ${h.node}, SNR ${h.snr} dB)`
+            : `node ${h.node} (SNR ${h.snr} dB)`)).join(' → ');
+    }
+
     /** [key, value] rows of a repeater's opened status (popup, side panel, dashboard); empty without a status. */
     static statusRows(s) {
         if (!s) return [];
@@ -562,7 +573,7 @@ class LocalMeshPanel {
         const when = (t) => (t ? esc(new Date(t * 1000).toLocaleString()) : null);
         // hops in a LocalMesh packet count down: the network's maximum at the sender, one less per repeater
         const radio = (x) => row('Hops left', x.hops == null ? null : `${x.hops} (counts down by one at every repeater)`)
-            + row('Previous hop', x.via ? `node ${x.via}` : null)
+            + row('Previous hop', x.via ? esc(LocalMeshPanel.nodeLabel(x.via, x.via_name)) : null)
             + row('Signal', LocalMeshPanel.signal(x.rssi, x.snr));
         let title; let body;
         if (tab === 'messages' && r.outgoing) {
@@ -590,7 +601,7 @@ class LocalMeshPanel {
             const bad = dec.badge === 'undecrypted';
             const good = dec.badge === 'join';
             title = `${esc(r.type)} packet from ${esc(r.name || r.sender)}`;
-            const path = (r.path || []).map((h) => `node ${h.node} (SNR ${h.snr} dB)`).join(' → ');
+            const path = LocalMeshPanel.pathText(r.path);
             body = layer('Decision', row('Decision', esc(dec.label), bad ? 'bad' : good ? 'good' : '')
                     + row('Meaning', esc(dec.text)))
                 + layer('Packet', row('Type', esc(r.type)) + row('Sender', esc(r.sender)) + row('Name', esc(r.name))

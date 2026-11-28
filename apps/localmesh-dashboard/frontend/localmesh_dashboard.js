@@ -972,7 +972,8 @@ class LocalMeshDashboard {
             <section class="pdm-layer"><div class="pdm-layer__label">${label}</div>
             <div class="pdm-layer__rows">${rows}</div></section>` : '');
         const when = (t) => (t ? esc(new Date(t * 1000).toLocaleString()) : null);
-        const path = (a.path || []).map((h) => `node ${h.node} (SNR ${h.snr} dB)`).join(' → ');
+        const path = P.pathText ? P.pathText(a.path)
+            : (a.path || []).map((h) => `node ${h.node} (SNR ${h.snr} dB)`).join(' → ');
         const title = `${esc(a.type)} packet from ${esc(a.name || a.sender)}`;
         const body = layer('Decision', row('Decision', esc(dec.label), bad ? 'bad' : good ? 'good' : '')
                 + row('Meaning', esc(dec.text)))
@@ -983,7 +984,7 @@ class LocalMeshDashboard {
             + layer('Route', row('Routed', a.routed ? 'yes (follows a learned path)' : 'no (flood)')
                 + row('Path', esc(path) || null)
                 + row('Hops left', a.hops == null ? null : `${a.hops} (counts down by one at every repeater)`)
-                + row('Previous hop', a.via ? `node ${a.via}` : null)
+                + row('Previous hop', a.via ? esc(P.nodeLabel ? P.nodeLabel(a.via, a.via_name) : `node ${a.via}`) : null)
                 + row('Signal', esc(P.signal(a.rssi, a.snr))));
         P.showModal(title, body);
     }

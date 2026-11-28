@@ -208,6 +208,17 @@ class TestMessages(unittest.TestCase):
         row = [r for r in views.activity([("a", a)]) if r.get("repeater_status")][0]
         self.assertEqual([n["name"] for n in row["repeater_status"]["neighbors"]], expect)
 
+    def test_activity_names_path_and_previous_hop(self) -> None:
+        base = p.REPEATER_MEMBER_BASE
+        a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1", "revoked": False}},
+                 activity=[{"member": base | 12, "time": 5.0, "via": 11, "path": [{"node": 11, "snr": 0.0},
+                                                                                  {"node": 99, "snr": 1.0}]},
+                           {"member": 4, "time": 6.0, "via": 0, "path": []}])
+        rows = views.activity([("a", a)])
+        self.assertEqual(([h["name"] for h in rows[1]["path"]], rows[1]["via_name"]), (["NL-AMS-1", ""], "NL-AMS-1"))
+        self.assertEqual(rows[0]["via_name"], "")
+        self.assertNotIn("name", a["activity"][0]["path"][0])   # the receiver's own rows stay as they were
+
     def test_activity_names_repeaters(self) -> None:
         base = p.REPEATER_MEMBER_BASE
         a = data(repeaters={11: {"node": 11, "region": 3, "flags": 0, "name": "NL-AMS-1076", "revoked": False}},
